@@ -19,5 +19,13 @@ AGENTS.md
 # Experimental code/artifacts
 dev/
 
+# Nested git repos in subprojects
+**/deps/**/*.git
+base_autoresearch/deps/
+base_autoresearch/_build/
+base_autoresearch/priv/static/
+ex_autoresearch/deps/
+ex_autoresearch/_build/
+
 # Results file
 results.tsv

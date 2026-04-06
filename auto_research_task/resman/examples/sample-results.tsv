@@ -1,0 +1,18 @@
+commit	val_bpb	memory_gb	status	description
+7e1a2f1	0.997900	44.0	keep	baseline
+3b4c5d6	0.993200	44.2	keep	increase LR to 0.04
+8c9d0e1	1.015000	44.0	discard	switch to GELU activation
+1f2e3d4	0.000000	0.0	crash	double model width (OOM)
+5a6b7c8	0.989456	45.1	keep	add value embeddings
+9d0e1f2	0.985301	44.8	keep	sliding window SSSL
+2c3d4e5	0.981234	44.5	keep	RoPE rotary embeddings
+6f7g8h9	0.000000	0.0	crash	batch size 2^21 (OOM)
+0i1j2k3	0.978678	44.3	keep	Muon momentum warmup
+4m5n6o7	0.976312	44.4	keep	ResFormer attention
+8p9q0r1	0.974567	44.6	keep	per-layer lr scaling
+2s3t4u5	0.000000	0.0	crash	removed RMSNorm (NaN)
+6v7w8x9	0.972890	44.5	keep	attention softcap 15
+0y1z2a3	0.971234	44.7	keep	warmedown 0.5 ratio
+4b5c6d7	0.970123	44.6	keep	AdamW betas (0.8, 0.95)
+8e9f0g1	0.000000	0.0	discard	dim 1024 too large (slow)
+2h3i4j5	0.969012	44.6	keep	final combined config

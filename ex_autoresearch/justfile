@@ -1,0 +1,52 @@
+# --- Lifecycle ---
+
+# Start the full application
+start:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SNAME="$(basename "$(pwd)")"
+    export PORT="${PORT:-4000}"
+
+    echo "Starting $SNAME on port $PORT"
+    elixir --sname "$SNAME" --cookie devcookie -S mix phx.server > run.log 2>&1 &
+    echo "Main node $SNAME is up"
+
+# Stop the application
+stop:
+    #!/usr/bin/env bash
+    pkill -f "mix phx.server" 2>/dev/null || true
+    echo "Stopped"
+
+# Start in foreground (visible output, for debugging)
+start-fg:
+    #!/usr/bin/env bash
+    export PORT="${PORT:-4000}"
+    exec mix phx.server 2>&1
+
+# --- Utilities ---
+
+# Open the app in a browser
+open:
+    #!/usr/bin/env bash
+    echo "Opening http://localhost:${PORT:-4000}"
+
+# Check if the BEAM node is running
+status:
+    #!/usr/bin/env bash
+    epmd -names 2>&1 | grep -v "^epmd:" || echo "No BEAM node running"
+
+# Export the latest completed report as markdown
+export:
+    #!/usr/bin/env bash
+    mix run -e "
+      alias ExAutoresearch.{Research, Analysis.ReportExporter}
+      reports = Ash.read!(Research.Report, query: [sort_input: [inserted_at: :desc], filter: [status == :completed]])
+      case reports do
+        [] -> IO.puts(\"No completed reports\")
+        [report | _] ->
+          case ReportExporter.export(report) do
+            {:ok, path} -> IO.puts(\"Exported: #{path}\")
+            {:error, reason} -> IO.puts(\"Failed: #{inspect(reason)}\")
+          end
+      end
+    "
