@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] — v0.8 in progress
+## [0.8.0] — Human-friendly terminal + HTML distill (2026-04-18)
 
 v0.7 closed the agent-facing feature set (signals, distill, verify, composite).
 v0.8 turns attention to the **human** sitting next to the agent — the person
