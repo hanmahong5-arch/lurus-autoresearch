@@ -120,11 +120,7 @@ pub fn build_distill(run: &RunLog) -> DistillReport {
     // Determine effective metric name and direction from run or first experiment.
     let direction = run
         .metric_direction
-        .or_else(|| {
-            run.experiments
-                .first()
-                .and_then(|e| e.metric_direction)
-        })
+        .or_else(|| run.experiments.first().and_then(|e| e.metric_direction))
         .unwrap_or(Direction::Minimize);
     let metric_name = run
         .metric_name
@@ -312,10 +308,7 @@ fn build_suggestions(
 ) -> Vec<String> {
     let mut suggestions: Vec<String> = Vec::new();
 
-    let oom_count = failure_signals
-        .get("oom")
-        .map(|v| v.len())
-        .unwrap_or(0);
+    let oom_count = failure_signals.get("oom").map(|v| v.len()).unwrap_or(0);
     let nan_count = failure_signals
         .get("nan_loss")
         .map(|v| v.len())
@@ -357,10 +350,7 @@ fn build_suggestions(
             .iter()
             .filter(|e| e.status == Status::Discard)
             .count();
-        let recent_keeps = last_half
-            .iter()
-            .filter(|e| e.status.is_kept())
-            .count();
+        let recent_keeps = last_half.iter().filter(|e| e.status.is_kept()).count();
         if recent_discards >= 5 && recent_keeps == 0 {
             suggestions.push(
                 "Run has stalled — recent experiments all discarded. Consider a new direction or revisit the best commit.".to_string(),
@@ -419,10 +409,7 @@ pub fn render_markdown(report: &DistillReport) -> String {
     match &report.best {
         None => out.push_str("_no kept experiments in this run_\n"),
         Some(b) => {
-            out.push_str(&format!(
-                "- **{}**: `{:.6}`\n",
-                s.metric_name, b.value
-            ));
+            out.push_str(&format!("- **{}**: `{:.6}`\n", s.metric_name, b.value));
             out.push_str(&format!("- **commit**: `{}`\n", short_commit(&b.commit)));
             out.push_str(&format!("- **description**: {}\n", b.description));
             let gpu = if b.gpu.is_empty() {
@@ -441,10 +428,7 @@ pub fn render_markdown(report: &DistillReport) -> String {
         out.push_str("_no lineage recorded_\n");
     } else {
         for entry in &report.lineage {
-            let status: Status = entry
-                .status
-                .parse()
-                .unwrap_or(Status::Keep);
+            let status: Status = entry.status.parse().unwrap_or(Status::Keep);
             let glyph = status_glyph(status);
             out.push_str(&format!(
                 "  `{}` {} {}={:.6}  {}\n",
@@ -460,10 +444,7 @@ pub fn render_markdown(report: &DistillReport) -> String {
 
     // --- Failure signals ---
     out.push_str("## Failure signals\n\n");
-    let any_signals = report
-        .failure_signals
-        .values()
-        .any(|v| !v.is_empty());
+    let any_signals = report.failure_signals.values().any(|v| !v.is_empty());
     if !any_signals {
         out.push_str("_no crash signals recorded in this run_\n");
     } else {
@@ -539,8 +520,9 @@ pub fn cmd_distill(
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
 ) -> Result<()> {
-    let run = load_run(data_dir, tag)?
-        .ok_or_else(|| Error::NotFound(crate::store::runs_dir(data_dir).join(format!("{tag}.json"))))?;
+    let run = load_run(data_dir, tag)?.ok_or_else(|| {
+        Error::NotFound(crate::store::runs_dir(data_dir).join(format!("{tag}.json")))
+    })?;
 
     let report = build_distill(&run);
 
@@ -663,10 +645,7 @@ mod tests {
             ],
         );
         let report = build_distill(&run);
-        assert_eq!(
-            report.failure_signals.get("oom").map(|v| v.len()),
-            Some(3)
-        );
+        assert_eq!(report.failure_signals.get("oom").map(|v| v.len()), Some(3));
         assert_eq!(
             report.failure_signals.get("nan_loss").map(|v| v.len()),
             Some(1)
@@ -713,9 +692,18 @@ mod tests {
         let report = build_distill(&run);
         let md = render_markdown(&report);
         assert!(md.contains("## Best result"), "missing '## Best result'");
-        assert!(md.contains("## Failure signals"), "missing '## Failure signals'");
+        assert!(
+            md.contains("## Failure signals"),
+            "missing '## Failure signals'"
+        );
         assert!(md.contains("## Suggestions"), "missing '## Suggestions'");
-        assert!(md.contains("## Lineage to best"), "missing '## Lineage to best'");
-        assert!(md.contains("## Unexplored neighbors"), "missing '## Unexplored neighbors'");
+        assert!(
+            md.contains("## Lineage to best"),
+            "missing '## Lineage to best'"
+        );
+        assert!(
+            md.contains("## Unexplored neighbors"),
+            "missing '## Unexplored neighbors'"
+        );
     }
 }
