@@ -50,9 +50,34 @@ artifact to something you can email.
   AND HTML in the same invocation. Writing status printed to stderr:
   `wrote HTML to {path}`.
 
-### Not yet in this branch
-- Wave C (Verified-aware suggestions, `DivergedLoss`/`SlowMfu` signals,
-  cross-run clustering, composite-weight tuning) will land before v0.8 tags.
+### Added (Wave C — distill intelligence)
+- **Verified-aware suggestions** in `resman distill`. When the best
+  experiment of a tag is not Verified, distill now emits an actionable
+  prompt like *"Best experiment is unverified — re-run and call
+  `resman verify {commit}` before you rely on it."* When a run has
+  ≥ 5 Keep/Best experiments with zero Verified, a stronger bulk
+  prompt fires instead: *"No experiments have been verified yet…"*
+  These are the first suggestions in the list — they're louder than
+  the heuristic "lots of OOMs" type advice.
+- **`resman distill --all`** — cross-run aggregation. Answers the
+  9am question *"what happened across every tag overnight?"*. Renders:
+  totals, top-5 failure signals globally (with example entries from
+  any tag), top-3 tags ranked by best metric value (direction-aware
+  per tag's own `effective_direction`), and cross-run Verified /
+  failure-concentration suggestions. Markdown by default; `-o json`
+  for downstream tools. `--out <path>` writes to file. Mutually
+  exclusive with `--tag` (enforced at CLI parse time).
+
+### Explicitly deferred (not in v0.8)
+- **`Signal::DivergedLoss` / `Signal::SlowMfu`** — thresholds need
+  real log corpus to tune; premature without usage data. Planned v0.9.
+- **Composite-weight tuning** — v0.7's `0.5 / 0.2 / 0.2 / 0.1` weights
+  stay. Tune once we have data on how agents actually rank.
+- **MCP tool for `distill --all`** — single-tag `resman_distill`
+  stays the primary agent surface; cross-run aggregation is a
+  human-facing 9am report for now.
+- **HTML render for `distill --all`** — not needed in v0.8. Markdown
+  and JSON only for cross-distill.
 
 ## [0.7.0] — Reproducibility + composite scoring
 

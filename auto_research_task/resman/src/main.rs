@@ -131,13 +131,21 @@ fn main() -> ExitCode {
             out,
             format,
             html,
-        } => commands::distill::cmd_distill(
-            &data_dir,
-            &tag,
-            out.as_deref(),
-            &format,
-            html.as_deref(),
-        ),
+            all,
+        } => {
+            if all {
+                commands::distill::cmd_cross_distill(&data_dir, out.as_deref(), &format)
+            } else {
+                let t = tag.expect("tag is required when --all is not set");
+                commands::distill::cmd_distill(
+                    &data_dir,
+                    &t,
+                    out.as_deref(),
+                    &format,
+                    html.as_deref(),
+                )
+            }
+        }
         Commands::Verify {
             commit,
             value,

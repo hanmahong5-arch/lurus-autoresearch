@@ -305,10 +305,11 @@ pub enum Commands {
     /// failure signals, unexplored neighbors, heuristic suggestions).
     ///
     /// The primary "what did we learn last night?" artifact for agent memory.
+    /// Pass --all to aggregate across every run in the data directory.
     Distill {
-        /// Run tag to distill
-        #[arg(short, long)]
-        tag: String,
+        /// Run tag to distill (required unless --all is given)
+        #[arg(short, long, required_unless_present = "all")]
+        tag: Option<String>,
         /// Write output to this file instead of stdout
         #[arg(long)]
         out: Option<std::path::PathBuf>,
@@ -318,6 +319,9 @@ pub enum Commands {
         /// Also write a self-contained dark-mode HTML artifact to this path
         #[arg(long)]
         html: Option<std::path::PathBuf>,
+        /// Aggregate across ALL runs instead of a single tag
+        #[arg(long, conflicts_with = "tag")]
+        all: bool,
     },
 
     /// Re-verify an experiment by providing a new metric value from a re-run.

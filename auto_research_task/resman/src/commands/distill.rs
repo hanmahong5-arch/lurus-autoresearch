@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::html::{BadgeKind, badge, html_escape, trend_svg};
 use crate::model::{Direction, Experiment, RunLog, Status};
-use crate::store::{load_run, load_run_or_suggest, truncate};
+use crate::store::{load_all_runs, load_run, load_run_or_suggest, truncate};
 
 // ---------------------------------------------------------------------------
 // Report data types
@@ -303,6 +303,35 @@ fn build_suggestions(
     tag: &str,
 ) -> Vec<String> {
     let mut suggestions: Vec<String> = Vec::new();
+
+    // --- Verified-gap suggestions (highest priority — prepended before heuristics) ---
+    let keep_best_count = run
+        .experiments
+        .iter()
+        .filter(|e| matches!(e.status, Status::Keep | Status::Best))
+        .count();
+    let verified_count = run
+        .experiments
+        .iter()
+        .filter(|e| e.status == Status::Verified)
+        .count();
+
+    if keep_best_count >= 5 && verified_count == 0 {
+        // Rule (b): no verified at all — subsumes (a)
+        suggestions.push(format!(
+            "No experiments have been verified yet. Pick the top {keep_best_count} candidates \
+             and re-run them via `resman verify` — single-seed improvements often don't reproduce."
+        ));
+    } else if let Some(b) = best_exp {
+        // Rule (a): best is unverified (not crash, not verified)
+        if b.status != Status::Verified && b.status != Status::Crash {
+            let sc = short_commit(&b.commit);
+            suggestions.push(format!(
+                "Best experiment is unverified — re-run and call \
+                 `resman verify {sc} --value <new>` to promote to verified status before you rely on it."
+            ));
+        }
+    }
 
     let oom_count = failure_signals.get("oom").map(|v| v.len()).unwrap_or(0);
     let nan_count = failure_signals
@@ -786,6 +815,315 @@ pub enum DistillFormat {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-run aggregation (resman distill --all)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossSignalExample {
+    pub tag: String,
+    pub commit: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossSignalSummary {
+    pub kind: String,
+    pub count: usize,
+    pub examples: Vec<CrossSignalExample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossTagSummary {
+    pub tag: String,
+    pub best_value: f64,
+    pub direction: String,
+    pub metric_name: String,
+    pub experiment_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossDistillReport {
+    pub generated_at: String,
+    pub total_runs: usize,
+    pub total_experiments: usize,
+    pub total_keep: usize,
+    pub total_discard: usize,
+    pub total_crash: usize,
+    pub total_verified: usize,
+    /// Top-5 failure signal kinds by count across all runs.
+    pub top_failure_signals: Vec<CrossSignalSummary>,
+    /// Top-3 tags ranked by best metric value (direction-aware per tag).
+    pub top_tags: Vec<CrossTagSummary>,
+    pub suggestions: Vec<String>,
+}
+
+pub fn build_cross_distill(runs: &[RunLog]) -> CrossDistillReport {
+    let generated_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    let total_runs = runs.len();
+    let mut total_experiments = 0usize;
+    let mut total_keep = 0usize;
+    let mut total_discard = 0usize;
+    let mut total_crash = 0usize;
+    let mut total_verified = 0usize;
+
+    // Aggregate signal counts: kind -> (total_count, Vec<(tag, commit, desc)>)
+    let mut signal_map: HashMap<&'static str, (usize, Vec<CrossSignalExample>)> = HashMap::new();
+    for kind in crate::signals::ALL_KINDS {
+        signal_map.insert(kind, (0, vec![]));
+    }
+
+    // Per-tag best values for ranking.
+    let mut tag_summaries: Vec<CrossTagSummary> = Vec::new();
+
+    // How many tags have an unverified best (for cross-distill suggestion).
+    let mut tags_with_unverified_best = 0usize;
+
+    // OOM-by-tag: tag -> oom_count (for concentration suggestion).
+    let mut oom_by_tag: Vec<(String, usize)> = Vec::new();
+
+    for run in runs {
+        let n = run.experiments.len();
+        total_experiments += n;
+        total_keep += run
+            .experiments
+            .iter()
+            .filter(|e| e.status == Status::Keep)
+            .count();
+        total_discard += run
+            .experiments
+            .iter()
+            .filter(|e| e.status == Status::Discard)
+            .count();
+        total_crash += run
+            .experiments
+            .iter()
+            .filter(|e| e.status == Status::Crash)
+            .count();
+        total_verified += run
+            .experiments
+            .iter()
+            .filter(|e| e.status == Status::Verified)
+            .count();
+
+        // Collect signals from each experiment.
+        let mut run_oom_count = 0usize;
+        for exp in &run.experiments {
+            for sig in &exp.signals {
+                let kind = sig.kind();
+                if kind == "oom" {
+                    run_oom_count += 1;
+                }
+                let entry = signal_map.entry(kind).or_insert((0, vec![]));
+                entry.0 += 1;
+                if entry.1.len() < 3 {
+                    entry.1.push(CrossSignalExample {
+                        tag: run.run_tag.clone(),
+                        commit: short_commit(&exp.commit).to_string(),
+                        description: truncate(&exp.description, 60),
+                    });
+                }
+            }
+        }
+        oom_by_tag.push((run.run_tag.clone(), run_oom_count));
+
+        // Best for this tag.
+        let direction = run
+            .metric_direction
+            .or_else(|| run.experiments.first().and_then(|e| e.metric_direction))
+            .unwrap_or(Direction::Minimize);
+        let metric_name = run
+            .metric_name
+            .clone()
+            .or_else(|| run.experiments.first().and_then(|e| e.metric_name.clone()))
+            .unwrap_or_else(|| "val_bpb".to_string());
+
+        if let Some(best) = run.best() {
+            if best.status != Status::Verified && best.status != Status::Crash {
+                tags_with_unverified_best += 1;
+            }
+            tag_summaries.push(CrossTagSummary {
+                tag: run.run_tag.clone(),
+                best_value: best.val_bpb,
+                direction: direction.as_str().to_string(),
+                metric_name,
+                experiment_count: n,
+            });
+        }
+    }
+
+    // Sort tag_summaries: each tag has its own direction — sort per tag's direction.
+    // We want the globally "best" tags first.  Since directions may differ, compare
+    // within same direction groups, then interleave. Simplification: sort by
+    // (direction, value) where for Minimize lower=better (sort asc) and
+    // Maximize higher=better (sort desc). We use a signed score:
+    // Minimize → score = -value; Maximize → score = +value. Highest score = best.
+    tag_summaries.sort_by(|a, b| {
+        let score_a = if a.direction == "minimize" {
+            -a.best_value
+        } else {
+            a.best_value
+        };
+        let score_b = if b.direction == "minimize" {
+            -b.best_value
+        } else {
+            b.best_value
+        };
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    tag_summaries.truncate(3);
+
+    // Build top-5 failure signals sorted by count desc, then kind name asc for stability.
+    let mut signal_vec: Vec<CrossSignalSummary> = signal_map
+        .into_iter()
+        .filter(|(_, (count, _))| *count > 0)
+        .map(|(kind, (count, examples))| CrossSignalSummary {
+            kind: kind.to_string(),
+            count,
+            examples,
+        })
+        .collect();
+    signal_vec.sort_by(|a, b| b.count.cmp(&a.count).then(a.kind.cmp(&b.kind)));
+    signal_vec.truncate(5);
+
+    let total_oom_start = signal_vec
+        .iter()
+        .find(|s| s.kind == "oom")
+        .map(|s| s.count)
+        .unwrap_or(0);
+
+    // --- Cross-distill suggestions ---
+    let mut suggestions: Vec<String> = Vec::new();
+
+    // Verified-gap suggestion (cross-run version).
+    if tags_with_unverified_best > 0 {
+        let total_tags_with_best = runs.iter().filter(|r| r.best().is_some()).count();
+        suggestions.push(format!(
+            "{tags_with_unverified_best} of your {total_tags_with_best} tags have unverified bests \
+             — consider re-run them via `resman verify` to confirm results."
+        ));
+    }
+
+    // OOM-concentration suggestion: if one tag accounts for >50% of all OOMs.
+    if total_oom_start >= 3 {
+        oom_by_tag.sort_by(|a, b| b.1.cmp(&a.1));
+        if let Some((top_tag, top_count)) = oom_by_tag.first()
+            && *top_count * 2 > total_oom_start
+        {
+            suggestions.push(format!(
+                "Tag `{top_tag}` accounts for {top_count}/{total_oom_start} OOMs \
+                 — likely a memory leak or misconfigured batch size in that branch."
+            ));
+        }
+    }
+
+    CrossDistillReport {
+        generated_at,
+        total_runs,
+        total_experiments,
+        total_keep,
+        total_discard,
+        total_crash,
+        total_verified,
+        top_failure_signals: signal_vec,
+        top_tags: tag_summaries,
+        suggestions,
+    }
+}
+
+pub fn render_cross_markdown(report: &CrossDistillReport) -> String {
+    let mut out = String::new();
+    out.push_str("# Distill: cross-run summary\n\n");
+    out.push_str(&format!(
+        "_Generated from {} runs, {} experiments total \
+         ({} keep, {} discard, {} crash, {} verified)._\n\n",
+        report.total_runs,
+        report.total_experiments,
+        report.total_keep,
+        report.total_discard,
+        report.total_crash,
+        report.total_verified,
+    ));
+
+    // Top tags
+    out.push_str("## Top tags by best metric\n");
+    if report.top_tags.is_empty() {
+        out.push_str("_no kept experiments across all runs_\n");
+    } else {
+        for (i, t) in report.top_tags.iter().enumerate() {
+            out.push_str(&format!(
+                "{}. **{}** — {}={:.6} ({}) — {} experiments\n",
+                i + 1,
+                t.tag,
+                t.metric_name,
+                t.best_value,
+                t.direction,
+                t.experiment_count,
+            ));
+        }
+    }
+    out.push('\n');
+
+    // Top failure signals
+    out.push_str("## Top failure signals\n");
+    if report.top_failure_signals.is_empty() {
+        out.push_str("_no failure signals recorded_\n");
+    } else {
+        for sig in &report.top_failure_signals {
+            out.push_str(&format!("### {} ({})\n", sig.kind, sig.count));
+            for ex in &sig.examples {
+                out.push_str(&format!(
+                    "- `{}` [{}] — {}\n",
+                    ex.commit, ex.tag, ex.description
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
+    // Suggestions
+    out.push_str("## Suggestions\n");
+    if report.suggestions.is_empty() {
+        out.push_str("_no mechanical suggestions — runs look healthy._\n");
+    } else {
+        for (i, s) in report.suggestions.iter().enumerate() {
+            out.push_str(&format!("{}. {}\n", i + 1, s));
+        }
+    }
+    out.push('\n');
+
+    out.push_str("---\n");
+    out.push_str(&format!(
+        "_resman distill --all v0.8 — {}_\n",
+        report.generated_at
+    ));
+    out
+}
+
+pub fn cmd_cross_distill(
+    data_dir: &Path,
+    out_path: Option<&std::path::Path>,
+    format: &DistillFormat,
+) -> Result<()> {
+    let runs = load_all_runs(data_dir)?;
+    if runs.is_empty() {
+        eprintln!("warning: no runs found in data directory");
+    }
+    let report = build_cross_distill(&runs);
+    let rendered = match format {
+        DistillFormat::Markdown => render_cross_markdown(&report),
+        DistillFormat::Json => serde_json::to_string_pretty(&report)?,
+    };
+    match out_path {
+        Some(p) => std::fs::write(p, &rendered)?,
+        None => print!("{rendered}"),
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1014,6 +1352,173 @@ mod tests {
             !html.contains("<script>alert"),
             "raw <script> tag must not appear"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Wave C tests
+    // -----------------------------------------------------------------------
+
+    /// Wave C Test 1: When best experiment is Status::Keep (unverified),
+    /// suggestions must include the unverified-best prompt.
+    #[test]
+    fn suggestions_include_unverified_best_when_best_is_keep() {
+        let run = make_run(
+            "uvtest",
+            vec![
+                make_exp("aaa11111", 1.2, Status::Keep, "baseline", None, vec![]),
+                make_exp("bbb22222", 0.8, Status::Best, "improved", None, vec![]),
+            ],
+        );
+        let report = build_distill(&run);
+        let has_verify_hint = report
+            .suggestions
+            .iter()
+            .any(|s| s.contains("unverified") && s.contains("resman verify"));
+        assert!(
+            has_verify_hint,
+            "expected unverified-best suggestion, got: {:?}",
+            report.suggestions
+        );
+        // Must reference short commit of best
+        let short = &"bbb22222"[..8];
+        let has_commit = report.suggestions.iter().any(|s| s.contains(short));
+        assert!(has_commit, "suggestion should contain short commit {short}");
+    }
+
+    /// Wave C Test 2: When ≥5 keep/best and zero verified, the bulk prompt
+    /// fires and the single-best prompt does NOT.
+    #[test]
+    fn suggestions_prefer_bulk_unverified_prompt_over_single_when_no_verified() {
+        let exps = (0..6)
+            .map(|i| {
+                make_exp(
+                    &format!("c{i}aabbcc"),
+                    1.0 - i as f64 * 0.05,
+                    Status::Keep,
+                    "desc",
+                    None,
+                    vec![],
+                )
+            })
+            .collect();
+        let run = make_run("bulktest", exps);
+        let report = build_distill(&run);
+        let bulk = report
+            .suggestions
+            .iter()
+            .any(|s| s.contains("No experiments have been verified yet"));
+        let single = report
+            .suggestions
+            .iter()
+            .any(|s| s.contains("Best experiment is unverified"));
+        assert!(bulk, "bulk prompt must fire when ≥5 keep and 0 verified");
+        assert!(!single, "single-best prompt must NOT fire when bulk fires");
+    }
+
+    /// Wave C Test 3: build_cross_distill aggregates signal counts across runs.
+    #[test]
+    fn build_cross_distill_aggregates_signals_across_runs() {
+        let run_a = make_run(
+            "run_a",
+            vec![
+                make_exp("a1", 0.0, Status::Crash, "oom1", None, vec![Signal::Oom]),
+                make_exp("a2", 0.0, Status::Crash, "oom2", None, vec![Signal::Oom]),
+            ],
+        );
+        let run_b = make_run(
+            "run_b",
+            vec![
+                make_exp("b1", 0.0, Status::Crash, "oom3", None, vec![Signal::Oom]),
+                make_exp(
+                    "b2",
+                    0.0,
+                    Status::Crash,
+                    "nan1",
+                    None,
+                    vec![Signal::NanLoss],
+                ),
+            ],
+        );
+        let report = build_cross_distill(&[run_a, run_b]);
+        // Total oom across both runs = 3
+        let oom_summary = report
+            .top_failure_signals
+            .iter()
+            .find(|s| s.kind == "oom")
+            .expect("oom must be in top signals");
+        assert_eq!(
+            oom_summary.count, 3,
+            "expected 3 OOMs across runs, got {}",
+            oom_summary.count
+        );
+        // nan_loss = 1
+        let nan_summary = report
+            .top_failure_signals
+            .iter()
+            .find(|s| s.kind == "nan_loss");
+        assert!(nan_summary.is_some());
+        assert_eq!(nan_summary.unwrap().count, 1);
+        // totals
+        assert_eq!(report.total_runs, 2);
+        assert_eq!(report.total_experiments, 4);
+        assert_eq!(report.total_crash, 4);
+    }
+
+    /// Wave C Test 4: build_cross_distill ranks tags by direction.
+    /// Minimize tag: lower is better. Maximize tag: higher is better.
+    #[test]
+    fn build_cross_distill_ranks_tags_by_direction() {
+        let mut run_min = make_run(
+            "min_tag",
+            vec![
+                make_exp("m1", 0.5, Status::Best, "best-min", None, vec![]),
+                make_exp("m2", 0.9, Status::Keep, "worse", None, vec![]),
+            ],
+        );
+        run_min.metric_direction = Some(Direction::Minimize);
+
+        let mut run_max = make_run(
+            "max_tag",
+            vec![
+                make_exp("x1", 0.95, Status::Best, "best-max", None, vec![]),
+                make_exp("x2", 0.5, Status::Keep, "worse", None, vec![]),
+            ],
+        );
+        run_max.metric_direction = Some(Direction::Maximize);
+
+        let report = build_cross_distill(&[run_min, run_max]);
+        // max_tag has best_value=0.95 with maximize => score=+0.95
+        // min_tag has best_value=0.5 with minimize => score=-0.5
+        // Highest score first: max_tag before min_tag
+        assert!(!report.top_tags.is_empty());
+        assert_eq!(
+            report.top_tags[0].tag, "max_tag",
+            "maximize tag with 0.95 should rank first"
+        );
+        assert_eq!(report.top_tags[1].tag, "min_tag");
+    }
+
+    /// Wave C Test 5: render_cross_markdown contains the Top failure signals section.
+    #[test]
+    fn render_cross_markdown_contains_top_failures_section() {
+        let run = make_run(
+            "sigrun",
+            vec![
+                make_exp("x1", 0.0, Status::Crash, "oom run", None, vec![Signal::Oom]),
+                make_exp("x2", 0.8, Status::Keep, "good run", None, vec![]),
+            ],
+        );
+        let report = build_cross_distill(&[run]);
+        let md = render_cross_markdown(&report);
+        assert!(
+            md.contains("## Top failure signals"),
+            "must have '## Top failure signals'"
+        );
+        assert!(
+            md.contains("## Top tags by best metric"),
+            "must have '## Top tags by best metric'"
+        );
+        assert!(md.contains("oom"), "oom must appear in cross markdown");
     }
 
     /// HTML Test 5: output contains no HTTP references and has exactly one <style> block.
