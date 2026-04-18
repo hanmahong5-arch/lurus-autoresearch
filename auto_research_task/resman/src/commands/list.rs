@@ -6,7 +6,7 @@ use regex::Regex;
 use crate::cli::{OutputFormat, SortField};
 use crate::error::Result;
 use crate::model::{Experiment, RunLog, Status};
-use crate::store::{load_all_runs, require_run, truncate};
+use crate::store::{load_all_runs, load_run_or_suggest, truncate};
 
 pub struct ListOpts<'a> {
     pub status_filter: Option<&'a str>,
@@ -31,7 +31,7 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
         signal_filters,
     } = opts;
     let runs = match tag {
-        Some(t) => vec![require_run(data_dir, t)?],
+        Some(t) => vec![load_run_or_suggest(data_dir, t)?],
         None => load_all_runs(data_dir)?,
     };
     if runs.is_empty() {
@@ -137,12 +137,14 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
             );
             println!("{}", "-".repeat(96));
             for (i, (e, _)) in tagged.iter().enumerate() {
+                let glyph = crate::term::status_glyph(&e.status);
                 println!(
-                    "{:>4}  {:>10.6}  {:>7.1}  {:>8}  {:>8}  {}",
+                    "{:>4}  {:>10.6}  {:>7.1}  {:>8}  {} {:<6}  {}",
                     i + 1,
                     e.val_bpb,
                     e.memory_gb,
                     e.commit,
+                    glyph,
                     e.status,
                     truncate(&e.description, 50)
                 );

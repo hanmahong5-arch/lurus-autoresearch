@@ -18,6 +18,10 @@ pub struct Cli {
     #[arg(short = 'D', long, global = true)]
     pub data_dir: Option<PathBuf>,
 
+    /// Disable ANSI color output (also respected via NO_COLOR env var)
+    #[arg(long, global = true)]
+    pub no_color: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -43,9 +47,19 @@ pub enum SortField {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Initialize a resman data directory
+    ///
+    /// Creates the `runs/` subdirectory that all other commands read from.
+    /// Run this once before `import` or `add`.
+    ///
+    /// Example: `resman init` (uses default data dir)
     Init { path: Option<PathBuf> },
 
     /// Import a results.tsv file from an autoresearch run
+    ///
+    /// Reads a tab-separated results file and stores it as a named run (tag).
+    /// Re-importing with `--force` replaces the existing run atomically.
+    ///
+    /// Example: `resman import run.tsv -t apr17`
     Import {
         /// Path to results.tsv
         path: PathBuf,
@@ -64,6 +78,11 @@ pub enum Commands {
     },
 
     /// Append a single experiment to a run (agent-friendly, no TSV needed)
+    ///
+    /// Use this inside agent loops: one `resman add` call per training run.
+    /// The run tag is created on first use; subsequent calls append to it.
+    ///
+    /// Example: `resman add -t apr17 -c abc1234 -v 0.985 -s keep -d "lr=0.01"`
     Add {
         /// Run tag to append to (created if it doesn't exist)
         #[arg(short, long)]
@@ -134,9 +153,17 @@ pub enum Commands {
     Mcp,
 
     /// Parse training logs to extract val_bpb and stats (glob supported)
+    ///
+    /// Scans one or more log files for metric lines and prints a summary.
+    /// Supports shell globs: `resman parse-log "logs/*.log"`.
     ParseLog { pattern: String },
 
     /// List experiments across runs
+    ///
+    /// Shows kept experiments sorted by metric (best first). Use `--status all`
+    /// to include discards and crashes. Supports grep, top-N, and signal filters.
+    ///
+    /// Example: `resman list --top 5 -o json | jq '.[0].val_bpb'`
     List {
         /// Filter by status (keep/discard/crash/best/all). Default: kept-only
         #[arg(short, long)]
@@ -184,6 +211,11 @@ pub enum Commands {
     },
 
     /// Compare best experiments across multiple runs
+    ///
+    /// Prints a side-by-side summary of the best result from each named run.
+    /// Omit run tags to compare all runs in the data directory.
+    ///
+    /// Example: `resman compare apr17 apr18 -o table`
     Compare {
         run_tags: Vec<String>,
         #[arg(short = 'o', long, default_value = "table")]
@@ -191,6 +223,11 @@ pub enum Commands {
     },
 
     /// Generate an HTML report with SVG trend chart
+    ///
+    /// Writes a self-contained HTML file with a trend chart of all kept runs.
+    /// Open it in any browser — no server, no internet, no JS frameworks.
+    ///
+    /// Example: `resman report /tmp/report.html --title "Week 3"`
     Report {
         output: PathBuf,
         /// Report title (default: "Research Experiment Report")
@@ -199,6 +236,11 @@ pub enum Commands {
     },
 
     /// Export all data as JSON
+    ///
+    /// Dumps every run log to a single JSON array. Useful for backup, migration,
+    /// or feeding a downstream analysis script.
+    ///
+    /// Example: `resman export all.json`
     Export { output: PathBuf },
 
     /// Watch results.tsv and auto-import on change
@@ -217,6 +259,11 @@ pub enum Commands {
     },
 
     /// Show stats: mean/std, improvement rate, crash rate, etc.
+    ///
+    /// Computes aggregate statistics over all kept experiments in a run.
+    /// Use `--tag` to restrict to a single run; omit for a cross-run summary.
+    ///
+    /// Example: `resman stats --tag apr17`
     Stats {
         /// Restrict to a single run tag
         #[arg(short, long)]

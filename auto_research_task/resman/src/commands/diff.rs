@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::cli::OutputFormat;
 use crate::error::{Error, Result};
 use crate::model::{Experiment, RunLog};
-use crate::store::require_run;
+use crate::store::load_run_or_suggest;
 
 // ---------------------------------------------------------------------------
 // Core data types
@@ -91,8 +91,8 @@ pub fn diff_summary_text(
         )));
     }
 
-    let run_a = require_run(data_dir, tag_a)?;
-    let run_b = require_run(data_dir, tag_b)?;
+    let run_a = load_run_or_suggest(data_dir, tag_a)?;
+    let run_b = load_run_or_suggest(data_dir, tag_b)?;
 
     if run_a.experiments.is_empty() || run_b.experiments.is_empty() {
         return Err(Error::Empty);
@@ -203,8 +203,8 @@ pub fn cmd_diff(
         )));
     }
 
-    let run_a = require_run(data_dir, tag_a)?;
-    let run_b = require_run(data_dir, tag_b)?;
+    let run_a = load_run_or_suggest(data_dir, tag_a)?;
+    let run_b = load_run_or_suggest(data_dir, tag_b)?;
 
     if run_a.experiments.is_empty() || run_b.experiments.is_empty() {
         return Err(Error::Empty);

@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::cli::OutputFormat;
 use crate::error::Result;
 use crate::model::{Experiment, RunLog};
-use crate::store::require_run;
+use crate::store::load_run_or_suggest;
 
 // ---------------------------------------------------------------------------
 // Forest data structures (pub(crate) for tests)
@@ -228,7 +228,7 @@ fn render_root_table(
 // ---------------------------------------------------------------------------
 
 pub fn tree_text(data_dir: &Path, tag: &str, highlight_best: bool) -> Result<String> {
-    let run = require_run(data_dir, tag)?;
+    let run = load_run_or_suggest(data_dir, tag)?;
     let forest = build_forest(&run);
     let total = run.experiments.len();
     let n_roots = forest.roots.len();
@@ -255,7 +255,7 @@ pub fn cmd_tree(
     highlight_best: bool,
     format: &OutputFormat,
 ) -> Result<()> {
-    let run = require_run(data_dir, tag)?;
+    let run = load_run_or_suggest(data_dir, tag)?;
     let forest = build_forest(&run);
 
     match format {

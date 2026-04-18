@@ -6,6 +6,7 @@ mod logtail;
 mod model;
 mod signals;
 mod store;
+mod term;
 
 use std::process::ExitCode;
 
@@ -16,6 +17,7 @@ use store::default_data_dir;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    term::init(cli.no_color);
     let data_dir = cli.data_dir.unwrap_or_else(default_data_dir);
 
     let result = match cli.command {

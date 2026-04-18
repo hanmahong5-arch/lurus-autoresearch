@@ -84,14 +84,17 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
         }
         OutputFormat::Table => {
             println!(
-                "{:<20}  {:>10}  {:>7}  {:>5}  {:>7}  top_description",
+                "{:<20}  {:>10}  {:>7}  {:>5}  {:>7}  st  top_description",
                 "run", col_label, "mem_gb", "kept", "crashed"
             );
-            println!("{}", "-".repeat(92));
+            println!("{}", "-".repeat(97));
             for r in &filtered {
                 let best = r.best();
+                let glyph = best
+                    .map(|e| crate::term::status_glyph(&e.status))
+                    .unwrap_or_else(|| "  ".to_string());
                 println!(
-                    "{:<20}  {:>10.6}  {:>7.1}  {:>5}  {:>7}  {}",
+                    "{:<20}  {:>10.6}  {:>7.1}  {:>5}  {:>7}  {}  {}",
                     truncate(&r.run_tag, 20),
                     best.map(|e| e.val_bpb).unwrap_or(0.0),
                     best.map(|e| e.memory_gb).unwrap_or(0.0),
@@ -100,6 +103,7 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
                         .iter()
                         .filter(|e| e.status == Status::Crash)
                         .count(),
+                    glyph,
                     truncate(best.map(|e| e.description.as_str()).unwrap_or("—"), 30)
                 );
             }

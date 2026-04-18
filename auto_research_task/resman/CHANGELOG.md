@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] — v0.8 in progress
+
+v0.7 closed the agent-facing feature set (signals, distill, verify, composite).
+v0.8 turns attention to the **human** sitting next to the agent — the person
+who reads overnight results at 9am, shares a report with a manager, or debugs
+why a run went sideways. Resman has always been a terminal-first tool; v0.8
+makes the terminal a *nice place to be*, and promotes `distill` from a text
+artifact to something you can email.
+
+### Added (Wave A — terminal UX polish)
+- **ANSI color output** on human-readable paths (`list`/`best -o table`/
+  `compare -o table`/`distill` markdown/`verify` success). Status glyphs
+  now colorize: `Keep` ✓ green · `Best` ★ bold cyan · `Discard` · dim ·
+  `Crash` ✗ red · `Verified` ✔ bold green.
+- **`--no-color` global flag** and **`NO_COLOR` env var** both disable
+  color. Stdout-is-not-a-TTY defaults to no color (via stdlib
+  `std::io::IsTerminal`, no new dep).
+- **"Did you mean?" suggestions** on missing tags. `resman list --tag apr1`
+  now prints `error: tag 'apr1' not found. Did you mean: apr17, apr18?`
+  — prefix match first, Levenshtein ≤ 2 fallback. Hooked into `list`,
+  `distill`, `verify`, `tree`, `diff`. Create-if-missing paths (`add`,
+  `import`, `watch`) unchanged.
+- **`long_about` help text** on `Init`/`Import`/`Add`/`ParseLog`/`List`/
+  `Compare`/`Report`/`Export`/`Stats` — every subcommand now has a
+  "when to use" sentence and, where meaningful, a one-line shell example.
+
+### Invariants preserved
+- `resman best -f value` output is **byte-identical** to v0.7 — a single
+  float + newline, no ANSI, even on a TTY with color enabled. The public
+  shell-script API is untouched.
+- `-o json` and `-o tsv` outputs never contain ANSI escapes. Colors are
+  table / markdown / human-readable stderr only.
+- MCP server output (`src/commands/mcp.rs`) is untouched — agent-facing
+  JSON-RPC stays structured and unambiguous.
+- No new Cargo dependencies.
+
+### Not yet in this branch
+- Wave B (distill `--html` — self-contained HTML artifact) and
+  Wave C (Verified-aware suggestions, `DivergedLoss`/`SlowMfu` signals,
+  cross-run clustering) will land before v0.8 tags.
+
 ## [0.7.0] — Reproducibility + composite scoring
 
 v0.6 gave agents structured failure signals. v0.7 gives them

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 use crate::model::{Direction, Status};
-use crate::store::{load_all_runs, load_run, save_run};
+use crate::store::{load_all_runs, load_run, load_run_or_suggest, save_run};
 
 pub struct VerifyOpts<'a> {
     pub commit: &'a str,
@@ -31,12 +31,7 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
 
     // Collect candidate (run_tag, experiment_index) pairs whose commit starts with `opts.commit`.
     let runs = match opts.tag {
-        Some(t) => match load_run(data_dir, t)? {
-            Some(r) => vec![r],
-            None => {
-                return Err(Error::Custom(format!("no such tag: {}", opts.tag.unwrap())));
-            }
-        },
+        Some(t) => vec![load_run_or_suggest(data_dir, t)?],
         None => load_all_runs(data_dir)?,
     };
 
@@ -109,10 +104,11 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
 
         let dir_str = direction.as_str();
         let action = if re_verify { "re-verified" } else { "verified" };
+        let verified_glyph = crate::term::status_glyph(&crate::model::Status::Verified);
         let status_transition = if re_verify {
-            "verified → verified".to_string()
+            format!("verified → verified {verified_glyph}")
         } else {
-            format!("{old_status} → verified")
+            format!("{old_status} → verified {verified_glyph}")
         };
 
         Ok(format!(

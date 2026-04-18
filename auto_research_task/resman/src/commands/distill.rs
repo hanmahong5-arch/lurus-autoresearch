@@ -10,9 +10,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::model::{Direction, Experiment, RunLog, Status};
-use crate::store::{load_run, truncate};
+use crate::store::{load_run, load_run_or_suggest, truncate};
 
 // ---------------------------------------------------------------------------
 // Report data types
@@ -76,14 +76,8 @@ pub struct DistillReport {
 // Builder
 // ---------------------------------------------------------------------------
 
-fn status_glyph(s: Status) -> &'static str {
-    match s {
-        Status::Keep => "✓",
-        Status::Best => "★",
-        Status::Discard => "✗",
-        Status::Crash => "💥",
-        Status::Verified => "✔",
-    }
+fn status_glyph(s: Status) -> String {
+    crate::term::status_glyph(&s)
 }
 
 fn short_commit(c: &str) -> &str {
@@ -521,9 +515,7 @@ pub fn cmd_distill(
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
 ) -> Result<()> {
-    let run = load_run(data_dir, tag)?.ok_or_else(|| {
-        Error::NotFound(crate::store::runs_dir(data_dir).join(format!("{tag}.json")))
-    })?;
+    let run = load_run_or_suggest(data_dir, tag)?;
 
     let report = build_distill(&run);
 

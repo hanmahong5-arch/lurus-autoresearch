@@ -24,6 +24,9 @@ pub enum Error {
     #[error("run tag `{0}` already exists; use --force to overwrite")]
     DuplicateTag(String),
 
+    #[error("tag '{tag}' not found{hint}")]
+    TagNotFound { tag: String, hint: String },
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
