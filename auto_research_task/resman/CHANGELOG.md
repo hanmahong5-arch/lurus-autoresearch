@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1] — CI hotfix
+
+v0.6.0's tag push failed CI at the `cargo fmt --check` gate
+(`src/commands/distill.rs` was committed unformatted). No release
+artifacts were produced under `resman-v0.6.0`, so v0.6.1 is the
+effective first public v0.6 release. No code changes beyond running
+`cargo fmt` on `distill.rs` — logic, tests, and CLI/MCP surface
+identical to the v0.6.0 tree.
+
 ## [0.6.0] — Typed crash signals
 
 v0.3 added `crash_excerpt` — a raw log tail stored on crashes. Useful as
