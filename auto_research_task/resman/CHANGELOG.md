@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.7.0] — Reproducibility + composite scoring
+
+v0.6 gave agents structured failure signals. v0.7 gives them
+**reproducibility as a first-class property** plus a multi-dim "which
+experiment should I resume from?" ranker. Two additions:
+
+1. A new `Status::Verified` that can only be set via `resman verify`
+   after a successful reproduction.
+2. An opt-in `resman best --composite` that blends metric quality with
+   verification status, lineage depth, and description richness.
+
+### Added
+- **`Status::Verified`** — a seventh status variant. Cannot be set
+  manually via `add -s verified` (the CLI rejects it with a clear
+  error); only `resman verify` can promote an experiment into this
+  state. Preserves the "verified means actually re-run" invariant.
+- **`resman verify <commit> --value <new_value> [--tolerance 0.01] [--tag <t>]`**
+  — directional, tolerance-based promotion. For Minimize runs, new
+  must be ≤ original + tolerance; for Maximize, new must be ≥ original
+  − tolerance. On pass: status → Verified and val_bpb is updated to
+  the new measurement. On fail: stored record untouched, print a clear
+  "not verified" summary (exit 0 — a failed reproduction is a
+  legitimate result, not an error). Re-verify of an already-Verified
+  experiment is allowed (re-reverify). Crash experiments are refused
+  (nothing to reproduce). Accepts short-hash prefixes; ambiguous
+  matches error with the candidate list.
+- **`resman_verify` MCP tool** — same inputs, same text body. Intended
+  to be called by the agent harness after a reproduction run.
+- **`resman best --composite`** — opt-in multi-dim scoring. Formula:
+  `0.5 × metric + 0.2 × verified + 0.2 × lineage + 0.1 × desc`. Every
+  subscore in [0, 1]:
+  - `metric` = run-local normalization of val_bpb by direction
+  - `verified` = Verified 1.0 · Best 0.5 · Keep 0.3 · Discard/Crash 0.0
+  - `lineage` = min(depth/5, 1.0) where depth walks `parent_commit`
+    back to a root
+  - `desc` = min(len/80, 1.0)
+  Weights are fixed in v0.7 (tune in v0.8 once we have usage data).
+  Tiebreak on metric, then insertion order.
+- **`composite: true` on `resman_best` MCP tool** — same behavior. The
+  MCP `instructions` field names it as the preferred "resume-from-here"
+  selector.
+
+### Changed
+- `resman best` default path is **byte-identical to v0.6** — no
+  scoring runs unless `--composite` is passed. Existing shell scripts
+  calling `resman best -f value` keep working unchanged. This is a
+  non-negotiable invariant; see CLAUDE.md.
+- When `--composite` is set, `-f table` appends a subscore breakdown,
+  `-f json` adds a `composite` object, `-f tsv` appends five columns,
+  `-f value` prints the composite score as the single float.
+
+### Not in scope (deferred)
+- Exposing composite weights on the CLI. They're hardcoded in v0.7 —
+  we'll tune them with real user runs before v0.8.
+- `Status::Verified` in `resman distill` (the status glyph is
+  updated; the suggestion-rules don't yet weight verified runs
+  specially).
+- `DivergedLoss` and `SlowMfu` signal variants — still deferred to
+  v0.8 alongside multi-pass log parsing.
+
+### Migration
+None. v0.3–v0.6 JSON stores load unchanged. The `status` field accepts
+`verified` as an input when decoding but the CLI is the only producer.
+
 ## [0.6.1] — CI hotfix
 
 v0.6.0's tag push failed CI at the `cargo fmt --check` gate

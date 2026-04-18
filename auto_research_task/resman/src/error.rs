@@ -35,6 +35,9 @@ pub enum Error {
 
     #[error(transparent)]
     Glob(#[from] glob::PatternError),
+
+    #[error("{0}")]
+    Custom(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

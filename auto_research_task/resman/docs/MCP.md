@@ -1,6 +1,6 @@
 # resman as an MCP server
 
-**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets nine tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill` — without ever seeing resman's CLI in its context window.
+**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets ten tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill`, `resman_verify` — without ever seeing resman's CLI in its context window.
 
 ## Why this matters
 
@@ -70,6 +70,9 @@ Expected client messages: `initialize` → `notifications/initialized` (no reply
 | `resman_lineage` *(v0.4)* | When planning a new experiment — walks the `parent_commit` graph so the agent knows which chains converged vs. dead-ended. |
 | `resman_find_by_signal` *(v0.6)* | When triaging failures — "how many OOMs overnight?" Filters by typed crash signal (`oom`, `cuda_error`, `nan_loss`, `assert_fail`, `timeout`, `unknown`). |
 | `resman_distill` *(v0.6)* | End of session — "what did we learn last night?" Returns a structured Markdown (or JSON) summary: best, lineage, failure clusters, unexplored neighbors, heuristic suggestions. The preferred long-term-memory artifact. |
+| `resman_verify` *(v0.7)* | After re-running an experiment — pass `{commit, value, tolerance?}` to promote it to `status=verified` if the new measurement is within tolerance of the original (directional by metric direction). |
+
+`resman_best` also accepts `composite: true` *(v0.7)* to rank by a multi-dim score (metric + verification + lineage + description) rather than raw metric. Preferred when the agent asks "which experiment should I resume from?".
 
 The `instructions` field in the `initialize` response tells the LLM exactly this, so well-behaved agents call the right tools at the right times without bespoke prompt engineering.
 

@@ -11,11 +11,12 @@ pub enum Status {
     Discard,
     Crash,
     Best,
+    Verified,
 }
 
 impl Status {
     pub fn is_kept(self) -> bool {
-        matches!(self, Status::Keep | Status::Best)
+        matches!(self, Status::Keep | Status::Best | Status::Verified)
     }
 
     pub fn as_str(self) -> &'static str {
@@ -24,6 +25,7 @@ impl Status {
             Status::Discard => "discard",
             Status::Crash => "crash",
             Status::Best => "best",
+            Status::Verified => "verified",
         }
     }
 }
@@ -42,6 +44,7 @@ impl FromStr for Status {
             "discard" | "d" | "drop" | "revert" => Ok(Status::Discard),
             "crash" | "c" | "fail" | "oom" => Ok(Status::Crash),
             "best" | "b" => Ok(Status::Best),
+            "verified" | "v" => Ok(Status::Verified),
             other => Err(crate::error::Error::InvalidStatus(other.to_string())),
         }
     }

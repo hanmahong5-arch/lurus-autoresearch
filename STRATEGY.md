@@ -119,12 +119,14 @@ Completed in v0.2 / v0.3 / v0.4 / v0.5 / v0.6:
 7. ✅ **v0.5 — schema generalization**: `Direction` enum + optional `metric_name` / `metric_direction` on Experiment+RunLog, effective-name cascade. Purely additive. Opens TAM beyond karpathy nanoGPT.
 8. ✅ **v0.6 — typed signals + distill MVP**: `Signal` enum (Oom, CudaError, NanLoss, AssertFail, Timeout, Unknown) + regex `classify(tail)`; `add --log` classifies regardless of status; `list --signal <kind>` filters; `resman distill -t <tag>` emits structured Markdown/JSON summary (best + lineage + failure clusters + unexplored neighbors + heuristic suggestions, no LLM). MCP mirrors: `resman_find_by_signal`, `resman_distill`, `log_tail` on `resman_add_experiment`.
 
+9. ✅ Tagged v0.6.1 → CI publishes Linux/macOS/Windows binaries (v0.6.0 tag hit fmt-check; v0.6.1 is the effective release).
+10. ✅ **v0.7 — `Status::Verified` + `resman verify` + opt-in composite `best`**: reproducibility promotion via tolerance-based comparison (no orchestration — caller provides the new value); `best --composite` blends metric + verified + lineage + desc. Default `best` unchanged — shell-script API preserved. Mirrored as `resman_verify` MCP tool + `composite` param on `resman_best`.
+
 Up next (v1.0 roadmap):
-9. Tag v0.6.0 → CI publishes Linux/macOS/Windows binaries → publish to crates.io.
-10. **v0.7 — composite `best` + `Status::Verified`**: multi-dim scoring rubric (GDI-inspired); `resman verify <commit>` reproduces and promotes. Add deferred signal variants (`DivergedLoss`, `SlowMfu`) once sufficient workload data informs thresholds.
-11. **v0.8 — distill GA**: richer templates, cross-run clustering, full exploitation of signals + verified + lineage. `resman_distill` becomes the canonical agent long-term memory interface.
-12. **v1.0**: schema freeze, reposition as "memory layer for agent training loops"; long-form launch blog post.
-13. Only after v1.0: the team-sync backend as a separate repo.
+11. Tag v0.7.0 → CI publishes binaries → update crates.io.
+12. **v0.8 — distill GA**: richer templates, cross-run clustering, full exploitation of signals + verified + lineage. Tune composite weights from v0.7 usage data. Add deferred signal variants (`DivergedLoss`, `SlowMfu`) once sufficient workload data informs thresholds.
+13. **v1.0**: schema freeze, reposition as "memory layer for agent training loops"; long-form launch blog post.
+14. Only after v1.0: the team-sync backend as a separate repo.
 
 ## What would make us wrong
 

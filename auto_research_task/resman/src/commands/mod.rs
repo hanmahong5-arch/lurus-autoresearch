@@ -14,4 +14,5 @@ pub mod report;
 pub mod search;
 pub mod stats;
 pub mod tree;
+pub mod verify;
 pub mod watch;

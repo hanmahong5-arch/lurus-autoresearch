@@ -93,9 +93,11 @@ fn main() -> ExitCode {
                 signal_filters: &signal,
             },
         ),
-        Commands::Best { tag, format } => {
-            commands::best::cmd_best(&data_dir, tag.as_deref(), &format)
-        }
+        Commands::Best {
+            tag,
+            format,
+            composite,
+        } => commands::best::cmd_best(&data_dir, tag.as_deref(), &format, composite),
         Commands::Compare { run_tags, format } => {
             commands::compare::cmd_compare(&data_dir, &run_tags, &format)
         }
@@ -124,6 +126,20 @@ fn main() -> ExitCode {
         Commands::Distill { tag, out, format } => {
             commands::distill::cmd_distill(&data_dir, &tag, out.as_deref(), &format)
         }
+        Commands::Verify {
+            commit,
+            value,
+            tolerance,
+            tag,
+        } => commands::verify::cmd_verify(
+            &data_dir,
+            commands::verify::VerifyOpts {
+                commit: &commit,
+                new_value: value,
+                tolerance,
+                tag: tag.as_deref(),
+            },
+        ),
     };
 
     match result {

@@ -31,6 +31,11 @@ pub struct AddOpts<'a> {
 
 pub fn cmd_add(data_dir: &Path, opts: AddOpts<'_>) -> Result<()> {
     let status = Status::from_str(opts.status)?;
+    if status == Status::Verified {
+        return Err(crate::error::Error::Custom(
+            "status 'verified' can only be set via `resman verify`".to_string(),
+        ));
+    }
 
     // Parse metric_direction early so we fail fast on bad input.
     let parsed_direction: Option<Direction> =
@@ -172,6 +177,40 @@ mod tests {
     use super::*;
     use crate::signals::Signal;
     use crate::store::load_run;
+
+    #[test]
+    fn add_rejects_verified_status() {
+        let data_dir = std::env::temp_dir().join("resman_test_add_no_verified");
+        std::fs::create_dir_all(crate::store::runs_dir(&data_dir)).unwrap();
+
+        let result = cmd_add(
+            &data_dir,
+            AddOpts {
+                tag: "test_verified",
+                commit: "abc999",
+                val_bpb: 0.9,
+                memory_gb: 0.0,
+                status: "verified",
+                description: "should be rejected",
+                params: &[],
+                parent: None,
+                log: None,
+                no_gpu_probe: true,
+                metric_name: None,
+                metric_direction: None,
+                preclassified_signals: None,
+            },
+        );
+
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("resman verify"),
+            "expected helpful error pointing to resman verify, got: {msg}"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
 
     #[test]
     fn add_classifies_log_on_crash() {

@@ -82,6 +82,7 @@ fn status_glyph(s: Status) -> &'static str {
         Status::Best => "★",
         Status::Discard => "✗",
         Status::Crash => "💥",
+        Status::Verified => "✔",
     }
 }
 

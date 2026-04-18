@@ -177,6 +177,10 @@ pub enum Commands {
         /// Output format: table (default), value (just val_bpb), json
         #[arg(short, long, default_value = "table")]
         format: String,
+        /// Use composite scoring (metric + verification + lineage + description).
+        /// Default false — plain metric ranking unchanged.
+        #[arg(long, default_value_t = false)]
+        composite: bool,
     },
 
     /// Compare best experiments across multiple runs
@@ -264,5 +268,25 @@ pub enum Commands {
         /// Output format: markdown (default) or json
         #[arg(short = 'o', long, default_value = "markdown")]
         format: crate::commands::distill::DistillFormat,
+    },
+
+    /// Re-verify an experiment by providing a new metric value from a re-run.
+    ///
+    /// If the new value is within tolerance in the expected direction,
+    /// the experiment is promoted to status `verified` and val_bpb is updated.
+    /// Does NOT orchestrate training — you run the experiment yourself and pass
+    /// the result in via --value.
+    Verify {
+        /// Full or short commit hash to verify (prefix match)
+        commit: String,
+        /// New metric value from the re-run
+        #[arg(short = 'v', long)]
+        value: f64,
+        /// Absolute tolerance (default 0.01)
+        #[arg(short = 't', long, default_value_t = 0.01)]
+        tolerance: f64,
+        /// Restrict search to this run tag (optional)
+        #[arg(long)]
+        tag: Option<String>,
     },
 }

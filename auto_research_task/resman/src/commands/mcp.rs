@@ -127,11 +127,13 @@ fn initialize_result() -> Value {
         "instructions": concat!(
             "Use these tools to record and query ML training experiments. ",
             "Call `resman_best` before starting an experiment to know the current baseline. ",
+            "Pass `composite: true` to get a multi-dim 'resume-from-here' score (metric + verification + lineage + description). ",
             "Call `resman_search` before trying an idea — it may already have been attempted. ",
             "Call `resman_add_experiment` after every run (keep, discard, or crash). ",
             "Tags group experiments into a session (e.g. `apr17-overnight`). ",
             "Metrics can be any name via `metric_name`; set `metric_direction` to `max` for higher-better metrics like accuracy. ",
             "If you have the last ~50 lines of the training log, pass it as `log_tail` in `resman_add_experiment` and resman will auto-classify crash signals (OOM, NaN, etc.). ",
+            "Call `resman_verify` after a reproduction run to promote the experiment to verified if within tolerance. ",
             "At the end of a session, call `resman_distill` — it is the preferred end-of-session summary tool and gives the agent structured memory of what happened without reading every experiment."
         ),
     })
@@ -145,7 +147,8 @@ fn tool_manifest() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "tag": { "type": "string", "description": "Optional: restrict to a single run tag." }
+                    "tag": { "type": "string", "description": "Optional: restrict to a single run tag." },
+                    "composite": { "type": "boolean", "default": false, "description": "Pass true to get a multi-dim 'resume-from-here' score (metric + verification + lineage + description) instead of plain metric ranking." }
                 }
             }
         },
@@ -255,6 +258,20 @@ fn tool_manifest() -> Value {
                     "format": { "type": "string", "enum": ["markdown", "json"], "description": "Output format. Default markdown." }
                 }
             }
+        },
+        {
+            "name": "resman_verify",
+            "description": "Re-verify an experiment by providing a re-run's metric value. If within tolerance in the expected direction, promotes the experiment's status to 'verified' and updates val_bpb. Does not orchestrate training — caller provides the new value.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["commit", "value"],
+                "properties": {
+                    "commit": { "type": "string", "description": "Full or short commit hash of the experiment to verify." },
+                    "value":  { "type": "number", "description": "The new metric value from the re-run." },
+                    "tolerance": { "type": "number", "description": "Absolute tolerance. Default 0.01." },
+                    "tag":    { "type": "string", "description": "Optional: restrict search to this run tag." }
+                }
+            }
         }
     ])
 }
@@ -279,14 +296,21 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
         "resman_lineage" => tool_lineage(data_dir, &args),
         "resman_find_by_signal" => tool_find_by_signal(data_dir, &args),
         "resman_distill" => tool_distill(data_dir, &args),
+        "resman_verify" => tool_verify(data_dir, &args),
         other => Err(format!("unknown tool: {other}")),
     }
 }
 
 fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    use crate::commands::best::{CompositeScores, composite_candidates, lineage_depth};
     use crate::model::Direction;
 
     let tag = args.get("tag").and_then(|v| v.as_str());
+    let composite = args
+        .get("composite")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let runs = match tag {
         Some(t) => match load_run(data_dir, t).map_err(|e| e.to_string())? {
             Some(r) => vec![r],
@@ -298,7 +322,74 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
         return Ok("no experiments recorded yet.".into());
     }
 
-    // Walk runs preserving run context for direction/metric-name resolution.
+    if composite {
+        let candidates = composite_candidates(&runs);
+        if candidates.is_empty() {
+            return Ok("no kept experiments yet; start with a baseline.".into());
+        }
+        let first_dir = {
+            let (r, e) = candidates[0];
+            e.effective_direction(r)
+        };
+        let values: Vec<f64> = candidates.iter().map(|(_, e)| e.val_bpb).collect();
+        let run_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let run_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        let scored: Vec<(
+            CompositeScores,
+            &crate::model::RunLog,
+            &crate::model::Experiment,
+        )> = candidates
+            .iter()
+            .map(|(r, e)| {
+                let s = CompositeScores::compute(e, r, run_min, run_max, first_dir);
+                (s, *r, *e)
+            })
+            .collect();
+
+        let winner = scored
+            .iter()
+            .enumerate()
+            .max_by(|(i, (sa, _, _)), (j, (sb, _, _))| {
+                sa.score
+                    .partial_cmp(&sb.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        sa.metric
+                            .partial_cmp(&sb.metric)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then_with(|| j.cmp(i))
+            })
+            .map(|(_, triple)| triple);
+
+        return match winner {
+            Some((scores, run, e)) => {
+                let metric = e.effective_metric_name(run);
+                let depth = lineage_depth(e, run);
+                Ok(format!(
+                    "best (composite {:.3}): {metric}={:.6} (commit {}, memory_gb={:.1}) — {}\n  metric: {:.3}×0.5={:.3}  verified: {:.3}×0.2={:.3}  lineage: depth={} score={:.3}×0.2={:.3}  desc: {:.3}×0.1={:.3}",
+                    scores.score,
+                    e.val_bpb,
+                    e.commit,
+                    e.memory_gb,
+                    e.description,
+                    scores.metric,
+                    0.5 * scores.metric,
+                    scores.verified,
+                    0.2 * scores.verified,
+                    depth,
+                    scores.lineage,
+                    0.2 * scores.lineage,
+                    scores.desc,
+                    0.1 * scores.desc,
+                ))
+            }
+            None => Ok("no kept experiments yet; start with a baseline.".into()),
+        };
+    }
+
+    // Non-composite: original path.
     let mut global_best: Option<(&crate::model::RunLog, &crate::model::Experiment)> = None;
     for r in &runs {
         if let Some(b) = r.best() {
@@ -313,8 +404,7 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
                         Direction::Minimize => b.val_bpb < gb.val_bpb,
                         Direction::Maximize => b.val_bpb > gb.val_bpb,
                     };
-                    // Suppress the direction mismatch warning here (MCP is stdio);
-                    // the CLI best command surfaces it.
+                    // Suppress the direction mismatch warning here (MCP is stdio).
                     let _ = dir;
                     if better {
                         global_best = Some((r, b));
@@ -607,6 +697,33 @@ fn tool_distill(data_dir: &Path, args: &Value) -> std::result::Result<String, St
         .unwrap_or("markdown");
     let use_json = format_str == "json";
     super::distill::distill_to_string(data_dir, tag, use_json)
+}
+
+fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    let commit = args
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `commit`")?;
+    let new_value = args
+        .get("value")
+        .and_then(|v| v.as_f64())
+        .ok_or("missing `value`")?;
+    let tolerance = args
+        .get("tolerance")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.01);
+    let tag = args.get("tag").and_then(|v| v.as_str());
+
+    super::verify::verify_inner(
+        data_dir,
+        &super::verify::VerifyOpts {
+            commit,
+            new_value,
+            tolerance,
+            tag,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn signal_context(s: &crate::signals::Signal) -> String {
