@@ -1,8 +1,17 @@
+pub mod add;
+pub mod best;
 pub mod compare;
+pub mod diff;
+pub mod distill;
 pub mod export;
 pub mod import;
 pub mod init;
 pub mod list;
+pub mod mcp;
+pub mod near;
 pub mod parse_log;
 pub mod report;
+pub mod search;
 pub mod stats;
+pub mod tree;
+pub mod watch;

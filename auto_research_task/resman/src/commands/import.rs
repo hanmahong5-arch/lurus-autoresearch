@@ -1,16 +1,24 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 use chrono::Local;
-use std::collections::HashMap;
 
-use crate::model::{Experiment, RunLog};
+use crate::error::{Error, Result};
+use crate::model::{Direction, Experiment, RunLog, Status};
+use crate::store::{load_run, save_run};
 
-pub fn cmd_import(data_dir: &Path, tsv_path: &Path, tag_override: Option<String>) {
+pub fn cmd_import(
+    data_dir: &Path,
+    tsv_path: &Path,
+    tag_override: Option<String>,
+    force: bool,
+    metric_name: Option<String>,
+    metric_direction: Option<String>,
+) -> Result<()> {
     if !tsv_path.exists() {
-        eprintln!("TSV file not found: {}", tsv_path.display());
-        return;
+        return Err(Error::NotFound(tsv_path.to_path_buf()));
     }
 
     let run_tag = tag_override.unwrap_or_else(|| {
@@ -21,76 +29,158 @@ pub fn cmd_import(data_dir: &Path, tsv_path: &Path, tag_override: Option<String>
             .to_string()
     });
 
-    let file = File::open(tsv_path).unwrap();
-    let reader = BufReader::new(file);
-    let mut experiments = Vec::new();
-
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-    if lines.is_empty() {
-        eprintln!("Empty file");
-        return;
+    if !force && load_run(data_dir, &run_tag)?.is_some() {
+        return Err(Error::DuplicateTag(run_tag));
     }
 
-    let mut best_bpb = f64::INFINITY;
-    let mut best_idx = 0;
-    let mut crash_count = 0;
-    let mut keep_count = 0;
+    // Parse direction early for fail-fast behavior.
+    let parsed_direction: Option<Direction> = metric_direction
+        .as_deref()
+        .map(Direction::from_str)
+        .transpose()?;
 
-    for (i, line) in lines.iter().enumerate().skip(1) {
+    let content = fs::read_to_string(tsv_path)?;
+    let experiments = parse_tsv(&content)?;
+
+    if experiments.is_empty() {
+        eprintln!("warning: no data rows found in {}", tsv_path.display());
+    }
+
+    let run_log = RunLog {
+        run_tag: run_tag.clone(),
+        created_at: Local::now().to_rfc3339(),
+        experiments,
+        metric_name,
+        metric_direction: parsed_direction,
+    };
+
+    let out_path = save_run(data_dir, &run_log)?;
+
+    let n = run_log.experiments.len();
+    let kept = run_log
+        .experiments
+        .iter()
+        .filter(|e| e.status.is_kept())
+        .count();
+    let crashed = run_log
+        .experiments
+        .iter()
+        .filter(|e| e.status == Status::Crash)
+        .count();
+    println!("imported {n} experiments from {}", tsv_path.display());
+    if let Some(best) = run_log.best() {
+        println!(
+            "  best {}: {:.6}  ({})",
+            best.effective_metric_name(&run_log),
+            best.val_bpb,
+            best.commit
+        );
+    }
+    println!("  kept: {kept}  crashed: {crashed}");
+    println!("  saved: {}", out_path.display());
+    Ok(())
+}
+
+fn parse_tsv(content: &str) -> Result<Vec<Experiment>> {
+    let mut lines = content.lines().enumerate();
+    // Detect and skip header line (starts with "commit" or contains "val_bpb")
+    let first = lines.next();
+    let mut experiments = Vec::new();
+
+    let rows: Vec<(usize, &str)> = match first {
+        Some((_, first_line))
+            if first_line.starts_with("commit") || first_line.contains("val_bpb") =>
+        {
+            lines.collect()
+        }
+        Some(l) => std::iter::once(l).chain(lines).collect(),
+        None => return Ok(experiments),
+    };
+
+    for (i, line) in rows {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() {
+            continue;
+        }
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 4 {
-            continue;
+            return Err(Error::MalformedTsv {
+                line: i + 1,
+                got: cols.len(),
+            });
         }
 
         let commit = cols[0].trim().to_string();
-        let val_bpb: f64 = cols[1].trim().parse().unwrap_or(0.0);
-        let memory_gb: f64 = cols[2].trim().parse().unwrap_or(0.0);
-        let status = if cols.len() > 3 { cols[3].trim() } else { "keep" };
+        let val_bpb: f64 = cols[1].trim().parse().map_err(|_| Error::InvalidFloat {
+            line: i + 1,
+            column: "val_bpb",
+            value: cols[1].to_string(),
+        })?;
+        let memory_gb: f64 = cols[2].trim().parse().map_err(|_| Error::InvalidFloat {
+            line: i + 1,
+            column: "memory_gb",
+            value: cols[2].to_string(),
+        })?;
+        let status = Status::from_str(cols[3].trim())?;
         let description = if cols.len() > 4 {
             cols[4..].join("\t")
         } else {
             String::new()
         };
 
-        if status == "keep" || status == "best" {
-            keep_count += 1;
-        }
-        if status == "crash" {
-            crash_count += 1;
-        }
-
-        if val_bpb > 0.0 && val_bpb < best_bpb {
-            best_bpb = val_bpb;
-            best_idx = i;
-        }
-
         experiments.push(Experiment {
             commit,
             val_bpb,
             memory_gb,
-            status: status.to_string(),
+            status,
             description,
             timestamp: String::new(),
             params: HashMap::new(),
+            parent_commit: None,
+            crash_excerpt: None,
+            metric_name: None,
+            metric_direction: None,
+            signals: Vec::new(),
         });
     }
 
-    let run_log = RunLog {
-        experiments: experiments.clone(),
-        run_tag: run_tag.clone(),
-        created_at: Local::now().to_rfc3339(),
-    };
+    Ok(experiments)
+}
 
-    let runs_dir = data_dir.join("runs");
-    let _ = std::fs::create_dir_all(&runs_dir);
-    let out_path = runs_dir.join(format!("{}.json", run_tag));
-    let json = serde_json::to_string_pretty(&run_log).unwrap();
-    let _ = std::fs::write(&out_path, json);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    println!("Imported {} experiments from {}", run_log.experiments.len(), tsv_path.display());
-    if best_bpb < f64::INFINITY {
-        println!("  best val_bpb: {:.6} (experiment #{})", best_bpb, best_idx);
+    #[test]
+    fn parses_with_header() {
+        let tsv = "commit\tval_bpb\tmemory_gb\tstatus\tdescription\n\
+                   abc1234\t0.997900\t44.0\tkeep\tbaseline\n\
+                   def5678\t1.005000\t44.2\tdiscard\tGeLU activation\n";
+        let out = parse_tsv(tsv).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].commit, "abc1234");
+        assert_eq!(out[0].status, Status::Keep);
+        assert_eq!(out[1].status, Status::Discard);
     }
-    println!("  kept: {}, crashed: {}", keep_count, crash_count);
-    println!("  saved to: {}", out_path.display());
+
+    #[test]
+    fn parses_without_header() {
+        let tsv = "abc1234\t0.997900\t44.0\tkeep\tbaseline\n";
+        let out = parse_tsv(tsv).unwrap();
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn rejects_short_rows() {
+        let tsv = "commit\tval_bpb\tmemory_gb\tstatus\n\
+                   abc1234\t0.9\t44.0\n";
+        assert!(matches!(parse_tsv(tsv), Err(Error::MalformedTsv { .. })));
+    }
+
+    #[test]
+    fn preserves_tabs_in_description() {
+        let tsv = "abc\t0.9\t44.0\tkeep\thas\ttabs\there";
+        let out = parse_tsv(tsv).unwrap();
+        assert_eq!(out[0].description, "has\ttabs\there");
+    }
 }

@@ -1,13 +1,13 @@
 use std::path::Path;
 
-pub fn cmd_init(path: &Path) {
-    if let Err(e) = std::fs::create_dir_all(path) {
-        eprintln!("Failed to create directory: {}", e);
-        return;
-    }
-    if let Err(e) = std::fs::create_dir_all(path.join("runs")) {
-        eprintln!("Failed to create runs directory: {}", e);
-        return;
-    }
-    println!("Initialized resman data directory: {}", path.display());
+use crate::error::Result;
+use crate::store::ensure_initialized;
+
+pub fn cmd_init(path: &Path) -> Result<()> {
+    ensure_initialized(path)?;
+    println!("initialized resman data directory: {}", path.display());
+    println!("  runs/    — per-run experiment logs (one JSON each)");
+    println!();
+    println!("next: `resman import results.tsv` or `resman add --tag <t> ...`");
+    Ok(())
 }

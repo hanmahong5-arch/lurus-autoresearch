@@ -1,9 +1,16 @@
 [package]
 name = "resman"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2024"
-description = "Research experiment manager for autoresearch workflows"
+description = "Local-first experiment tracker for autonomous AI training agents"
 license = "MIT"
+repository = "https://github.com/kaizen-38/autoresearch"
+keywords = ["ml", "experiment-tracking", "ai-agents", "cli", "training"]
+categories = ["command-line-utilities", "science"]
+
+[[bin]]
+name = "resman"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -12,3 +19,10 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 glob = "0.3"
 regex = "1"
+anyhow = "1"
+thiserror = "2"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

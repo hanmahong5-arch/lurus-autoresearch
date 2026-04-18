@@ -1,128 +1,227 @@
+use std::fs;
 use std::path::Path;
+
 use chrono::Local;
 
-use crate::model::Experiment;
+use crate::error::Result;
+use crate::model::{Experiment, Status};
 use crate::store::load_all_runs;
 
-pub fn cmd_report(data_dir: &Path, output: &Path) {
-    let runs = load_all_runs(data_dir);
+pub fn cmd_report(data_dir: &Path, output: &Path, title: Option<&str>) -> Result<()> {
+    let runs = load_all_runs(data_dir)?;
     if runs.is_empty() {
-        eprintln!("No experiments found.");
-        return;
+        eprintln!("no experiments found.");
+        return Ok(());
     }
 
+    let title = title.unwrap_or("research experiment report");
     let all: Vec<_> = runs.iter().flat_map(|r| r.experiments.clone()).collect();
-    let kept: Vec<_> = all.iter().filter(|e| e.status == "keep" || e.status == "best").collect();
-    let crashed = all.iter().filter(|e| e.status == "crash").count();
+    let kept: Vec<_> = all.iter().filter(|e| e.status.is_kept()).collect();
+    let crashed = all.iter().filter(|e| e.status == Status::Crash).count();
 
-    let bpbs: Vec<f64> = kept.iter().map(|e| e.val_bpb).collect();
-    let best = bpbs.iter().fold(f64::INFINITY, |a, b| a.min(*b));
-    let worst = bpbs.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
-    let improvement = worst - best;
+    let bpbs: Vec<f64> = kept
+        .iter()
+        .map(|e| e.val_bpb)
+        .filter(|v| *v > 0.0)
+        .collect();
+    let best = bpbs.iter().copied().fold(f64::INFINITY, f64::min);
+    let worst = bpbs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let improvement = if worst.is_finite() && best.is_finite() {
+        worst - best
+    } else {
+        0.0
+    };
 
     let svg = build_trend_svg(&kept);
+    let rows = kept
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            format!(
+                "<tr><td>{}</td><td>{:.6}</td><td>{:.1}</td><td><code>{}</code></td><td>{}</td></tr>",
+                i + 1,
+                e.val_bpb,
+                e.memory_gb,
+                html_escape(&e.commit),
+                html_escape(&e.description)
+            )
+        })
+        .collect::<String>();
 
-    let rows: String = kept.iter().enumerate().map(|(i, e)| {
-        format!("<tr><td>{}</td><td>{:.6}</td><td>{:.1}</td><td>{}</td><td>{}</td></tr>",
-            i + 1, e.val_bpb, e.memory_gb, e.commit, e.description)
-    }).collect();
+    let run_rows = runs
+        .iter()
+        .map(|r| {
+            let b = r.best();
+            format!(
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                html_escape(&r.run_tag),
+                b.map(|e| format!("{:.6}", e.val_bpb))
+                    .unwrap_or_else(|| "—".into()),
+                r.kept().count(),
+                r.experiments
+                    .iter()
+                    .filter(|e| e.status == Status::Crash)
+                    .count(),
+            )
+        })
+        .collect::<String>();
 
-    let run_table: String = runs.iter().map(|r| {
-        let k: Vec<_> = r.experiments.iter().filter(|e| e.status == "keep" || e.status == "best").collect();
-        let b = k.iter().min_by(|a, b| a.val_bpb.partial_cmp(&b.val_bpb).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|e| e.val_bpb).unwrap_or(0.0);
-        format!("<tr><td>{}</td><td>{:.6}</td><td>{}</td></tr>", r.run_tag, b, k.len())
-    }).collect();
-
-    let html = format!(r#"<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>ResMan Report</title>
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; margin: 40px; background: #0f1115; color: #e0e0e0; }}
-h1 {{ color: #61afef; }}
-h2 {{ color: #98c379; margin-top: 40px; }}
-table {{ border-collapse: collapse; width: 100%%; margin: 20px 0; }}
-th {{ color: #c678dd; text-align: left; padding: 8px; border-bottom: 2px solid #5c6370; }}
-td {{ padding: 8px; border-bottom: 1px solid #2c313c; }}
-tr:hover {{ background: #1c1f26; }}
-.stat {{ display: inline-block; margin: 10px 20px 10px 0; }}
-.stat-val {{ font-size: 24px; color: #e5c07b; }}
-.stat-label {{ font-size: 12px; color: #888; }}
-svg {{ margin: 20px 0; }}
-</style></head><body>
-<h1>Research Experiment Report</h1>
-<p>Generated: {}</p>
+  :root {{ color-scheme: dark; }}
+  body {{ font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         margin: 0; padding: 32px; background: #0b0d10; color: #d8dee9; max-width: 1100px; }}
+  h1 {{ color: #88c0d0; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.01em; }}
+  h2 {{ color: #a3be8c; margin: 36px 0 12px; font-weight: 500; font-size: 16px;
+        text-transform: uppercase; letter-spacing: 0.08em; }}
+  .sub {{ color: #6b7280; font-size: 13px; margin-bottom: 24px; }}
+  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px; margin: 20px 0 8px; }}
+  .stat {{ background: #13161b; border: 1px solid #1f242c; border-radius: 8px; padding: 14px 16px; }}
+  .stat-val {{ font-size: 22px; color: #ebcb8b; font-variant-numeric: tabular-nums; font-weight: 600; }}
+  .stat-label {{ font-size: 11px; color: #6b7280; text-transform: uppercase;
+                 letter-spacing: 0.08em; margin-top: 4px; }}
+  table {{ border-collapse: collapse; width: 100%; margin: 12px 0; font-variant-numeric: tabular-nums; }}
+  th {{ color: #b48ead; text-align: left; padding: 8px 10px; border-bottom: 2px solid #2e3440;
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }}
+  td {{ padding: 8px 10px; border-bottom: 1px solid #1f242c; }}
+  tr:hover td {{ background: #13161b; }}
+  code {{ font: 13px ui-monospace, "Cascadia Code", monospace; color: #81a1c1; }}
+  .chart {{ background: #13161b; border: 1px solid #1f242c; border-radius: 8px; padding: 8px; }}
+  footer {{ margin-top: 48px; color: #4c566a; font-size: 12px; }}
+</style>
+</head>
+<body>
+<h1>{title}</h1>
+<div class="sub">generated {generated} · {total} experiments across {n_runs} run(s)</div>
+
 <div class="stats">
-<div class="stat"><div class="stat-val">{}</div><div class="stat-label">Total Experiments</div></div>
-<div class="stat"><div class="stat-val">{}</div><div class="stat-label">Kept</div></div>
-<div class="stat"><div class="stat-val">{}</div><div class="stat-label">Crashed</div></div>
-<div class="stat"><div class="stat-val">{:.6}</div><div class="stat-label">Best val_bpb</div></div>
-<div class="stat"><div class="stat-val">{:.6}</div><div class="stat-label">Improvement</div></div>
+  <div class="stat"><div class="stat-val">{total}</div><div class="stat-label">total</div></div>
+  <div class="stat"><div class="stat-val">{kept_n}</div><div class="stat-label">kept</div></div>
+  <div class="stat"><div class="stat-val">{crashed}</div><div class="stat-label">crashed</div></div>
+  <div class="stat"><div class="stat-val">{best_s}</div><div class="stat-label">best val_bpb</div></div>
+  <div class="stat"><div class="stat-val">{imp_s}</div><div class="stat-label">improvement</div></div>
 </div>
-<h2>Val BPB Trend</h2>
-{svg}
-<h2>All Kept Experiments</h2>
+
+<h2>val_bpb trend</h2>
+<div class="chart">{svg}</div>
+
+<h2>kept experiments</h2>
 <table><thead><tr><th>#</th><th>val_bpb</th><th>mem_gb</th><th>commit</th><th>description</th></tr></thead>
 <tbody>{rows}</tbody></table>
-<h2>Runs</h2>
-<table><thead><tr><th>Run</th><th>Best val_bpb</th><th>Kept</th></tr></thead>
-<tbody>{run_table}</tbody></table>
+
+<h2>runs</h2>
+<table><thead><tr><th>run</th><th>best_val_bpb</th><th>kept</th><th>crashed</th></tr></thead>
+<tbody>{run_rows}</tbody></table>
+
+<footer>generated by resman · local-first experiment tracker</footer>
 </body></html>"#,
-        Local::now().to_rfc3339(),
-        all.len(), kept.len(), crashed, best, improvement
+        title = html_escape(title),
+        generated = Local::now().format("%Y-%m-%d %H:%M"),
+        total = all.len(),
+        n_runs = runs.len(),
+        kept_n = kept.len(),
+        crashed = crashed,
+        best_s = if best.is_finite() {
+            format!("{best:.6}")
+        } else {
+            "—".into()
+        },
+        imp_s = if improvement > 0.0 {
+            format!("{improvement:.6}")
+        } else {
+            "—".into()
+        },
+        svg = svg,
+        rows = rows,
+        run_rows = run_rows,
     );
 
-    if let Err(e) = std::fs::write(output, html) {
-        eprintln!("Failed to write report: {}", e);
-    } else {
-        println!("HTML report written to: {}", output.display());
-    }
+    fs::write(output, html)?;
+    println!("html report written to: {}", output.display());
+    Ok(())
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn build_trend_svg(experiments: &[&Experiment]) -> String {
     if experiments.is_empty() {
-        return String::from("<p>No data</p>");
+        return "<p style='color:#6b7280'>no data</p>".into();
     }
-
     let bpbs: Vec<f64> = experiments.iter().map(|e| e.val_bpb).collect();
-    let max_bpb = bpbs.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
-    let min_bpb = bpbs.iter().fold(f64::INFINITY, |a, b| a.min(*b));
-    let range = if min_bpb == max_bpb { 1.0 } else { max_bpb - min_bpb };
+    let max = bpbs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = bpbs.iter().copied().fold(f64::INFINITY, f64::min);
+    let range = if (max - min).abs() < f64::EPSILON {
+        1.0
+    } else {
+        max - min
+    };
 
-    let w = 700.0f64;
-    let h = 300.0f64;
-    let pad_l = 60.0f64;
-    let plot_w = w - pad_l - 20.0;
-    let plot_h = h - 20.0 - 40.0;
+    let w: f64 = 1040.0;
+    let h: f64 = 280.0;
+    let pad_l: f64 = 70.0;
+    let pad_r: f64 = 20.0;
+    let pad_t: f64 = 20.0;
+    let pad_b: f64 = 32.0;
+    let plot_w = w - pad_l - pad_r;
+    let plot_h = h - pad_t - pad_b;
     let n = bpbs.len() as f64;
 
-    let points: Vec<String> = bpbs.iter().enumerate().map(|(i, b)| {
-        let x = if n > 1.0 { pad_l + (i as f64 / (n - 1.0)) * plot_w } else { pad_l + plot_w / 2.0 };
-        let y = 20.0 + (1.0 - (b - min_bpb) / range) * plot_h;
-        format!("{:.1},{:.1}", x, y)
+    let xy = |i: usize, v: f64| {
+        let x = if n > 1.0 {
+            pad_l + (i as f64 / (n - 1.0)) * plot_w
+        } else {
+            pad_l + plot_w / 2.0
+        };
+        let y = pad_t + (1.0 - (v - min) / range) * plot_h;
+        (x, y)
+    };
+
+    let points: String = bpbs
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let (x, y) = xy(i, *v);
+            format!("{x:.1},{y:.1}")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let dots: String = bpbs
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let (x, y) = xy(i, *v);
+            format!("<circle cx='{x:.1}' cy='{y:.1}' r='3.5' fill='#88c0d0'/>")
+        })
+        .collect();
+
+    let y_axis: String = (0..=4).map(|i| {
+        let val = min + range * (i as f64 / 4.0);
+        let y = pad_t + plot_h - (i as f64 / 4.0) * plot_h;
+        format!("<line x1='{pad_l}' y1='{y:.0}' x2='{:.0}' y2='{y:.0}' stroke='#1f242c' stroke-width='1'/>\
+                 <text x='{:.0}' y='{:.0}' fill='#6b7280' font-size='10' text-anchor='end'>{val:.4}</text>",
+                pad_l + plot_w, y + 3.0, pad_l - 6.0)
     }).collect();
 
-    let dots: String = bpbs.iter().enumerate().map(|(i, b)| {
-        let x = if n > 1.0 { pad_l + (i as f64 / (n - 1.0)) * plot_w } else { pad_l + plot_w / 2.0 };
-        let y = 20.0 + (1.0 - (b - min_bpb) / range) * plot_h;
-        format!("<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"5\" fill=\"#61afef\"/>", x, y)
-    }).collect();
-
-    let y_labels: String = (0..=4).map(|i| {
-        let val = min_bpb + range * i as f64 / 4.0;
-        let y = 20.0 + plot_h - (i as f64 / 4.0) * plot_h;
-        format!("<text x=\"{:.0}\" y=\"{:.0}\" fill=\"#888\" font-size=\"11\">{:.4}</text>", pad_l - 5.0, y + 4.0, val)
-    }).collect();
-
-    format!("<svg width=\"{:.0}\" height=\"{:.0}\" xmlns=\"http://www.w3.org/2000/svg\">
-<rect width=\"{:.0}\" height=\"{:.0}\" fill=\"#1a1d23\"/>
-<polyline points=\"{}\" fill=\"none\" stroke=\"#61afef\" stroke-width=\"2.5\" stroke-linejoin=\"round\"/>
-{}
-{}
-<text x=\"{:.0}\" y=\"{:.0}\" fill=\"#888\" font-size=\"11\">experiment #</text>
-</svg>",
-        w, h, w, h,
-        points.join(" "),
-        y_labels,
-        dots,
-        pad_l + plot_w / 2.0, h - 8.0)
+    format!(
+        "<svg viewBox='0 0 {w} {h}' xmlns='http://www.w3.org/2000/svg' width='100%' style='max-width:{w}px'>\
+           {y_axis}\
+           <polyline points='{points}' fill='none' stroke='#88c0d0' stroke-width='2' stroke-linejoin='round'/>\
+           {dots}\
+           <text x='{tx:.0}' y='{ty:.0}' fill='#6b7280' font-size='10' text-anchor='middle'>experiment #</text>\
+         </svg>",
+        tx = pad_l + plot_w / 2.0,
+        ty = h - 8.0,
+    )
 }
