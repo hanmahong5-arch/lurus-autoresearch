@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod error;
+mod html;
 mod hw;
 mod logtail;
 mod model;
@@ -125,9 +126,18 @@ fn main() -> ExitCode {
             highlight_best,
             format,
         } => commands::tree::cmd_tree(&data_dir, &tag, highlight_best, &format),
-        Commands::Distill { tag, out, format } => {
-            commands::distill::cmd_distill(&data_dir, &tag, out.as_deref(), &format)
-        }
+        Commands::Distill {
+            tag,
+            out,
+            format,
+            html,
+        } => commands::distill::cmd_distill(
+            &data_dir,
+            &tag,
+            out.as_deref(),
+            &format,
+            html.as_deref(),
+        ),
         Commands::Verify {
             commit,
             value,

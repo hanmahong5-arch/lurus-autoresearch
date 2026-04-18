@@ -36,10 +36,23 @@ artifact to something you can email.
   JSON-RPC stays structured and unambiguous.
 - No new Cargo dependencies.
 
+### Added (Wave B — distill --html)
+- **`resman distill -t <tag> --html <out>`** — emits a self-contained,
+  dark-mode HTML artifact (~5 KB, no JS, no CDN, no external images).
+  The file you email your manager at 9am. Renders: summary badges,
+  metric sparkline SVG, Best card, lineage list with status badges,
+  failure-signal clusters in `<details>` collapsibles, unexplored-neighbor
+  table, suggestions.
+- **New `src/html.rs`** — shared dark-mode CSS, `html_escape`, `trend_svg`,
+  `badge`/`BadgeKind`, and `page()` wrapper. `report.rs` refactored to
+  use these helpers, eliminating CSS duplication (net −35 LOC there).
+- `--html` is orthogonal to `-o`/`--out`: pass both to emit Markdown/JSON
+  AND HTML in the same invocation. Writing status printed to stderr:
+  `wrote HTML to {path}`.
+
 ### Not yet in this branch
-- Wave B (distill `--html` — self-contained HTML artifact) and
-  Wave C (Verified-aware suggestions, `DivergedLoss`/`SlowMfu` signals,
-  cross-run clustering) will land before v0.8 tags.
+- Wave C (Verified-aware suggestions, `DivergedLoss`/`SlowMfu` signals,
+  cross-run clustering, composite-weight tuning) will land before v0.8 tags.
 
 ## [0.7.0] — Reproducibility + composite scoring
 

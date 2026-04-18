@@ -11,6 +11,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::html::{BadgeKind, badge, html_escape, trend_svg};
 use crate::model::{Direction, Experiment, RunLog, Status};
 use crate::store::{load_run, load_run_or_suggest, truncate};
 
@@ -506,6 +507,215 @@ pub fn render_markdown(report: &DistillReport) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// HTML rendering
+// ---------------------------------------------------------------------------
+
+fn status_badge(status_str: &str) -> String {
+    let kind = match status_str {
+        "keep" => BadgeKind::Keep,
+        "best" => BadgeKind::Best,
+        "verified" => BadgeKind::Verified,
+        "crash" => BadgeKind::Crash,
+        "discard" => BadgeKind::Discard,
+        _ => BadgeKind::Neutral,
+    };
+    badge(status_str, kind)
+}
+
+/// Render the distill report as a self-contained HTML string.
+/// Pure function — no IO, no ANSI escapes.
+pub fn render_html(report: &DistillReport) -> String {
+    let s = &report.summary;
+
+    // --- header badges ---
+    let mut header_badges = String::new();
+    if s.keep > 0 {
+        header_badges.push_str(&badge(&format!("{} keep", s.keep), BadgeKind::Keep));
+    }
+    if s.best > 0 {
+        header_badges.push_str(&badge(&format!("{} best", s.best), BadgeKind::Best));
+    }
+    if s.crash > 0 {
+        header_badges.push_str(&badge(&format!("{} crash", s.crash), BadgeKind::Crash));
+    }
+    if s.discard > 0 {
+        header_badges.push_str(&badge(
+            &format!("{} discard", s.discard),
+            BadgeKind::Discard,
+        ));
+    }
+    let verified_count = report
+        .lineage
+        .iter()
+        .filter(|e| e.status == "verified")
+        .count();
+    if verified_count > 0 {
+        header_badges.push_str(&badge(
+            &format!("{verified_count} verified"),
+            BadgeKind::Verified,
+        ));
+    }
+    header_badges.push_str(&badge(
+        &format!("{} ({})", s.metric_name, s.direction),
+        BadgeKind::Neutral,
+    ));
+
+    let mut body = format!(
+        "<h1>Distill &mdash; {tag}</h1>\n\
+         <div class=\"sub\">{gen} &middot; {total} experiments {badges}</div>\n",
+        tag = html_escape(&report.tag),
+        gen = html_escape(&report.generated_at),
+        total = s.total,
+        badges = header_badges,
+    );
+
+    // --- sparkline ---
+    let kept_points: Vec<(usize, f64)> = report
+        .lineage
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.metric > 0.0)
+        .map(|(i, e)| (i, e.metric))
+        .collect();
+    if kept_points.len() >= 2 {
+        let svg = trend_svg(&kept_points, 1040, 280);
+        body.push_str("<h2>Metric trajectory</h2>\n");
+        body.push_str(&format!("<div class=\"chart\">{svg}</div>\n"));
+    }
+
+    // --- best card ---
+    body.push_str("<h2>Best result</h2>\n");
+    match &report.best {
+        None => {
+            body.push_str("<div class=\"no-best\">No best experiment in this run.</div>\n");
+        }
+        Some(b) => {
+            let gpu_line = if b.gpu.is_empty() {
+                String::new()
+            } else {
+                format!("<div class=\"gpu\">GPU: {}</div>", html_escape(&b.gpu))
+            };
+            body.push_str(&format!(
+                "<section class=\"best-card\">\
+                   <div class=\"metric\">{metric_name}: {value:.6}</div>\
+                   <div class=\"commit-hash\"><code>{commit}</code></div>\
+                   <div class=\"desc\">{desc}</div>\
+                   {gpu_line}\
+                 </section>\n",
+                metric_name = html_escape(&s.metric_name),
+                value = b.value,
+                commit = html_escape(&b.commit),
+                desc = html_escape(&b.description),
+            ));
+        }
+    }
+
+    // --- lineage ---
+    body.push_str("<h2>Lineage to best</h2>\n");
+    if report.lineage.is_empty() {
+        body.push_str("<p style=\"color:#6b7280\"><em>no lineage recorded</em></p>\n");
+    } else {
+        body.push_str("<ol>\n");
+        for entry in &report.lineage {
+            let sc = short_commit(&entry.commit);
+            body.push_str(&format!(
+                "<li>{status_badge} <code>{commit}</code> &mdash; \
+                 {metric_name}={value:.6} &mdash; {desc}</li>\n",
+                status_badge = status_badge(&entry.status),
+                commit = html_escape(sc),
+                metric_name = html_escape(&s.metric_name),
+                value = entry.metric,
+                desc = html_escape(&truncate(&entry.description, 80)),
+            ));
+        }
+        body.push_str("</ol>\n");
+    }
+
+    // --- failure signals ---
+    body.push_str("<h2>Failure signals</h2>\n");
+    let any_signals = report.failure_signals.values().any(|v| !v.is_empty());
+    if !any_signals {
+        body.push_str(
+            "<p style=\"color:#6b7280\"><em>no crash signals recorded in this run</em></p>\n",
+        );
+    } else {
+        // Sort kinds by count desc.
+        let mut kinds: Vec<(&String, &Vec<FailureSignalEntry>)> = report
+            .failure_signals
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .collect();
+        kinds.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+        for (kind, entries) in &kinds {
+            let mut items = String::new();
+            for e in *entries {
+                let detail = if e.detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" &mdash; {}", html_escape(&e.detail))
+                };
+                items.push_str(&format!(
+                    "<li><code>{commit}</code> &mdash; {desc}{detail}</li>\n",
+                    commit = html_escape(short_commit(&e.commit)),
+                    desc = html_escape(&e.description),
+                ));
+            }
+            body.push_str(&format!(
+                "<div class=\"signal-cluster\">\
+                   <details>\
+                     <summary>{kind} &times; {count}</summary>\
+                     <ul>{items}</ul>\
+                   </details>\
+                 </div>\n",
+                kind = html_escape(kind),
+                count = entries.len(),
+            ));
+        }
+    }
+
+    // --- unexplored neighbors ---
+    body.push_str("<h2>Unexplored neighbors</h2>\n");
+    if report.unexplored_neighbors.is_empty() {
+        body.push_str("<p style=\"color:#6b7280\"><em>no neighbors found</em></p>\n");
+    } else {
+        body.push_str(
+            "<table><thead><tr>\
+               <th>commit</th><th>value</th><th>&Delta;</th><th>description</th>\
+             </tr></thead><tbody>\n",
+        );
+        for n in &report.unexplored_neighbors {
+            body.push_str(&format!(
+                "<tr><td><code>{commit}</code></td>\
+                     <td>{value:.6}</td>\
+                     <td>{delta:+.4}</td>\
+                     <td>{desc}</td></tr>\n",
+                commit = html_escape(short_commit(&n.commit)),
+                value = n.value,
+                delta = n.delta,
+                desc = html_escape(&n.description),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    // --- suggestions ---
+    body.push_str("<h2>Suggestions</h2>\n");
+    if report.suggestions.is_empty() {
+        body.push_str("<p style=\"color:#6b7280\"><em>no mechanical suggestions — run looks healthy.</em></p>\n");
+    } else {
+        body.push_str("<ul>\n");
+        for sug in &report.suggestions {
+            body.push_str(&format!("<li>{}</li>\n", html_escape(sug)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    let page_title = format!("resman distill — {}", &report.tag);
+    crate::html::page(&page_title, &body)
+}
+
+// ---------------------------------------------------------------------------
 // Command entry point
 // ---------------------------------------------------------------------------
 
@@ -514,11 +724,22 @@ pub fn cmd_distill(
     tag: &str,
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
+    html_path: Option<&std::path::Path>,
 ) -> Result<()> {
     let run = load_run_or_suggest(data_dir, tag)?;
 
     let report = build_distill(&run);
 
+    // Write HTML artifact if requested.
+    if let Some(hp) = html_path {
+        let html = render_html(&report);
+        std::fs::write(hp, &html)?;
+        eprintln!("wrote HTML to {}", hp.display());
+    }
+
+    // Emit text/json output (to file or stdout) unless --html was the only flag.
+    // Rule: --html is additive; text output happens unless suppressed by redirection.
+    // Implementation: always emit text output (stdout or --out file).
     let rendered = match format {
         DistillFormat::Markdown => render_markdown(&report),
         DistillFormat::Json => serde_json::to_string_pretty(&report)?,
@@ -574,6 +795,7 @@ mod tests {
     use crate::model::{RunLog, Status};
     use crate::signals::Signal;
     use std::collections::HashMap;
+    use std::collections::HashSet;
 
     fn make_exp(
         commit: &str,
@@ -698,5 +920,133 @@ mod tests {
             md.contains("## Unexplored neighbors"),
             "missing '## Unexplored neighbors'"
         );
+    }
+
+    /// HTML Test 1: output contains title with tag name and a <style> block.
+    #[test]
+    fn render_html_contains_title_and_tag() {
+        let run = make_run(
+            "my-tag",
+            vec![make_exp(
+                "abc1234",
+                0.95,
+                Status::Keep,
+                "baseline",
+                None,
+                vec![],
+            )],
+        );
+        let report = build_distill(&run);
+        let html = render_html(&report);
+        assert!(
+            html.contains("my-tag"),
+            "tag name must appear in HTML output"
+        );
+        assert!(html.contains("<style>"), "must have <style> block");
+        // Self-contained: no external references
+        assert!(!html.contains("http://"), "must not reference http://");
+        assert!(!html.contains("src=\"http"), "must not have external src");
+    }
+
+    /// HTML Test 2: empty run renders without best card but still produces valid HTML.
+    #[test]
+    fn render_html_empty_run_has_no_best_card_but_still_renders() {
+        let run = make_run("empty-run", vec![]);
+        let report = build_distill(&run);
+        let html = render_html(&report);
+        // Should contain the "no best" fallback text
+        assert!(
+            html.contains("No best experiment"),
+            "should render no-best placeholder"
+        );
+        // Should NOT contain best-card (only rendered when best is Some)
+        assert!(
+            !html.contains("class=\"best-card\""),
+            "best-card should not appear when no best"
+        );
+        // Must still be valid HTML envelope
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("</html>"));
+    }
+
+    /// HTML Test 3: signal sections appear with <details> when signals present.
+    #[test]
+    fn render_html_with_signals_groups_by_kind() {
+        let run = make_run(
+            "sigs",
+            vec![
+                make_exp("c1", 0.0, Status::Crash, "oom1", None, vec![Signal::Oom]),
+                make_exp("c2", 0.0, Status::Crash, "oom2", None, vec![Signal::Oom]),
+                make_exp("c3", 0.0, Status::Crash, "nan", None, vec![Signal::NanLoss]),
+            ],
+        );
+        let report = build_distill(&run);
+        let html = render_html(&report);
+        assert!(
+            html.contains("<details>"),
+            "must have <details> elements for signals"
+        );
+        assert!(html.contains("oom"), "oom kind must appear");
+        assert!(html.contains("nan_loss"), "nan_loss kind must appear");
+    }
+
+    /// HTML Test 4: HTML-special chars in description are escaped.
+    #[test]
+    fn render_html_escapes_html_in_description() {
+        let run = make_run(
+            "xss-test",
+            vec![make_exp(
+                "abc1234",
+                0.95,
+                Status::Keep,
+                "<script>alert(1)</script>",
+                None,
+                vec![],
+            )],
+        );
+        let report = build_distill(&run);
+        let html = render_html(&report);
+        assert!(
+            html.contains("&lt;script&gt;"),
+            "< and > must be HTML-escaped"
+        );
+        assert!(
+            !html.contains("<script>alert"),
+            "raw <script> tag must not appear"
+        );
+    }
+
+    /// HTML Test 5: output contains no HTTP references and has exactly one <style> block.
+    #[test]
+    fn render_html_no_external_refs() {
+        let run = make_run(
+            "netcheck",
+            vec![make_exp("a1", 0.9, Status::Best, "best one", None, vec![])],
+        );
+        let report = build_distill(&run);
+        let html = render_html(&report);
+        assert!(!html.contains("http://"));
+        assert!(!html.contains("https://"));
+        // Count <style> occurrences — must be exactly 1
+        let style_count = html.matches("<style>").count();
+        assert_eq!(style_count, 1, "expected exactly 1 <style> block");
+        // Must contain tag in output
+        let tag_count = html.matches("netcheck").count();
+        assert!(tag_count >= 1, "tag must appear at least once");
+        // All badge classes referenced from CSS
+        let badge_classes: HashSet<&str> = [
+            "badge-keep",
+            "badge-best",
+            "badge-crash",
+            "badge-discard",
+            "badge-verified",
+            "badge-neutral",
+        ]
+        .iter()
+        .copied()
+        .collect();
+        for cls in &badge_classes {
+            assert!(html.contains(cls), "CSS must define {cls}");
+        }
     }
 }

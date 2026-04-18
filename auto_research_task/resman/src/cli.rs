@@ -315,6 +315,9 @@ pub enum Commands {
         /// Output format: markdown (default) or json
         #[arg(short = 'o', long, default_value = "markdown")]
         format: crate::commands::distill::DistillFormat,
+        /// Also write a self-contained dark-mode HTML artifact to this path
+        #[arg(long)]
+        html: Option<std::path::PathBuf>,
     },
 
     /// Re-verify an experiment by providing a new metric value from a re-run.
