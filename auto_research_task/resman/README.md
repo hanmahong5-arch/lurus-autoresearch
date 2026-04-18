@@ -38,7 +38,7 @@ This is a *different product category* than cloud experiment trackers — not a 
 **Prebuilt binary** (recommended — Linux / macOS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kaizen-38/autoresearch/master/auto_research_task/resman/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
 Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.3.0`.
@@ -52,7 +52,7 @@ cargo install resman
 **From source**:
 
 ```bash
-git clone https://github.com/kaizen-38/autoresearch
+git clone https://github.com/hanmahong5-arch/lurus-autoresearch
 cargo install --path autoresearch/auto_research_task/resman    # Rust 1.85+
 ```
 

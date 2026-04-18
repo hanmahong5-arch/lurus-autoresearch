@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
 # resman — local-first experiment tracker for autonomous AI training agents.
-# One-line install:  curl -fsSL https://raw.githubusercontent.com/kaizen-38/autoresearch/master/auto_research_task/resman/install.sh | sh
+# One-line install:  curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 #
 # Detects your OS+arch, downloads the matching prebuilt binary from the latest
 # GitHub Release, and installs it to ~/.local/bin (or $RESMAN_INSTALL_DIR).
 
 set -eu
 
-REPO="kaizen-38/autoresearch"
+REPO="hanmahong5-arch/lurus-autoresearch"
 INSTALL_DIR="${RESMAN_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${RESMAN_VERSION:-latest}"
 
