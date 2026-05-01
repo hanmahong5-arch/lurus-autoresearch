@@ -37,7 +37,13 @@ defmodule ExAutoresearch.DeepResearch.Scraper do
           {:ok, %{markdown: String.t(), metadata: map()}} | {:error, term()}
   def fetch(url, opts \\ []) do
     primary = Application.fetch_env!(:ex_autoresearch, :scraper)
-    metadata = %{url: url, primary_impl: primary}
+
+    metadata = %{
+      url: url,
+      primary_impl: primary,
+      report_id: Keyword.get(opts, :report_id),
+      investigation_id: Keyword.get(opts, :investigation_id)
+    }
 
     :telemetry.span([:ex_autoresearch, :scraper, :fetch], metadata, fn ->
       case primary.fetch(url, opts) do

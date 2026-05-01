@@ -36,6 +36,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
       |> assign(:progress, 0)
       |> assign(:status, :idle)
       |> assign(:selected_template_id, nil)
+      |> assign(:scraper_status, nil)
 
     {:ok, socket}
   end
@@ -161,6 +162,10 @@ defmodule ExAutoresearchWeb.DashboardLive do
      |> push_navigate(to: ~p"/?report_id=#{report_id}")}
   end
 
+  def handle_info({:scraper_progress, payload}, socket) do
+    {:noreply, assign(socket, :scraper_status, payload)}
+  end
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   # --- Rendering ---
@@ -184,7 +189,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
           />
 
           <%= if @status != :idle do %>
-            <.progress_bar step={@research_step} progress={@progress} status={@status} />
+            <.progress_bar step={@research_step} progress={@progress} status={@status} scraper_status={@scraper_status} />
           <% end %>
 
           <.report_list reports={@reports} />
@@ -316,17 +321,40 @@ defmodule ExAutoresearchWeb.DashboardLive do
 
   defp progress_bar(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4 mb-6" id="research-progress">
       <div class="flex items-center gap-3 mb-2">
-        <div class="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+        <div class="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" aria-hidden="true"></div>
         <span class="text-sm font-medium text-gray-700">{@step || "Researching..."}</span>
       </div>
-      <div class="w-full bg-gray-200 rounded-full h-2">
+      <div class="w-full bg-gray-200 rounded-full h-2 mb-3">
         <div
-          class="bg-blue-600 h-2 rounded-full transition-all"
+          class="bg-blue-600 h-2 rounded-full transition-all duration-500"
           style={"width: #{@progress}%"}
         ></div>
       </div>
+      <%= if @scraper_status do %>
+        <.scraper_status_row status={@scraper_status} />
+      <% end %>
+    </div>
+    """
+  end
+
+  defp scraper_status_row(assigns) do
+    ~H"""
+    <div class={[
+      "flex items-start gap-2 text-xs px-3 py-2 rounded border",
+      scraper_row_class(@status.outcome)
+    ]} id={"scraper-status-#{@status.report_id}"}>
+      <span class="font-mono shrink-0 mt-0.5">
+        <%= scraper_outcome_icon(@status.outcome) %>
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="font-medium truncate"><%= @status.url %></div>
+        <div class="text-gray-600 mt-0.5"><%= @status.message %></div>
+      </div>
+      <span class="text-gray-400 shrink-0 tabular-nums">
+        <%= @status.duration_ms %>ms
+      </span>
     </div>
     """
   end
@@ -451,4 +479,16 @@ defmodule ExAutoresearchWeb.DashboardLive do
   defp format_markdown(text) do
     {:safe, MDEx.to_html!(text, extension: [strikethrough: true, tagfilter: false], render: [hardbreaks: true, unsafe_: true])}
   end
+
+  defp scraper_row_class(:primary_success), do: "bg-green-50 border-green-200 text-green-800"
+  defp scraper_row_class(:fallback_success), do: "bg-amber-50 border-amber-200 text-amber-800"
+  defp scraper_row_class(:both_failed), do: "bg-red-50 border-red-200 text-red-800"
+  defp scraper_row_class(:native_failed), do: "bg-red-50 border-red-200 text-red-800"
+  defp scraper_row_class(_), do: "bg-gray-50 border-gray-200 text-gray-700"
+
+  defp scraper_outcome_icon(:primary_success), do: "✓"
+  defp scraper_outcome_icon(:fallback_success), do: "⚠"
+  defp scraper_outcome_icon(:both_failed), do: "✗"
+  defp scraper_outcome_icon(:native_failed), do: "✗"
+  defp scraper_outcome_icon(_), do: "•"
 end

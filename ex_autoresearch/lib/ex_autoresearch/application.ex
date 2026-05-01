@@ -15,6 +15,11 @@ defmodule ExAutoresearch.Application do
        )},
       {DNSCluster, query: Application.get_env(:ex_autoresearch, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: ExAutoresearch.PubSub},
+      %{
+        id: ExAutoresearch.DeepResearch.TelemetryBridge,
+        start: {Task, :start_link, [fn -> ExAutoresearch.DeepResearch.TelemetryBridge.attach() end]},
+        restart: :transient
+      },
       ExAutoresearch.DeepResearch.ResearchOrchestrator,
       ExAutoresearch.Workers.TemplateScheduler,
       ExAutoresearchWeb.Endpoint

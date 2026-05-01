@@ -36,7 +36,7 @@ defmodule ExAutoresearch.DeepResearch.Tools.ResearchRunner do
         results
         |> Enum.take(5)
         |> Enum.map(fn result ->
-          case Scraper.fetch(result.url, []) do
+          case Scraper.fetch(result.url, Keyword.take(opts, [:report_id, :investigation_id])) do
             {:ok, %{markdown: markdown}} ->
               %{
                 title: result.title,
@@ -66,8 +66,8 @@ defmodule ExAutoresearch.DeepResearch.Tools.ResearchRunner do
     end
   end
 
-  defp do_run(url, :fetch, _opts) when is_binary(url) do
-    case Scraper.fetch(url, []) do
+  defp do_run(url, :fetch, opts) when is_binary(url) do
+    case Scraper.fetch(url, Keyword.take(opts, [:report_id, :investigation_id])) do
       {:ok, %{markdown: markdown}} -> {:ok, markdown}
       {:error, _} = err -> err
     end

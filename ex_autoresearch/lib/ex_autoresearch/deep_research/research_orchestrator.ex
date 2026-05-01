@@ -345,7 +345,7 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
     })
 
     # Execute search
-    result = ResearchRunner.run(query, tool)
+    result = ResearchRunner.run(query, tool, report_id: report.id, investigation_id: inv.id)
 
     case result do
       {:ok, findings} ->
