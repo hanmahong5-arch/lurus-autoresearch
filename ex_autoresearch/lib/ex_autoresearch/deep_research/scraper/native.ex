@@ -14,7 +14,11 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Native do
 
   @behaviour ExAutoresearch.DeepResearch.Scraper
 
+  require Logger
+
   @default_timeout 10_000
+  @html_max_chars 10_000
+  @plain_max_chars 5_000
 
   @impl ExAutoresearch.DeepResearch.Scraper
   def fetch(url, opts \\ []) do
@@ -31,9 +35,15 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Native do
       headers: %{"User-Agent" => "Mozilla/5.0 (compatible; ResearchBot/1.0)"}
     ]
 
-    case Keyword.fetch(opts, :plug) do
-      {:ok, plug} -> Keyword.put(base, :plug, plug)
-      :error -> base
+    base
+    |> maybe_put(opts, :plug)
+    |> maybe_put(opts, :retry)
+  end
+
+  defp maybe_put(req_opts, opts, key) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} -> Keyword.put(req_opts, key, value)
+      :error -> req_opts
     end
   end
 
@@ -48,9 +58,9 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Native do
         text =
           if String.contains?(content_type, "text/html") or
                String.contains?(content_type, "html") do
-            extract_text_from_html(html)
+            extract_text_from_html(html, url)
           else
-            String.slice(to_string(html), 0, 5000)
+            truncate_with_warning(to_string(html), @plain_max_chars, url)
           end
 
         {:ok, %{markdown: text, metadata: %{source: :native}}}
@@ -66,13 +76,26 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Native do
   end
 
   @doc false
-  def extract_text_from_html(html) do
+  def extract_text_from_html(html, url \\ nil) do
     html
     |> String.replace(~r/<script[^>]*>.*?<\/script>[\s.]*/si, " ")
     |> String.replace(~r/<style[^>]*>.*?<\/style>[\s.]*/si, " ")
     |> String.replace(~r/<[^>]+>/, " ")
     |> String.replace(~r/\s+/, " ")
     |> String.trim()
-    |> String.slice(0, 10_000)
+    |> truncate_with_warning(@html_max_chars, url)
+  end
+
+  defp truncate_with_warning(text, max, url) do
+    size = byte_size(text)
+
+    if size > max do
+      Logger.warning(
+        "Native scraper truncated content from #{size} to #{max} bytes" <>
+          if url, do: " for #{url}", else: ""
+      )
+    end
+
+    String.slice(text, 0, max)
   end
 end

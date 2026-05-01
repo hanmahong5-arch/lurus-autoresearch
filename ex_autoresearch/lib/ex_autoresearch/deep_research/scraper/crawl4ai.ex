@@ -25,6 +25,8 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Crawl4ai do
 
   @behaviour ExAutoresearch.DeepResearch.Scraper
 
+  require Logger
+
   @default_timeout 30_000
   @poll_interval 1_000
   @max_polls 30
@@ -46,15 +48,18 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Crawl4ai do
         parse_sync_response(resp_body, url)
 
       {:ok, %Req.Response{status: 404}} ->
+        Logger.warning("Crawl4AI sync endpoint 404 for #{url}, falling back to async")
         fetch_async(url, base_url, body, timeout, plug_opt)
 
       {:ok, %Req.Response{status: status}} when status >= 500 ->
+        Logger.warning("Crawl4AI returned #{status} for #{url}")
         {:error, {:crawl4ai_failed, {:http_error, status}}}
 
       {:ok, %Req.Response{status: status}} ->
         {:error, {:crawl4ai_failed, {:unexpected_status, status}}}
 
       {:error, reason} ->
+        Logger.warning("Crawl4AI transport error for #{url}: #{inspect(reason)}")
         {:error, {:crawl4ai_failed, reason}}
     end
   end
@@ -88,17 +93,23 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Crawl4ai do
         poll_task(task_id, base_url, url, @max_polls, plug_opt)
 
       {:ok, %Req.Response{status: status}} when status >= 500 ->
+        Logger.warning("Crawl4AI returned #{status} for #{url}")
         {:error, {:crawl4ai_failed, {:http_error, status}}}
 
       {:ok, %Req.Response{status: status}} ->
         {:error, {:crawl4ai_failed, {:unexpected_status, status}}}
 
       {:error, reason} ->
+        Logger.warning("Crawl4AI transport error for #{url}: #{inspect(reason)}")
         {:error, {:crawl4ai_failed, reason}}
     end
   end
 
-  defp poll_task(_task_id, _base_url, _url, 0, _plug_opt) do
+  defp poll_task(_task_id, _base_url, url, 0, _plug_opt) do
+    Logger.warning(
+      "Crawl4AI poll exceeded #{@max_polls * @poll_interval}ms for #{url}"
+    )
+
     {:error, {:crawl4ai_failed, :poll_timeout}}
   end
 
