@@ -105,7 +105,7 @@ The demo integration: karpathy-style loop + `resman add` calls in `program.md`. 
 No independent roadmap. Grows only when it exposes a resman gap.
 
 ### `ex_autoresearch/` (Elixir deep-research agent)
-**Status: separate product, deprioritized.** It solves a different problem (web research, not ML training) in a crowded space (Perplexity, Genspark, You.com). Kept for optionality but not the commercial focus. If it ever ships, the likely path is a vertical pivot (compliance research, legal research, clinical research) where BEAM's fault tolerance is a real selling point — not a general-purpose "deep research" tool.
+**Status (as of 2026-05-01): elevated to active commercial focus.** Repositioned from "optionality side-project" to a second product line — the open-source self-hosted enterprise alternative to Perplexity Pro Deep Research, targeting law / consulting / regulated R&D where data sovereignty is non-negotiable. Full positioning, locked architectural decisions, MVP roadmap, and anti-goals: see **§ "Second product line: ex_autoresearch"** at the end of this doc, and `ex_autoresearch/MISSION.md` (committed) for engineering-level decision lock.
 
 ## Near-term execution
 
@@ -130,6 +130,90 @@ Up next (v1.0 roadmap):
 
 ## What would make us wrong
 
+resman:
 - Existing trackers (wandb specifically) ship a first-class local-only mode, <100ms CLI, and git-commit-as-run-identity. They have the brand, so we'd be squeezed. Probability: low — their revenue model punishes offline use.
 - Agent coding assistants converge on an in-memory tracking protocol (MCP, etc.) and skip the filesystem. Probability: medium. Mitigation: resman's JSON schema *is* a protocol; offer a native MCP adapter.
 - karpathy/autoresearch fades as a meme and the overnight-agent-training pattern doesn't generalize. Probability: medium. Mitigation: resman's value doesn't depend on karpathy specifically — any LLM-training loop has the same needs.
+
+ex_autoresearch:
+- Microsoft / Google ship a self-hostable Copilot Research with M365/Workspace data-sovereignty guarantees. Probability: medium-high (12–18 months out). Mitigation: ship before they do, lock in 5+ enterprise reference customers, build switching cost via custom corpus integrations.
+- Symphony pivots, deprecates, or breaks the workspace API we depend on. Probability: medium (it's an "engineering preview" per the README). Mitigation: pin to a commit SHA, not main; budget one re-port within 12 months; the architecture is replaceable with raw Oban + DynamicSupervisor if Symphony dies.
+- Open-source competitors (Morphic, OpenDeepResearch, Open WebUI) add audit-log / on-prem features and erase our moat. Probability: medium. Mitigation: the dogfooding moat (resman A/B testing the agent's own prompts) produces quality data they can't match; double-down on vertical-specific corpus integrations.
+
+---
+
+## Second product line: ex_autoresearch (active 2026-05+)
+
+**One-sentence pitch:** Perplexity Pro Deep Research, but you can run it on your own infra, audit every data flow, and point it at your private corpus.
+
+### Why this category exists now
+1. Hosted deep-research products (Perplexity, You.com, Genspark) cannot legally serve clients in regulated verticals — confidential matter info cannot egress to OpenAI/Anthropic via a third party.
+2. Generic OSS Perplexity clones (Morphic, OpenDeepResearch) skip enterprise-mandatory features: audit logs, source provenance, role-based access, intranet ingestion.
+3. BEAM's fault-tolerance is uniquely suited to long-running multi-stage research where per-source failures are routine.
+
+### Target customers
+Law firms, consulting firms, large company R&D departments, university / government research offices. *Not* consumers, *not* small SaaS startups.
+
+### Three-layer architecture
+
+```
+        ┌──────────────────────────────────┐
+        │   Symphony (outer scheduler)     │  ← OpenAI · Apache-2.0 · pinned commit SHA
+        │   workspaces · max_turns ·       │
+        │   max_concurrent_agents          │
+        └─────────────┬────────────────────┘
+                      │ schedules N concurrent
+                      ▼
+        ┌──────────────────────────────────┐
+        │   ex_autoresearch (research)     │  ← Phoenix LiveView UI · Oban durable jobs
+        │   Crawl4AI for scraping          │     pgvector + Bumblebee for memory
+        │   resman for prompt A/B testing  │     Langfuse for cost / observability
+        └─────────────┬────────────────────┘
+                      │ uses
+                      ▼
+        ┌──────────────────────────────────┐
+        │   jido (agent runtime)           │  ← MIT · v2.2.0
+        │   Action / Agent / Sensor /      │
+        │   Signal / AgentServer           │
+        └──────────────────────────────────┘
+```
+
+### Locked architectural decisions (do not relitigate without strong reason — see `ex_autoresearch/MISSION.md` for full rationale)
+
+1. **Crawl4AI is primary scraper.** Apache-2.0, fully open, Playwright-based. Firecrawl's self-hosted version is AGPL-3.0 with closed-source proxy/anti-bot/dashboard — disqualifies for enterprise on-prem legal review.
+2. **Firecrawl Hex SDK as cloud-spillover fallback only.** Customer-opt-in for bursty workloads; never the default path.
+3. **jido v2.2.0 as inner agent runtime.** Vendor into `deps/` long-term once we ship — bus-factor risk on a small project.
+4. **Symphony as outer scheduler.** Pin commit SHA, not `main` — engineering preview, breaking changes allowed by the maintainer.
+5. **resman is dogfooded internally.** Every research-agent prompt change creates a resman experiment with `quality_score` as the metric. We sell the same product we used to track our own work — quantifiable quality moat competitors can't match.
+6. **Phoenix LiveView for UI.** No separate React/Vue frontend. Real-time research-progress streaming is the killer demo.
+7. **Ash for all state, not raw Ecto.** `mix ash.codegen` is non-negotiable.
+
+### Anti-goals (do not drift back into these)
+
+- **Consumer pricing tier.** This is enterprise-only. No "$9/mo Hobby plan."
+- **General-purpose deep research clone.** Vertical-first (law/consulting/R&D) or die.
+- **SaaS-first deployment.** Self-host is canonical; cloud is optional.
+- **Cross-pollinating with the resman codebase.** They share *concepts* (experiments, lineage), not *binaries*.
+- **Adding more agent frameworks alongside jido.** Pick one. jido is the choice.
+
+### MVP roadmap (8 weeks, started 2026-05-01)
+
+| Week | Deliverable | Status |
+|---|---|---|
+| 1–2 | Scraper behaviour + Crawl4AI implementation replacing `ResearchRunner.fetch_page_content/2` | in progress |
+| 3 | Jido-ize ex_autoresearch — convert ResearchRunner stages into `jido` Actions | |
+| 4 | Phoenix LiveView real-time research-progress UI |  |
+| 5 | Langfuse integration for cost / observability |  |
+| 6 | pgvector + Bumblebee local-embedding memory layer |  |
+| 7 | resman integration — every prompt change becomes a versioned resman experiment |  |
+| 8 | Symphony outer-shell + docker-compose enterprise-POC bundle |  |
+
+### Monetization (added to existing resman tiers)
+
+| Tier | What | Price | When |
+|---|---|---|---|
+| **OSS Self-host** | Full source, MIT/Apache stack, customer runs on own infra | $0 | Week 8 (POC) |
+| **Enterprise Support** | SLA, security review docs, deployment assistance, custom corpus integrations | $2K–10K/mo per customer | Q3 2026 after first POC closes |
+| **Hosted (small firms)** | Multi-tenant cloud option, customer's own LLM API key | $99/seat/mo | Q1 2027 — only if inbound demand pulls it forward |
+
+The OSS self-host is the funnel; enterprise support is where the revenue lives. Same Tailscale/Linear/Supabase pattern as resman.
