@@ -75,6 +75,50 @@ These were chosen after explicit research and trade-off analysis. Each has a rea
 - `Scraper.Native` still passes tests (regression guard).
 - No change to `ResearchRunner.run/2,3` public API.
 
+## Robustness standards (every feature must hit these)
+
+These are the **acceptance criteria for "production ready"** in this codebase. Skipping any of them is shipping a demo, not a product. Apply to every new module and every bug fix.
+
+1. **Graceful degradation, never hard failure.** If Crawl4AI is down, fall back to `Scraper.Native` automatically — log it, don't crash. If Serper is down, fall back to a different search provider or a degraded mode. Customers running this on-prem don't have your on-call rotation.
+
+2. **Bounded everything.** Every external call has an explicit `:receive_timeout` (HTTP), `Task.async_stream/3` has explicit `:timeout` AND `:max_concurrency`, every queue has a depth limit. The BEAM VM should never OOM because of one runaway research run.
+
+3. **Telemetry events at every boundary.** Every external call emits `:telemetry.execute([:ex_autoresearch, <stage>, :start | :stop | :exception], measurements, metadata)`. This is what feeds Langfuse in Week 5. Don't bolt it on later — emit from day one.
+
+4. **PubSub progress events on `"research:events"` topic.** Long-running operations broadcast `{:research_progress, report_id, %{stage: atom, status: atom, detail: term}}`. The LiveView consumes these for real-time UX. If a scraper takes 8 seconds, the user must see "fetching url 3 of 5..." not a frozen spinner.
+
+5. **Idempotency where possible.** Re-fetching the same URL within N seconds returns the cached result. Re-running a research with the same `report_id` does not duplicate work. Crashed Oban jobs retry without poisoning the report.
+
+6. **Errors are values, not exceptions.** Public functions return `{:ok, _}` | `{:error, reason}`. Pattern match on specific error reasons. Use `try/rescue` only at process boundaries (Oban worker `perform`, LiveView `handle_event`).
+
+7. **Dependency failures are observable.** If LLM token quota is exhausted, the user sees "OpenRouter quota exhausted, retry in 30s," not a generic 500. Surface the specific reason in the UI.
+
+8. **One-line config flips for every external service.** Customer can swap Crawl4AI → Native, OpenRouter → Anthropic, SQLite → Postgres with a single env var. No code change.
+
+## UI/UX standards (every LiveView must hit these)
+
+This product is sold to law firms and consulting partners. **The UI is the trust signal.** Sloppy UI = lost deal regardless of how good the backend is.
+
+1. **Real-time, never frozen.** No operation > 1 second goes without a progress indicator showing what is happening (which URL is being scraped, which LLM call is in flight). Use the `research:events` PubSub topic.
+
+2. **Loading states are first-class.** Every async UI op has explicit `:idle | :loading | :success | :error` states with distinct visual treatment. No "did I click that?" ambiguity.
+
+3. **Error states surface the reason.** "Crawl4AI returned 503 — falling back to native scraper" is better UX than a red box saying "error". The user must understand *what* failed and *what's next*.
+
+4. **Clean typography, calm spacing.** Tailwind v4 utilities only (no inline styles, no `@apply`). Use `<.icon>` from `core_components.ex` for icons — never raw SVG, never Heroicons modules.
+
+5. **Premium feel, not enterprise drab.** Subtle micro-interactions on buttons (hover, active, focus rings), smooth transitions on state changes, considered empty states. Compare against Linear / Notion / Stripe — that bar.
+
+6. **Streams for collections.** Any list with > 10 items uses `stream/3` (LiveView streams). Never `assign(:items, list)` for unbounded lists — leads to memory ballooning and we will get burned.
+
+7. **DOM ids on every interactive element.** Every form, button, list item has an explicit `id="..."` so LiveView tests can target them with `element/2`.
+
+8. **Responsive by default.** Test at narrow widths. Sidebar collapses, tables scroll, modals fit. Tailwind responsive prefixes (`sm:`, `md:`, `lg:`) liberally.
+
+9. **No raw `<script>` in HEEx.** Use `:type={Phoenix.LiveView.ColocatedHook}` for inline JS, or external `phx-hook="MyHook"` referenced from `assets/js/`.
+
+10. **Empty states are designed, not default.** Every collection has an explicit empty state with a CTA to populate it. "No reports yet" with a subtle illustration + "Start your first research" button — not a blank page.
+
 ## Pitfalls (things that have already burned us or obvious traps)
 
 - Don't put Crawl4AI URLs / API keys in compiled config. Use `runtime.exs` + env vars.
