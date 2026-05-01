@@ -25,6 +25,16 @@ end
 config :ex_autoresearch, :research,
   max_threads: String.to_integer(System.get_env("RESEARCH_MAX_THREADS", "5"))
 
+case System.get_env("EX_AUTORESEARCH_SCRAPER") do
+  "crawl4ai" -> config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Crawl4ai
+  "native" -> config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Native
+  _ -> :ok
+end
+
+if base_url = System.get_env("CRAWL4AI_BASE_URL") do
+  config :ex_autoresearch, :crawl4ai, base_url: base_url
+end
+
 if System.get_env("PHX_SERVER") do
   config :ex_autoresearch, ExAutoresearchWeb.Endpoint, server: true
 end

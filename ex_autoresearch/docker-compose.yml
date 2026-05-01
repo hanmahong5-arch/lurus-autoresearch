@@ -20,6 +20,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      crawl4ai:
+        condition: service_started
     environment:
       DATABASE_URL: "postgres://postgres:postgres@db:5432/ex_autoresearch_prod"
       SERPER_API_KEY: ${SERPER_API_KEY:?Set SERPER_API_KEY in .env}
@@ -27,6 +29,8 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:-change-me-in-production}
       PHX_HOST: ${PHX_HOST:-localhost}
       PORT: "4000"
+      CRAWL4AI_BASE_URL: "http://crawl4ai:11235"
+      EX_AUTORESEARCH_SCRAPER: "crawl4ai"
     ports:
       - "4000:4000"
     healthcheck:
@@ -34,6 +38,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    shm_size: 1gb
+    ports:
+      - "11235:11235"
+    environment:
+      INSTALL_TYPE: basic
 
 volumes:
   pgdata:
