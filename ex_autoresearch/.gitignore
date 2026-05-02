@@ -1,0 +1,18 @@
+# Erlang VM crash dumps
+erl_crash.dump
+*.ez
+
+# Local dev / test SQLite + WAL/SHM
+/dev.db
+/dev.db-*
+/ex_autoresearch_test.db
+/ex_autoresearch_test.db-*
+
+# Server logs (local only)
+/run.log
+
+# Playwright MCP runtime cache
+/.playwright-mcp/
+
+# Debugging screenshots (repo root)
+/*.png
