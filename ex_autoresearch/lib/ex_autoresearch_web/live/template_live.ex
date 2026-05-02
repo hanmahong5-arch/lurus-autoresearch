@@ -143,17 +143,25 @@ defmodule ExAutoresearchWeb.TemplateLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50">
-      <.app_navbar />
-
-      <div class="max-w-5xl mx-auto px-4 py-6">
-        <div class="flex items-center justify-between mb-6">
-          <h1 class="text-xl font-semibold text-gray-900">Research Templates</h1>
+    <Layouts.app
+      flash={@flash}
+      current_user={assigns[:current_user]}
+      active_nav={:templates}
+      container="max-w-5xl"
+    >
+      <div class="space-y-6">
+        <div class="flex items-end justify-between gap-4">
+          <div>
+            <h1 class="text-2xl font-bold tracking-tight">Research Templates</h1>
+            <p class="text-sm text-base-content/60 mt-1">
+              Pre-configured research queries you can launch with one click or schedule on cron.
+            </p>
+          </div>
           <button
             phx-click="toggle_form"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            class={["btn btn-sm", if(@show_form, do: "btn-ghost", else: "btn-primary")]}
           >
-            <span :if={!@show_form}>+ New Template</span>
+            <span :if={!@show_form}>+ New template</span>
             <span :if={@show_form}>Cancel</span>
           </button>
         </div>
@@ -162,155 +170,186 @@ defmodule ExAutoresearchWeb.TemplateLive do
           <.template_form form={@form} />
         <% end %>
 
-        <div class="space-y-3">
-          <%= for t <- @templates do %>
-            <div class="bg-white rounded-lg shadow p-4 flex items-center justify-between">
-              <div>
-                <h3 class="font-medium text-gray-900">{t.name}</h3>
-                <p class="text-sm text-gray-500 mt-1">{String.slice(t.query_template, 0, 120)}</p>
-                <div class="flex gap-2 mt-2">
-                  <span class={"px-2 py-0.5 rounded text-xs #{category_class(t.category)}"}>
-                    {t.category}
-                  </span>
-                  <span :if={t.enabled} class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-800">
-                    Scheduled
-                  </span>
-                  <span :if={t.schedule_cron} class="text-xs text-gray-400">
-                    #{t.schedule_cron}
-                  </span>
-                </div>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  phx-click="launch"
-                  phx-value-id={t.id}
-                  class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-                >
-                  Launch
-                </button>
-                <button
-                  phx-click="delete_template"
-                  phx-value-id={t.id}
-                  class="px-3 py-1.5 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
-                  data-confirm="Delete this template?"
-                >
-                  Delete
-                </button>
-              </div>
+        <%= if @templates == [] do %>
+          <div class="card bg-base-100 border border-dashed border-base-300">
+            <div class="card-body items-center text-center py-12">
+              <p class="text-sm text-base-content/60">No templates yet.</p>
+              <p class="text-xs text-base-content/50 mt-1">
+                Create one to launch repeated research queries with one click.
+              </p>
             </div>
-          <% end %>
-        </div>
+          </div>
+        <% else %>
+          <ul class="space-y-3">
+            <%= for t <- @templates do %>
+              <li class="card bg-base-100 border border-base-300 shadow-sm">
+                <div class="card-body py-4 px-5 flex flex-row items-start justify-between gap-4">
+                  <div class="min-w-0 flex-1 space-y-2">
+                    <h3 class="font-medium truncate">{t.name}</h3>
+                    <p class="text-sm text-base-content/70 line-clamp-2">
+                      {String.slice(t.query_template, 0, 200)}
+                    </p>
+                    <div class="flex flex-wrap gap-2 items-center text-xs">
+                      <span class={["badge badge-sm", category_badge_class(t.category)]}>
+                        {t.category}
+                      </span>
+                      <span :if={t.enabled} class="badge badge-sm badge-success badge-soft">
+                        Scheduled
+                      </span>
+                      <span :if={t.schedule_cron} class="font-mono text-base-content/50">
+                        {t.schedule_cron}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 shrink-0">
+                    <button
+                      phx-click="launch"
+                      phx-value-id={t.id}
+                      class="btn btn-primary btn-sm"
+                    >
+                      Launch
+                    </button>
+                    <button
+                      phx-click="delete_template"
+                      phx-value-id={t.id}
+                      class="btn btn-soft btn-error btn-sm"
+                      data-confirm="Delete this template?"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
       </div>
-    </div>
-    """
-  end
-
-  defp app_navbar(assigns) do
-    ~H"""
-    <header class="bg-white border-b">
-      <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-lg font-semibold text-gray-900">
-          CodeXpert
-        </h1>
-        <nav class="flex gap-3 text-sm">
-          <.link navigate={~p"/"} class="text-gray-600 hover:text-gray-900">Dashboard</.link>
-          <.link navigate={~p"/templates"} class="text-gray-900 font-medium">Templates</.link>
-          <.link navigate={~p"/schedules"} class="text-gray-600 hover:text-gray-900">Schedules</.link>
-          <.link navigate={~p"/settings"} class="text-gray-600 hover:text-gray-900">Settings</.link>
-        </nav>
-        <span class="text-sm text-gray-600">{Map.get(assigns, :current_user, %{email: ""}).email}</span>
-      </div>
-    </header>
+    </Layouts.app>
     """
   end
 
   defp template_form(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-      <h2 class="text-lg font-semibold text-gray-900 mb-4">New Template</h2>
+    <section class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body space-y-5">
+        <h2 class="card-title text-lg">New Template</h2>
 
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-        <input
-          type="text"
-          name="name"
-          value={@form["name"]}
-          phx-change="set_name"
-          class="w-full px-3 py-2 border rounded-lg"
-          placeholder="Competitor Weekly Brief"
-        />
-      </div>
-
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Query Template</label>
-        <textarea
-          name="query_template"
-          value={@form["query_template"]}
-          phx-change="set_query"
-          rows="3"
-          class="w-full px-3 py-2 border rounded-lg"
-          placeholder="e.g., What are the latest product updates from {company}?"
-        />
-      </div>
-
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
-        <input
-          type="text"
-          name="description"
-          value={@form["description"]}
-          phx-change="set_description"
-          class="w-full px-3 py-2 border rounded-lg"
-        />
-      </div>
-
-      <div class="grid grid-cols-3 gap-4 mb-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-          <select name="category" phx-change="set_category" class="w-full px-3 py-2 border rounded-lg text-sm">
-            <option value="competitor" selected={@form["category"] == "competitor"}>Competitor</option>
-            <option value="market" selected={@form["category"] == "market"}>Market</option>
-            <option value="policy" selected={@form["category"] == "policy"}>Policy</option>
-            <option value="trend" selected={@form["category"] == "trend"}>Trend</option>
-            <option value="custom" selected={@form["category"] == "custom"}>Custom</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
-          <select name="model" phx-change="set_model" class="w-full px-3 py-2 border rounded-lg text-sm">
-            <option value="claude-sonnet-4">Claude Sonnet 4</option>
-            <option value="claude-opus-4-6">Claude Opus 4.6</option>
-            <option value="gpt-4.1">GPT-4.1</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Schedule Cron (optional)</label>
+        <div class="form-control">
+          <label class="label" for="tpl-name">
+            <span class="label-text font-medium">Name</span>
+          </label>
           <input
+            id="tpl-name"
             type="text"
-            name="cron"
-            value={@form["schedule_cron"]}
-            phx-change="set_cron"
-            class="w-full px-3 py-2 border rounded-lg text-sm"
-            placeholder="0 9 * * 1"
+            name="name"
+            value={@form["name"]}
+            phx-change="set_name"
+            phx-debounce="300"
+            class="input input-bordered w-full"
+            placeholder="Competitor Weekly Brief"
           />
         </div>
-      </div>
 
-      <button
-        phx-click="save_template"
-        class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-      >
-        Create Template
-      </button>
-    </div>
+        <div class="form-control">
+          <label class="label" for="tpl-query">
+            <span class="label-text font-medium">Query Template</span>
+            <span class="label-text-alt text-base-content/50">{} placeholders allowed</span>
+          </label>
+          <textarea
+            id="tpl-query"
+            name="query_template"
+            phx-change="set_query"
+            phx-debounce="300"
+            rows="3"
+            class="textarea textarea-bordered w-full font-mono text-sm"
+            placeholder="e.g., What are the latest product updates from {company}?"
+          >{@form["query_template"]}</textarea>
+        </div>
+
+        <div class="form-control">
+          <label class="label" for="tpl-desc">
+            <span class="label-text font-medium">Description</span>
+            <span class="label-text-alt text-base-content/50">optional</span>
+          </label>
+          <input
+            id="tpl-desc"
+            type="text"
+            name="description"
+            value={@form["description"]}
+            phx-change="set_description"
+            phx-debounce="300"
+            class="input input-bordered w-full"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="form-control">
+            <label class="label" for="tpl-category">
+              <span class="label-text font-medium">Category</span>
+            </label>
+            <select
+              id="tpl-category"
+              name="category"
+              phx-change="set_category"
+              class="select select-bordered w-full"
+            >
+              <option value="competitor" selected={@form["category"] == "competitor"}>
+                Competitor
+              </option>
+              <option value="market" selected={@form["category"] == "market"}>Market</option>
+              <option value="policy" selected={@form["category"] == "policy"}>Policy</option>
+              <option value="trend" selected={@form["category"] == "trend"}>Trend</option>
+              <option value="custom" selected={@form["category"] == "custom"}>Custom</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label" for="tpl-model">
+              <span class="label-text font-medium">Model</span>
+            </label>
+            <select
+              id="tpl-model"
+              name="model"
+              phx-change="set_model"
+              class="select select-bordered w-full"
+            >
+              <option value="claude-sonnet-4">Claude Sonnet 4</option>
+              <option value="claude-opus-4-6">Claude Opus 4.6</option>
+              <option value="gpt-4.1">GPT-4.1</option>
+            </select>
+          </div>
+
+          <div class="form-control">
+            <label class="label" for="tpl-cron">
+              <span class="label-text font-medium">Schedule Cron</span>
+              <span class="label-text-alt text-base-content/50">optional</span>
+            </label>
+            <input
+              id="tpl-cron"
+              type="text"
+              name="cron"
+              value={@form["schedule_cron"]}
+              phx-change="set_cron"
+              phx-debounce="300"
+              class="input input-bordered input-sm w-full font-mono"
+              placeholder="0 9 * * 1"
+            />
+          </div>
+        </div>
+
+        <div class="flex justify-end">
+          <button phx-click="save_template" class="btn btn-primary">
+            Create Template
+          </button>
+        </div>
+      </div>
+    </section>
     """
   end
 
-  defp category_class(:competitor), do: "bg-blue-100 text-blue-800"
-  defp category_class(:market), do: "bg-green-100 text-green-800"
-  defp category_class(:policy), do: "bg-yellow-100 text-yellow-800"
-  defp category_class(:trend), do: "bg-purple-100 text-purple-800"
-  defp category_class(_), do: "bg-gray-100 text-gray-800"
+  defp category_badge_class(:competitor), do: "badge-info badge-soft"
+  defp category_badge_class(:market), do: "badge-success badge-soft"
+  defp category_badge_class(:policy), do: "badge-warning badge-soft"
+  defp category_badge_class(:trend), do: "badge-secondary badge-soft"
+  defp category_badge_class(_), do: "badge-ghost"
 end

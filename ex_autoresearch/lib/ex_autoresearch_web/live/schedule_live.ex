@@ -30,13 +30,12 @@ defmodule ExAutoresearchWeb.ScheduleLive do
     templates =
       case org_id do
         nil ->
-          Ash.read!(Ash.Query.sort(Research.Template, inserted_at: :desc))
+          []
 
         id ->
-          Ash.read!(
-            Ash.Query.filter(Research.Template, organization_id == ^id)
-            |> Ash.Query.sort(inserted_at: :desc)
-          )
+          Research.Template
+          |> Ash.Query.sort(inserted_at: :desc)
+          |> Ash.read!(tenant: id)
       end
 
     scheduled = Enum.filter(templates, & &1.enabled)
@@ -63,79 +62,95 @@ defmodule ExAutoresearchWeb.ScheduleLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50">
-      <header class="bg-white border-b">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 class="text-lg font-semibold text-gray-900">CodeXpert</h1>
-          <nav class="flex gap-3 text-sm">
-            <.link navigate={~p"/"} class="text-gray-600 hover:text-gray-900">Dashboard</.link>
-            <.link navigate={~p"/templates"} class="text-gray-600 hover:text-gray-900">Templates</.link>
-            <.link navigate={~p"/schedules"} class="text-gray-900 font-medium">Schedules</.link>
-            <.link navigate={~p"/settings"} class="text-gray-600 hover:text-gray-900">Settings</.link>
-          </nav>
-          <span class="text-sm text-gray-600">{Map.get(assigns, :current_user, %{email: ""}).email}</span>
+    <Layouts.app
+      flash={@flash}
+      current_user={assigns[:current_user]}
+      active_nav={:schedules}
+      container="max-w-5xl"
+    >
+      <div class="space-y-8">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Scheduled Research</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Templates with cron schedules run automatically in the background.
+          </p>
         </div>
-      </header>
 
-      <div class="max-w-5xl mx-auto px-4 py-6">
-        <h1 class="text-xl font-semibold text-gray-900 mb-6">Scheduled Research</h1>
-
-        <div class="mb-8">
-          <h2 class="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <span class="h-3 w-3 bg-green-500 rounded-full animate-pulse"></span>
+        <section>
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-base-content/60 mb-3 flex items-center gap-2">
+            <span class="h-2 w-2 bg-success rounded-full animate-pulse" aria-hidden="true"></span>
             Active Schedules
           </h2>
 
           <%= if @scheduled == [] do %>
-            <p class="text-gray-400 text-sm">No active schedules.</p>
+            <div class="card bg-base-100 border border-dashed border-base-300">
+              <div class="card-body items-center text-center py-8">
+                <p class="text-sm text-base-content/60">No active schedules.</p>
+                <p class="text-xs text-base-content/50 mt-1">
+                  Enable a template below to schedule it.
+                </p>
+              </div>
+            </div>
           <% else %>
             <div class="space-y-2">
               <%= for t <- @scheduled do %>
-                <div class="bg-white rounded-lg shadow p-4 flex items-center justify-between">
-                  <div>
-                    <h3 class="font-medium text-gray-900">{t.name}</h3>
-                    <p class="text-sm text-gray-500 mt-1">{t.schedule_cron || "No cron set"}</p>
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                  <div class="card-body py-4 px-5 flex flex-row items-center justify-between gap-4">
+                    <div class="min-w-0">
+                      <h3 class="font-medium truncate">{t.name}</h3>
+                      <p class="text-xs text-base-content/60 mt-1 font-mono">
+                        {t.schedule_cron || "No cron set"}
+                      </p>
+                    </div>
+                    <button
+                      phx-click="toggle"
+                      phx-value-id={t.id}
+                      class="btn btn-sm btn-soft btn-error shrink-0"
+                    >
+                      Disable
+                    </button>
                   </div>
-                  <button
-                    phx-click="toggle"
-                    phx-value-id={t.id}
-                    class="px-3 py-1.5 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
-                  >
-                    Disable
-                  </button>
                 </div>
               <% end %>
             </div>
           <% end %>
-        </div>
+        </section>
 
-        <div>
-          <h2 class="text-lg font-semibold text-gray-600 mb-3">Inactive Templates</h2>
+        <section>
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-base-content/60 mb-3">
+            Inactive Templates
+          </h2>
 
           <%= if @unscheduled == [] do %>
-            <p class="text-gray-400 text-sm">All templates are scheduled.</p>
+            <div class="card bg-base-100 border border-dashed border-base-300">
+              <div class="card-body items-center text-center py-8">
+                <p class="text-sm text-base-content/60">All templates are scheduled.</p>
+              </div>
+            </div>
           <% else %>
             <div class="space-y-2">
               <%= for t <- @unscheduled do %>
-                <div class="bg-white rounded-lg shadow p-4 flex items-center justify-between">
-                  <div>
-                    <h3 class="font-medium text-gray-900">{t.name}</h3>
-                    <p class="text-sm text-gray-500 mt-1">{t.category}</p>
+                <div class="card bg-base-100 border border-base-300 shadow-sm">
+                  <div class="card-body py-4 px-5 flex flex-row items-center justify-between gap-4">
+                    <div class="min-w-0">
+                      <h3 class="font-medium truncate">{t.name}</h3>
+                      <p class="text-xs text-base-content/60 mt-1">{t.category}</p>
+                    </div>
+                    <button
+                      phx-click="toggle"
+                      phx-value-id={t.id}
+                      class="btn btn-sm btn-soft btn-success shrink-0"
+                    >
+                      Enable
+                    </button>
                   </div>
-                  <button
-                    phx-click="toggle"
-                    phx-value-id={t.id}
-                    class="px-3 py-1.5 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200"
-                  >
-                    Enable
-                  </button>
                 </div>
               <% end %>
             </div>
           <% end %>
-        </div>
+        </section>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 end

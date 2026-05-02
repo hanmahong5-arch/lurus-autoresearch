@@ -13,12 +13,15 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
     report = get_report(id)
     investigations = get_investigations(id)
 
-    # Use mdex for proper markdown rendering
     html_body =
       if report && report.markdown_body do
-        MDEx.to_html(report.markdown_body)
-      else
-        nil
+        case MDEx.to_html(report.markdown_body,
+               extension: [strikethrough: true, tagfilter: false],
+               render: [hardbreaks: true, unsafe_: true]
+             ) do
+          {:ok, html} -> html
+          {:error, _} -> nil
+        end
       end
 
     {:ok,
@@ -47,87 +50,97 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50">
-      <header class="bg-white border-b">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 class="text-lg font-semibold text-gray-900">CodeXpert</h1>
-          <nav class="flex gap-3 text-sm">
-            <.link navigate={~p"/"} class="text-gray-600 hover:text-gray-900">Dashboard</.link>
-            <.link navigate={~p"/templates"} class="text-gray-600 hover:text-gray-900">Templates</.link>
-            <.link navigate={~p"/settings"} class="text-gray-600 hover:text-gray-900">Settings</.link>
-          </nav>
-          <span class="text-sm text-gray-600">{Map.get(assigns, :current_user, %{email: ""}).email}</span>
-        </div>
-      </header>
-
-      <div class="max-w-5xl mx-auto px-4 py-6">
-        <div class="flex items-center justify-between mb-6">
-          <button phx-click="back" class="text-sm text-blue-600 hover:underline">
-            &larr; Back to dashboard
+    <Layouts.app
+      flash={@flash}
+      current_user={assigns[:current_user]}
+      active_nav={:dashboard}
+      container="max-w-5xl"
+    >
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <button phx-click="back" class="btn btn-ghost btn-sm gap-1">
+            <span aria-hidden="true">&larr;</span> Back to dashboard
           </button>
-          <button
-            phx-click="export"
-            phx-value-id={@report && @report.id}
-            class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
-          >
-            Export Markdown
-          </button>
+          <%= if @report do %>
+            <button
+              phx-click="export"
+              phx-value-id={@report.id}
+              class="btn btn-soft btn-sm"
+            >
+              Export Markdown
+            </button>
+          <% end %>
         </div>
 
         <%= if @report do %>
-          <div class="bg-white rounded-lg shadow overflow-hidden">
-            <div class="border-b px-6 py-4">
-              <h1 class="text-2xl font-bold text-gray-900">{@report.title}</h1>
-              <p class="text-gray-500 mt-1">{@report.query}</p>
-              <div class="flex gap-3 mt-3">
-                <span class={"px-2 py-0.5 rounded text-xs #{status_class(@report.status)}"}>
+          <article class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+            <header class="border-b border-base-300 px-6 py-5 space-y-3">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight">{@report.title}</h1>
+                <p class="text-sm text-base-content/70 mt-1">{@report.query}</p>
+              </div>
+              <div class="flex flex-wrap gap-2 items-center text-xs">
+                <span class={["badge badge-sm", status_badge_class(@report.status)]}>
                   {@report.status |> to_string() |> String.capitalize()}
                 </span>
-                <span class="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">
+                <span class="badge badge-sm badge-ghost">
                   {@report.category}
                 </span>
-                <span class="text-xs text-gray-400">
-                  {@report.total_sources} sources &middot; {@report.total_investigations} investigations
+                <span class="text-base-content/50 ml-1">
+                  {@report.total_sources} sources · {@report.total_investigations} investigations
                 </span>
               </div>
-            </div>
+            </header>
 
             <div class="px-6 py-6">
               <%= if @html_body do %>
-                <div class="prose max-w-none" inner_html={@html_body} />
+                <div class="text-sm leading-relaxed max-w-none [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_a]:link [&_a]:link-primary [&_code]:text-xs [&_code]:bg-base-200 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-base-200 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-4 [&_blockquote]:border-base-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-base-content/70 [&_strong]:font-semibold [&_table]:w-full [&_table]:my-3 [&_th]:text-left [&_th]:font-semibold [&_th]:border-b [&_th]:border-base-300 [&_th]:py-2 [&_th]:px-3 [&_td]:border-b [&_td]:border-base-300 [&_td]:py-2 [&_td]:px-3">
+                  {Phoenix.HTML.raw(@html_body)}
+                </div>
               <% else %>
-                <div class="text-center py-8 text-gray-500">
+                <div class="text-center py-12 text-base-content/60">
                   <%= if @report.status == :completed do %>
-                    Report body not available.
+                    <p>Report body not available.</p>
                   <% else %>
-                    {status_text(@report.status, @report.progress_pct)}
+                    <span class="loading loading-spinner loading-md text-primary mb-3"></span>
+                    <p class="text-sm">{status_text(@report.status, @report.progress_pct)}</p>
                   <% end %>
                 </div>
               <% end %>
             </div>
 
             <%= if @investigations != [] do %>
-              <div class="border-t px-6 py-4">
-                <h3 class="font-medium text-gray-700 mb-3">Investigation Steps</h3>
-                <div class="space-y-2">
+              <footer class="border-t border-base-300 px-6 py-4 bg-base-200/30">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/60 mb-3">
+                  Investigation Steps
+                </h3>
+                <ul class="space-y-2">
                   <%= for inv <- @investigations do %>
-                    <div class="flex items-start gap-3 text-sm">
-                      <span class={"mt-1 h-2 w-2 rounded-full #{inv_status_class(inv.status)}"}></span>
-                      <div>
-                        <span class="font-medium">{inv.query}</span>
-                        <span class="text-gray-500 ml-2">{inv.status}</span>
+                    <li class="flex items-start gap-3 text-sm">
+                      <span
+                        class={["mt-1.5 h-2 w-2 rounded-full shrink-0", inv_status_class(inv.status)]}
+                        aria-hidden="true"
+                      >
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <p class="font-medium truncate">{inv.query}</p>
+                        <p class="text-xs text-base-content/60 mt-0.5">{inv.status}</p>
                       </div>
-                    </div>
+                    </li>
                   <% end %>
-                </div>
-              </div>
+                </ul>
+              </footer>
             <% end %>
-          </div>
+          </article>
         <% else %>
-          <div class="text-center py-8 text-gray-500">Report not found.</div>
+          <div class="card bg-base-100 border border-dashed border-base-300">
+            <div class="card-body items-center text-center py-12">
+              <p class="text-base-content/60">Report not found.</p>
+            </div>
+          </div>
         <% end %>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 
@@ -152,20 +165,20 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
     |> Map.put(:summary_text, report.summary || "No summary available")
   end
 
-  defp status_class(:completed), do: "bg-green-100 text-green-800"
-  defp status_class(:researching), do: "bg-blue-100 text-blue-800"
-  defp status_class(:failed), do: "bg-red-100 text-red-800"
-  defp status_class(:analyzing), do: "bg-yellow-100 text-yellow-800"
-  defp status_class(:writing), do: "bg-purple-100 text-purple-800"
-  defp status_class(_), do: "bg-gray-100 text-gray-800"
+  defp status_badge_class(:completed), do: "badge-success"
+  defp status_badge_class(:researching), do: "badge-info"
+  defp status_badge_class(:failed), do: "badge-error"
+  defp status_badge_class(:analyzing), do: "badge-warning"
+  defp status_badge_class(:writing), do: "badge-secondary"
+  defp status_badge_class(_), do: "badge-ghost"
 
-  defp inv_status_class(:completed), do: "bg-green-500"
-  defp inv_status_class(:failed), do: "bg-red-500"
-  defp inv_status_class(:running), do: "bg-blue-500 animate-pulse"
-  defp inv_status_class(_), do: "bg-gray-400"
+  defp inv_status_class(:completed), do: "bg-success"
+  defp inv_status_class(:failed), do: "bg-error"
+  defp inv_status_class(:running), do: "bg-info animate-pulse"
+  defp inv_status_class(_), do: "bg-base-content/30"
 
   defp status_text(:researching, pct),
-    do: "Researching... (#{Float.round(pct * 100, 1)}%)"
+    do: "Researching... (#{Float.round((pct || 0) * 100 / 1, 1)}%)"
 
   defp status_text(:pending, _), do: "Waiting to start..."
   defp status_text(:analyzing, _), do: "Analyzing findings..."

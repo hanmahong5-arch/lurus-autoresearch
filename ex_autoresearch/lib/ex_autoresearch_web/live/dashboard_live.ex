@@ -18,10 +18,9 @@ defmodule ExAutoresearchWeb.DashboardLive do
 
     reports =
       case org_id do
-        nil -> Ash.read!(reports_query)
-        id -> Ash.read!(reports_query, tenant: id)
+        nil -> []
+        id -> Ash.read!(reports_query, tenant: id) |> Enum.map(&format_report_summary/1)
       end
-      |> Enum.map(&format_report_summary/1)
 
     socket =
       socket
@@ -173,13 +172,23 @@ defmodule ExAutoresearchWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50">
-      <.app_header current_user={@current_user} />
-
-      <div class="max-w-5xl mx-auto px-4 py-6">
+    <Layouts.app
+      flash={@flash}
+      current_user={assigns[:current_user]}
+      active_nav={:dashboard}
+      container="max-w-5xl"
+    >
+      <div class="space-y-6">
         <%= if @active_report do %>
           <.report_detail report={@active_report} />
         <% else %>
+          <div>
+            <h1 class="text-2xl font-bold tracking-tight">Deep Research</h1>
+            <p class="text-sm text-base-content/60 mt-1">
+              Ask a question. We'll plan, search, scrape, analyze and write a sourced report.
+            </p>
+          </div>
+
           <.search_form
             query={@query}
             title={@title}
@@ -189,171 +198,165 @@ defmodule ExAutoresearchWeb.DashboardLive do
           />
 
           <%= if @status != :idle do %>
-            <.progress_bar step={@research_step} progress={@progress} status={@status} scraper_status={@scraper_status} />
+            <.progress_bar
+              step={@research_step}
+              progress={@progress}
+              status={@status}
+              scraper_status={@scraper_status}
+            />
           <% end %>
 
           <.report_list reports={@reports} />
         <% end %>
       </div>
-    </div>
+    </Layouts.app>
     """
   end
-
-  defp app_header(assigns) do
-    ~H"""
-    <header class="bg-white border-b">
-      <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-          <h1 class="text-lg font-semibold text-gray-900">
-            CodeXpert
-            <span class="text-xs font-normal text-gray-500 ml-1">Competitive Intelligence</span>
-          </h1>
-          <nav class="flex gap-3 text-sm">
-            <.link navigate={~p"/"} class={nav_link_class(true)}>Dashboard</.link>
-            <.link navigate={~p"/templates"} class={nav_link_class(false)}>Templates</.link>
-            <.link navigate={~p"/schedules"} class={nav_link_class(false)}>Schedules</.link>
-            <.link navigate={~p"/settings"} class={nav_link_class(false)}>Settings</.link>
-          </nav>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <%= if @current_user do %>
-            <span class="text-sm text-gray-600">{@current_user.email}</span>
-            <form method="get" action="/logout" class="inline">
-              <button
-                type="submit"
-                class="text-sm text-blue-600 hover:underline"
-              >
-                Logout
-              </button>
-            </form>
-          <% else %>
-            <.link navigate={~p"/login"} class="text-sm text-blue-600 hover:underline">
-              Login
-            </.link>
-          <% end %>
-        </div>
-      </div>
-    </header>
-    """
-  end
-
-  defp nav_link_class(_active), do: "text-gray-600 hover:text-gray-900"
 
   defp search_form(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-      <form phx-submit="start_research">
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Research Question</label>
+    <section class="card bg-base-100 border border-base-300 shadow-sm">
+      <form phx-submit="start_research" class="card-body space-y-5">
+        <div class="form-control">
+          <label class="label" for="dash-query">
+            <span class="label-text font-medium">Research Question</span>
+          </label>
           <input
+            id="dash-query"
             type="text"
             name="query"
             value={@query}
             phx-change="set_query"
+            phx-debounce="300"
             placeholder="e.g., What are the latest competitor moves in our market?"
-            class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            class="input input-bordered w-full"
           />
         </div>
 
-        <div class="mb-4">
-          <label class="block text-sm font-medium text-gray-700 mb-1">Report Title (optional)</label>
+        <div class="form-control">
+          <label class="label" for="dash-title">
+            <span class="label-text font-medium">Report Title</span>
+            <span class="label-text-alt text-base-content/50">optional</span>
+          </label>
           <input
+            id="dash-title"
             type="text"
             name="title"
             value={@title}
             phx-change="set_title"
+            phx-debounce="300"
             placeholder="Auto-generated from query"
-            class="w-full px-3 py-2 border rounded-lg text-sm"
+            class="input input-bordered w-full"
           />
         </div>
 
-        <div class="grid grid-cols-3 gap-4 mb-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">LLM Model</label>
-            <select name="model" phx-change="set_model" class="w-full px-3 py-2 border rounded-lg text-sm">
-              <option value="claude-sonnet-4" selected={@model == "claude-sonnet-4"}>Claude Sonnet 4</option>
-              <option value="claude-opus-4-6" selected={@model == "claude-opus-4-6"}>Claude Opus 4.6</option>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="form-control">
+            <label class="label" for="dash-model">
+              <span class="label-text font-medium">LLM Model</span>
+            </label>
+            <select
+              id="dash-model"
+              name="model"
+              phx-change="set_model"
+              class="select select-bordered w-full"
+            >
+              <option value="claude-sonnet-4" selected={@model == "claude-sonnet-4"}>
+                Claude Sonnet 4
+              </option>
+              <option value="claude-opus-4-6" selected={@model == "claude-opus-4-6"}>
+                Claude Opus 4.6
+              </option>
               <option value="gpt-4.1" selected={@model == "gpt-4.1"}>GPT-4.1</option>
-              <option value="gemini-2.5-pro" selected={@model == "gemini-2.5-pro"}>Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-pro" selected={@model == "gemini-2.5-pro"}>
+                Gemini 2.5 Pro
+              </option>
             </select>
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Max Depth</label>
+          <div class="form-control">
+            <label class="label" for="dash-depth">
+              <span class="label-text font-medium">Max Depth</span>
+              <span class="label-text-alt text-base-content/50">1–10</span>
+            </label>
             <input
+              id="dash-depth"
               type="number"
               name="depth"
               value={@max_depth}
               phx-change="set_depth"
               min="1"
               max="10"
-              class="w-full px-3 py-2 border rounded-lg text-sm"
+              class="input input-bordered w-full"
             />
           </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Max Sources</label>
+          <div class="form-control">
+            <label class="label" for="dash-sources">
+              <span class="label-text font-medium">Max Sources</span>
+              <span class="label-text-alt text-base-content/50">5–100</span>
+            </label>
             <input
+              id="dash-sources"
               type="number"
               name="sources"
               value={@max_sources}
               phx-change="set_sources"
               min="5"
               max="100"
-              class="w-full px-3 py-2 border rounded-lg text-sm"
+              class="input input-bordered w-full"
             />
           </div>
         </div>
 
         <div class="flex justify-end">
-          <button
-            type="submit"
-            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
+          <button type="submit" class="btn btn-primary">
             Start Deep Research
           </button>
         </div>
       </form>
-    </div>
+    </section>
     """
   end
 
   defp progress_bar(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-4 mb-6" id="research-progress">
-      <div class="flex items-center gap-3 mb-2">
-        <div class="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" aria-hidden="true"></div>
-        <span class="text-sm font-medium text-gray-700">{@step || "Researching..."}</span>
+    <section
+      id="research-progress"
+      class="card bg-base-100 border border-base-300 shadow-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="card-body py-4 px-5 space-y-3">
+        <div class="flex items-center gap-3">
+          <span class="loading loading-spinner loading-sm text-primary" aria-hidden="true"></span>
+          <span class="text-sm font-medium">{@step || "Researching..."}</span>
+          <span class="ml-auto text-xs font-mono text-base-content/60 tabular-nums">
+            {Float.round(@progress / 1, 1)}%
+          </span>
+        </div>
+        <progress class="progress progress-primary w-full" value={@progress} max="100"></progress>
+        <%= if @scraper_status do %>
+          <.scraper_status_row status={@scraper_status} />
+        <% end %>
       </div>
-      <div class="w-full bg-gray-200 rounded-full h-2 mb-3">
-        <div
-          class="bg-blue-600 h-2 rounded-full transition-all duration-500"
-          style={"width: #{@progress}%"}
-        ></div>
-      </div>
-      <%= if @scraper_status do %>
-        <.scraper_status_row status={@scraper_status} />
-      <% end %>
-    </div>
+    </section>
     """
   end
 
   defp scraper_status_row(assigns) do
     ~H"""
-    <div class={[
-      "flex items-start gap-2 text-xs px-3 py-2 rounded border",
-      scraper_row_class(@status.outcome)
-    ]} id={"scraper-status-#{@status.report_id}"}>
-      <span class="font-mono shrink-0 mt-0.5">
-        <%= scraper_outcome_icon(@status.outcome) %>
-      </span>
+    <div
+      id={"scraper-status-#{@status.report_id}"}
+      class={["alert text-xs py-2 px-3", scraper_alert_class(@status.outcome)]}
+    >
+      <span class="font-mono shrink-0">{scraper_outcome_icon(@status.outcome)}</span>
       <div class="min-w-0 flex-1">
-        <div class="font-medium truncate"><%= @status.url %></div>
-        <div class="text-gray-600 mt-0.5"><%= @status.message %></div>
+        <div class="font-medium truncate">{@status.url}</div>
+        <div class="opacity-70 mt-0.5">{@status.message}</div>
       </div>
-      <span class="text-gray-400 shrink-0 tabular-nums">
-        <%= @status.duration_ms %>ms
+      <span class="opacity-60 shrink-0 tabular-nums font-mono">
+        {@status.duration_ms}ms
       </span>
     </div>
     """
@@ -361,71 +364,88 @@ defmodule ExAutoresearchWeb.DashboardLive do
 
   defp report_list(assigns) do
     ~H"""
-    <div>
-      <h2 class="text-lg font-semibold text-gray-900 mb-3">Recent Reports</h2>
+    <section>
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-base-content/60 mb-3">
+        Recent Reports
+      </h2>
 
       <%= if @reports == [] do %>
-        <p class="text-gray-500 text-sm">No reports yet. Start a research query above.</p>
-      <% else %>
-        <div class="space-y-2">
-          <%= for report <- @reports do %>
-            <button
-              phx-click="view_report"
-              phx-value-id={report.id}
-              class="w-full text-left bg-white rounded-lg shadow p-4 hover:shadow-md cursor-pointer"
-            >
-              <div class="flex items-center justify-between">
-                <div>
-                  <h3 class="font-medium text-gray-900">{report.title}</h3>
-                  <p class="text-sm text-gray-500 mt-1">{String.slice(report.query, 0, 100)}</p>
-                </div>
-                <div class="text-right">
-                  <span class={"inline-block px-2 py-1 rounded text-xs #{status_class(report.status)}"}>
-                    {status_label(report.status)}
-                  </span>
-                  <p class="text-xs text-gray-400 mt-1">{report.source_count || 0} sources</p>
-                </div>
-              </div>
-            </button>
-          <% end %>
+        <div class="card bg-base-100 border border-dashed border-base-300">
+          <div class="card-body items-center text-center py-12">
+            <p class="text-sm text-base-content/60">No reports yet.</p>
+            <p class="text-xs text-base-content/50 mt-1">
+              Start a research query above to generate one.
+            </p>
+          </div>
         </div>
+      <% else %>
+        <ul class="space-y-2">
+          <%= for report <- @reports do %>
+            <li>
+              <button
+                phx-click="view_report"
+                phx-value-id={report.id}
+                class="w-full text-left card bg-base-100 border border-base-300 shadow-sm hover:shadow-md hover:border-primary/40 transition-all"
+              >
+                <div class="card-body py-4 px-5 flex flex-row items-start justify-between gap-4">
+                  <div class="min-w-0 flex-1">
+                    <h3 class="font-medium truncate">{report.title}</h3>
+                    <p class="text-sm text-base-content/70 mt-1 line-clamp-1">
+                      {String.slice(report.query, 0, 200)}
+                    </p>
+                  </div>
+                  <div class="text-right shrink-0 space-y-1">
+                    <span class={["badge badge-sm", status_badge_class(report.status)]}>
+                      {status_label(report.status)}
+                    </span>
+                    <p class="text-xs text-base-content/50">{report.source_count || 0} sources</p>
+                  </div>
+                </div>
+              </button>
+            </li>
+          <% end %>
+        </ul>
       <% end %>
-    </div>
+    </section>
     """
   end
 
   defp report_detail(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow">
-      <div class="border-b px-6 py-4 flex items-center justify-between">
-        <div>
-          <h2 class="text-lg font-semibold text-gray-900">{@report.title}</h2>
-          <p class="text-sm text-gray-500 mt-1">{@report.query}</p>
+    <article class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+      <header class="border-b border-base-300 px-6 py-4 flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <h2 class="text-lg font-semibold truncate">{@report.title}</h2>
+          <p class="text-sm text-base-content/70 mt-1 line-clamp-1">{@report.query}</p>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 shrink-0">
           <%= if @report.status == :completed do %>
-            <button phx-click="export_report" phx-value-id={@report.id} class="text-sm text-blue-600 hover:underline">
+            <button
+              phx-click="export_report"
+              phx-value-id={@report.id}
+              class="btn btn-soft btn-sm"
+            >
               Export
             </button>
           <% end %>
-          <button phx-click="back_to_list" class="text-sm text-blue-600 hover:underline">
-            &larr; Back
+          <button phx-click="back_to_list" class="btn btn-ghost btn-sm gap-1">
+            <span aria-hidden="true">&larr;</span> Back
           </button>
         </div>
-      </div>
+      </header>
 
-      <div class="px-6 py-4">
+      <div class="px-6 py-6">
         <%= if @report.status == :completed and @report.markdown_body do %>
-          <div class="prose max-w-none">
+          <div class="text-sm leading-relaxed max-w-none [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_a]:link [&_a]:link-primary [&_code]:text-xs [&_code]:bg-base-200 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-base-200 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-4 [&_blockquote]:border-base-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-base-content/70 [&_strong]:font-semibold">
             {format_markdown(@report.markdown_body)}
           </div>
         <% else %>
-          <div class="text-center py-8">
-            <div class="animate-spin h-8 w-8 border-3 border-blue-600 border-t-transparent rounded-full mx-auto mb-3"></div>
-            <p class="text-gray-600">
+          <div class="text-center py-12 text-base-content/60">
+            <span class="loading loading-spinner loading-md text-primary mb-3"></span>
+            <p class="text-sm">
               {case @report.status do
                 :pending -> "Waiting to start..."
-                :researching -> "Researching... (#{Float.round(@report.progress_pct * 100, 1)}%)"
+                :researching -> "Researching... (#{Float.round((@report.progress_pct || 0) * 100 / 1, 1)}%)"
                 :analyzing -> "Analyzing findings..."
                 :writing -> "Writing report..."
                 :failed -> "Research failed"
@@ -435,7 +455,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
           </div>
         <% end %>
       </div>
-    </div>
+    </article>
     """
   end
 
@@ -462,12 +482,12 @@ defmodule ExAutoresearchWeb.DashboardLive do
     |> Map.take([:id, :title, :query, :status, :source_count, :inserted_at])
   end
 
-  defp status_class(:completed), do: "bg-green-100 text-green-800"
-  defp status_class(:researching), do: "bg-blue-100 text-blue-800"
-  defp status_class(:failed), do: "bg-red-100 text-red-800"
-  defp status_class(:analyzing), do: "bg-yellow-100 text-yellow-800"
-  defp status_class(:writing), do: "bg-purple-100 text-purple-800"
-  defp status_class(_), do: "bg-gray-100 text-gray-800"
+  defp status_badge_class(:completed), do: "badge-success"
+  defp status_badge_class(:researching), do: "badge-info"
+  defp status_badge_class(:failed), do: "badge-error"
+  defp status_badge_class(:analyzing), do: "badge-warning"
+  defp status_badge_class(:writing), do: "badge-secondary"
+  defp status_badge_class(_), do: "badge-ghost"
 
   defp status_label(:completed), do: "Completed"
   defp status_label(:researching), do: "Researching"
@@ -477,14 +497,18 @@ defmodule ExAutoresearchWeb.DashboardLive do
   defp status_label(_), do: "Pending"
 
   defp format_markdown(text) do
-    {:safe, MDEx.to_html!(text, extension: [strikethrough: true, tagfilter: false], render: [hardbreaks: true, unsafe_: true])}
+    {:safe,
+     MDEx.to_html!(text,
+       extension: [strikethrough: true, tagfilter: false],
+       render: [hardbreaks: true, unsafe_: true]
+     )}
   end
 
-  defp scraper_row_class(:primary_success), do: "bg-green-50 border-green-200 text-green-800"
-  defp scraper_row_class(:fallback_success), do: "bg-amber-50 border-amber-200 text-amber-800"
-  defp scraper_row_class(:both_failed), do: "bg-red-50 border-red-200 text-red-800"
-  defp scraper_row_class(:native_failed), do: "bg-red-50 border-red-200 text-red-800"
-  defp scraper_row_class(_), do: "bg-gray-50 border-gray-200 text-gray-700"
+  defp scraper_alert_class(:primary_success), do: "alert-success"
+  defp scraper_alert_class(:fallback_success), do: "alert-warning"
+  defp scraper_alert_class(:both_failed), do: "alert-error"
+  defp scraper_alert_class(:native_failed), do: "alert-error"
+  defp scraper_alert_class(_), do: "alert-info"
 
   defp scraper_outcome_icon(:primary_success), do: "✓"
   defp scraper_outcome_icon(:fallback_success), do: "⚠"

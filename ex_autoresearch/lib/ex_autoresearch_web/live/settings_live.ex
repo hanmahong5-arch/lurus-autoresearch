@@ -19,7 +19,15 @@ defmodule ExAutoresearchWeb.SettingsLive do
 
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
-    {:noreply, assign(socket, :tab, tab)}
+    tab_atom =
+      case tab do
+        "general" -> :general
+        "integrations" -> :integrations
+        "notifications" -> :notifications
+        _ -> :general
+      end
+
+    {:noreply, assign(socket, :tab, tab_atom)}
   end
 
   def handle_event("set_org_name", %{"value" => v}, socket) do
@@ -69,45 +77,45 @@ defmodule ExAutoresearchWeb.SettingsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50">
-      <header class="bg-white border-b">
-        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 class="text-lg font-semibold text-gray-900">CodeXpert</h1>
-          <nav class="flex gap-3 text-sm">
-            <.link navigate={~p"/"} class="text-gray-600 hover:text-gray-900">Dashboard</.link>
-            <.link navigate={~p"/templates"} class="text-gray-600 hover:text-gray-900">Templates</.link>
-            <.link navigate={~p"/schedules"} class="text-gray-600 hover:text-gray-900">Schedules</.link>
-            <.link navigate={~p"/settings"} class="text-gray-900 font-medium">Settings</.link>
-          </nav>
-          <span class="text-sm text-gray-600">{Map.get(assigns, :current_user, %{email: ""}).email}</span>
+    <Layouts.app
+      flash={@flash}
+      current_user={assigns[:current_user]}
+      active_nav={:settings}
+      container="max-w-4xl"
+    >
+      <div class="space-y-6">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Settings</h1>
+          <p class="text-sm text-base-content/60 mt-1">
+            Configure your organization, integrations, and notifications.
+          </p>
         </div>
-      </header>
 
-      <div class="max-w-5xl mx-auto px-4 py-6">
-        <h1 class="text-xl font-semibold text-gray-900 mb-6">Settings</h1>
-
-        <div class="flex gap-4 mb-6 border-b">
-          <button
+        <div role="tablist" class="tabs tabs-bordered">
+          <a
+            role="tab"
             phx-click="switch_tab"
             phx-value-tab="general"
-            class={"pb-2 text-sm border-b-2 #{if @tab == :general, do: "border-blue-600 text-blue-600", else: "border-transparent text-gray-600"}"}
+            class={["tab cursor-pointer", @tab == :general && "tab-active"]}
           >
             General
-          </button>
-          <button
+          </a>
+          <a
+            role="tab"
             phx-click="switch_tab"
             phx-value-tab="integrations"
-            class={"pb-2 text-sm border-b-2 #{if @tab == :integrations, do: "border-blue-600 text-blue-600", else: "border-transparent text-gray-600"}"}
+            class={["tab cursor-pointer", @tab == :integrations && "tab-active"]}
           >
             Integrations
-          </button>
-          <button
+          </a>
+          <a
+            role="tab"
             phx-click="switch_tab"
             phx-value-tab="notifications"
-            class={"pb-2 text-sm border-b-2 #{if @tab == :notifications, do: "border-blue-600 text-blue-600", else: "border-transparent text-gray-600"}"}
+            class={["tab cursor-pointer", @tab == :notifications && "tab-active"]}
           >
             Notifications
-          </button>
+          </a>
         </div>
 
         <%= if @tab == :general do %>
@@ -119,118 +127,198 @@ defmodule ExAutoresearchWeb.SettingsLive do
         <% end %>
 
         <%= if @tab == :notifications do %>
-          <.notifications_tab />
+          <.notifications_tab notifications_email={@notifications_email} />
         <% end %>
+
+        <ExAutoresearchWeb.Components.VersionBadge.section id="settings-version-section" />
       </div>
-    </div>
+    </Layouts.app>
     """
   end
 
   defp general_tab(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6 space-y-4">
-      <h2 class="text-lg font-semibold text-gray-900">Organization</h2>
+    <section class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body space-y-5">
+        <div>
+          <h2 class="card-title text-lg">Organization</h2>
+          <p class="text-xs text-base-content/60 mt-0.5">
+            Identity used in reports and webhook notifications.
+          </p>
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
-        <input
-          type="text"
-          name="org_name"
-          value={@org && @org.name || "Not set"}
-          phx-change="set_org_name"
-          class="w-full px-3 py-2 border rounded-lg"
-        />
-      </div>
+        <div class="form-control">
+          <label class="label" for="org-name-input">
+            <span class="label-text font-medium">Organization Name</span>
+          </label>
+          <input
+            id="org-name-input"
+            type="text"
+            name="org_name"
+            value={(@org && @org.name) || ""}
+            placeholder="Not set"
+            phx-change="set_org_name"
+            phx-debounce="500"
+            class="input input-bordered w-full"
+          />
+          <label class="label">
+            <span class="label-text-alt text-base-content/50">
+              Auto-saved as you type.
+            </span>
+          </label>
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Plan</label>
-        <p class="text-gray-600">{@org && @org.plan || "—"}
-          <span class="text-gray-400 text-sm">(Free — upgrade coming soon)</span>
-        </p>
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text font-medium">Plan</span>
+          </label>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-sm">{(@org && @org.plan) || "—"}</span>
+            <span class="badge badge-ghost badge-sm">Free — upgrade coming soon</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
     """
   end
 
   defp integrations_tab(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6 space-y-4">
-      <h2 class="text-lg font-semibold text-gray-900">API Keys</h2>
+    <section class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body space-y-5">
+        <div>
+          <h2 class="card-title text-lg">API Keys & Integrations</h2>
+          <p class="text-xs text-base-content/60 mt-0.5">
+            Stored locally on this server only. Never transmitted to third parties.
+          </p>
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Serper API Key (Search)</label>
-        <input
-          type="password"
-          name="serper_key"
-          phx-change="set_serper_key"
-          placeholder="Enter Serper API key"
-          class="w-full px-3 py-2 border rounded-lg"
-        />
-        <p class="text-xs text-gray-400 mt-1">Required for web search. Get one at serper.dev</p>
-      </div>
+        <div class="form-control">
+          <label class="label" for="serper-key-input">
+            <span class="label-text font-medium">Serper API Key</span>
+            <span class="label-text-alt badge badge-soft badge-info badge-sm">Search</span>
+          </label>
+          <input
+            id="serper-key-input"
+            type="password"
+            name="serper_key"
+            phx-change="set_serper_key"
+            phx-debounce="800"
+            placeholder="Enter Serper API key"
+            class="input input-bordered w-full font-mono text-sm"
+          />
+          <label class="label">
+            <span class="label-text-alt text-base-content/50">
+              Required for web search.
+              <a href="https://serper.dev" target="_blank" rel="noopener" class="link link-primary">
+                Get one at serper.dev
+              </a>
+            </span>
+          </label>
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Anthropic API Key (LLM)</label>
-        <input
-          type="password"
-          name="anthropic_key"
-          phx-change="set_anthropic_key"
-          placeholder="Enter Anthropic API key"
-          class="w-full px-3 py-2 border rounded-lg"
-        />
-        <p class="text-xs text-gray-400 mt-1">For Claude models. Get one at console.anthropic.com</p>
-      </div>
+        <div class="form-control">
+          <label class="label" for="anthropic-key-input">
+            <span class="label-text font-medium">Anthropic API Key</span>
+            <span class="label-text-alt badge badge-soft badge-secondary badge-sm">LLM</span>
+          </label>
+          <input
+            id="anthropic-key-input"
+            type="password"
+            name="anthropic_key"
+            phx-change="set_anthropic_key"
+            phx-debounce="800"
+            placeholder="Enter Anthropic API key"
+            class="input input-bordered w-full font-mono text-sm"
+          />
+          <label class="label">
+            <span class="label-text-alt text-base-content/50">
+              For Claude models.
+              <a
+                href="https://console.anthropic.com"
+                target="_blank"
+                rel="noopener"
+                class="link link-primary"
+              >
+                console.anthropic.com
+              </a>
+            </span>
+          </label>
+        </div>
 
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Webhook URL (企业微信 / 飞书)</label>
-        <input
-          type="text"
-          name="webhook_url"
-          value={System.get_env("WEBHOOK_URL", "")}
-          phx-change="set_webhook"
-          placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
-          class="w-full px-3 py-2 border rounded-lg"
-        />
-        <button
-          phx-click="save_webhook"
-          class="mt-2 px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-        >
-          Save
-        </button>
+        <div class="divider my-1"></div>
+
+        <div class="form-control">
+          <label class="label" for="webhook-url-input">
+            <span class="label-text font-medium">Webhook URL</span>
+            <span class="label-text-alt badge badge-ghost badge-sm">企业微信 / 飞书 / Slack</span>
+          </label>
+          <input
+            id="webhook-url-input"
+            type="text"
+            name="webhook_url"
+            value={System.get_env("WEBHOOK_URL", "")}
+            phx-change="set_webhook"
+            phx-debounce="500"
+            placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+            class="input input-bordered w-full font-mono text-sm"
+          />
+          <div class="mt-2">
+            <button phx-click="save_webhook" class="btn btn-primary btn-sm">
+              Save webhook
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
     """
   end
 
   defp notifications_tab(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6 space-y-4">
-      <h2 class="text-lg font-semibold text-gray-900">Notifications</h2>
-
-      <form phx-submit="save_email_notify">
+    <section class="card bg-base-100 border border-base-300 shadow-sm">
+      <div class="card-body space-y-5">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Notification Email</label>
+          <h2 class="card-title text-lg">Notifications</h2>
+          <p class="text-xs text-base-content/60 mt-0.5">
+            Where to send a ping when a report completes.
+          </p>
+        </div>
+
+        <form phx-submit="save_email_notify" class="form-control space-y-3">
+          <label class="label" for="notify-email-input">
+            <span class="label-text font-medium">Notification Email</span>
+          </label>
           <input
+            id="notify-email-input"
             type="email"
             name="email"
-            value=""
+            value={@notifications_email}
             placeholder="you@example.com"
-            class="w-full px-3 py-2 border rounded-lg"
+            class="input input-bordered w-full"
           />
-        </div>
-        <button type="submit" class="mt-3 px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-          Save Email
-        </button>
-      </form>
+          <div>
+            <button type="submit" class="btn btn-primary btn-sm">
+              Save email
+            </button>
+          </div>
+        </form>
 
-      <div class="border-t pt-4 mt-6">
-        <h3 class="font-medium text-gray-700 mb-2">Webhook Notifications</h3>
-        <p class="text-sm text-gray-500">
-          When a webhook URL is configured in Integrations, a POST notification is sent on each report completion.
-          Supports enterprise chat integrations including 企业微信, 飞书/Lark, 钉钉, and Slack.
-        </p>
+        <div class="divider my-1"></div>
+
+        <div>
+          <h3 class="font-medium mb-1">Webhook Notifications</h3>
+          <p class="text-sm text-base-content/70">
+            When a webhook URL is configured in <strong>Integrations</strong>,
+            a POST notification is sent on each report completion. Supports
+            <span class="font-medium">企业微信</span>,
+            <span class="font-medium">飞书 / Lark</span>,
+            <span class="font-medium">钉钉</span>, and
+            <span class="font-medium">Slack</span>.
+          </p>
+        </div>
       </div>
-    </div>
+    </section>
     """
   end
 

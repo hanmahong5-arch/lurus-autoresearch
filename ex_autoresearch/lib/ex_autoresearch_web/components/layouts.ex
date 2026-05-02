@@ -31,44 +31,121 @@ defmodule ExAutoresearchWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  attr :current_user, :map,
+    default: nil,
+    doc: "the authenticated user, if any — drives the user menu in the navbar"
+
+  attr :active_nav, :atom,
+    default: nil,
+    doc: "which top-level nav entry to highlight (:dashboard | :templates | :schedules | :settings)"
+
+  attr :container, :string,
+    default: "max-w-6xl",
+    doc: "max-width Tailwind class applied to the centered main column"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
+    <div class="min-h-screen bg-base-200 text-base-content">
+      <header class="navbar bg-base-100 border-b border-base-300 px-4 sm:px-6 lg:px-8 sticky top-0 z-30 shadow-sm">
+        <div class="flex-1">
+          <.link navigate={~p"/"} class="btn btn-ghost px-2 normal-case gap-2">
+            <span class="text-base font-semibold tracking-tight">ExAutoresearch</span>
+            <span class="text-[10px] font-mono opacity-60">
+              v{ExAutoresearch.Changelog.current_version()}
+            </span>
+          </.link>
+        </div>
+
+        <div class="flex-none">
+          <ul class="menu menu-horizontal px-1 gap-1 items-center">
+            <li><.nav_link to={~p"/"} active={@active_nav == :dashboard}>Dashboard</.nav_link></li>
+            <li>
+              <.nav_link to={~p"/templates"} active={@active_nav == :templates}>Templates</.nav_link>
+            </li>
+            <li>
+              <.nav_link to={~p"/schedules"} active={@active_nav == :schedules}>Schedules</.nav_link>
+            </li>
+            <li>
+              <.nav_link to={~p"/settings"} active={@active_nav == :settings}>Settings</.nav_link>
+            </li>
+            <li class="ml-1"><.theme_toggle /></li>
+            <li class="ml-1">
+              <.user_menu current_user={@current_user} />
+            </li>
+          </ul>
+        </div>
+      </header>
+
+      <main class="px-4 py-6 sm:px-6 lg:px-8">
+        <div class={["mx-auto space-y-4", @container]}>
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+    </div>
+
+    <.flash_group flash={@flash} />
+    """
+  end
+
+  attr :current_user, :map, default: nil
+
+  defp user_menu(assigns) do
+    ~H"""
+    <%= if @current_user do %>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm normal-case gap-2">
+          <div class="avatar placeholder">
+            <div class="bg-neutral text-neutral-content rounded-full w-7 h-7 flex items-center justify-center">
+              <span class="text-xs font-semibold">
+                {@current_user.email |> String.first() |> String.upcase()}
+              </span>
+            </div>
+          </div>
+          <span class="hidden sm:inline text-xs font-medium opacity-80 max-w-[12rem] truncate">
+            {@current_user.email}
+          </span>
+        </div>
+        <ul
+          tabindex="0"
+          class="dropdown-content menu menu-sm bg-base-100 rounded-box z-40 mt-2 w-48 p-2 shadow-lg border border-base-300"
+        >
+          <li class="menu-title px-2 py-1 text-xs">
+            <span class="truncate">{@current_user.email}</span>
           </li>
           <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
+            <form method="get" action="/logout" class="contents">
+              <button type="submit" class="text-error hover:bg-error/10">
+                Sign out
+              </button>
+            </form>
           </li>
         </ul>
       </div>
-    </header>
+    <% else %>
+      <.link navigate={~p"/login"} class="btn btn-primary btn-sm">
+        Sign in
+      </.link>
+    <% end %>
+    """
+  end
 
-    <main class="px-4 py-6 sm:px-6 lg:px-8">
-      <div class="mx-auto space-y-4">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+  attr :to, :string, required: true
+  attr :active, :boolean, default: false
+  slot :inner_block, required: true
 
-    <.flash_group flash={@flash} />
+  defp nav_link(assigns) do
+    ~H"""
+    <.link
+      navigate={@to}
+      class={[
+        "btn btn-ghost btn-sm normal-case font-medium",
+        @active && "btn-active text-primary"
+      ]}
+    >
+      {render_slot(@inner_block)}
+    </.link>
     """
   end
 
