@@ -17,7 +17,7 @@ defmodule ExAutoresearch.Accounts.User do
     defaults [:read]
 
     create :register do
-      accept [:email, :name]
+      accept [:email, :name, :password_hash]
       primary? true
     end
 

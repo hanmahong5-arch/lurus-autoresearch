@@ -14,7 +14,7 @@ config :ex_autoresearch, Oban,
   notifier: Oban.Notifiers.PG,
   queues: [default: 10, research: 5],
   repo: ExAutoresearch.Repo,
-  plugins: [{Oban.Plugins.Cron, crons: []}]
+  plugins: [{Oban.Plugins.Cron, crontab: []}]
 
 config :ash,
   allow_forbidden_field_for_relationships_by_default?: true,

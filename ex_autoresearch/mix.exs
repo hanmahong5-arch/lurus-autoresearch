@@ -52,7 +52,7 @@ defmodule ExAutoresearch.MixProject do
       {:table_rex, "~> 4.0"},
       {:mdex, "~> 0.11.6"},
 
-      {:bcrypt_elixir, "~> 3.0"},
+      {:pbkdf2_elixir, "~> 2.2"},
 
       # Task queue
       {:oban, "~> 2.0"},

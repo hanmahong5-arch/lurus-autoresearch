@@ -31,7 +31,12 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
                   title: [type: :string, required: true, doc: "Report title"],
                   model: [type: :string, default: "claude-sonnet-4"],
                   max_depth: [type: :pos_integer, default: 3],
-                  max_sources: [type: :pos_integer, default: 25]
+                  max_sources: [type: :pos_integer, default: 25],
+                  organization_id: [
+                    type: {:or, [:string, nil]},
+                    required: false,
+                    doc: "Organization tenant id; report is created under this tenant"
+                  ]
                 )
 
   # Client API

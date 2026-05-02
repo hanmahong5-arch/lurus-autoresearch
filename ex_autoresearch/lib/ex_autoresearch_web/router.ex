@@ -41,13 +41,16 @@ defmodule ExAutoresearchWeb.Router do
   scope "/", ExAutoresearchWeb do
     pipe_through [:browser, :require_auth]
 
-    live "/", DashboardLive, :index
-    live "/dashboard", DashboardLive, :index
-    live "/templates", TemplateLive, :index
-    live "/templates/:id", TemplateLive, :show
-    live "/schedules", ScheduleLive, :index
-    live "/settings", SettingsLive, :index
-    live "/reports/:id", ReportDetailLive, :show
+    live_session :authenticated,
+      on_mount: [{ExAutoresearchWeb.LiveAuth, :default}] do
+      live "/", DashboardLive, :index
+      live "/dashboard", DashboardLive, :index
+      live "/templates", TemplateLive, :index
+      live "/templates/:id", TemplateLive, :show
+      live "/schedules", ScheduleLive, :index
+      live "/settings", SettingsLive, :index
+      live "/reports/:id", ReportDetailLive, :show
+    end
   end
 
   # Dev routes

@@ -17,7 +17,7 @@ defmodule ExAutoresearch.Accounts.Auth do
         {:error, :email_already_exists}
 
       _ ->
-        {:ok, hash} = Bcrypt.hash_pwd_salt(password)
+        hash = Pbkdf2.hash_pwd_salt(password)
 
         params = %{
           email: email,
@@ -61,15 +61,14 @@ defmodule ExAutoresearch.Accounts.Auth do
   def login(email, password) when is_binary(email) and is_binary(password) do
     case Ash.read_one(Ash.Query.filter(Accounts.User, email == ^email)) do
       {:ok, user} when not is_nil(user) ->
-        if Bcrypt.verify_pass(password, user.password_hash) do
+        if Pbkdf2.verify_pass(password, user.password_hash) do
           {:ok, user}
         else
           {:error, :invalid_credentials}
         end
 
       _ ->
-        # Use Bcrypt.no_user_verify/0 to prevent timing attacks
-        Bcrypt.no_user_verify()
+        Pbkdf2.no_user_verify()
         {:error, :invalid_credentials}
     end
   end
