@@ -15,7 +15,7 @@ defmodule ExAutoresearch.DeepResearch.Scraper do
   `Scraper.Native`, logging a warning. Both-failed errors are tagged `{:both_failed, ...}`.
   """
 
-  require Logger
+  alias ExAutoresearch.Tools.ProviderRunner
 
   @doc """
   Fetch a URL and return its text content as markdown plus metadata.
@@ -37,48 +37,43 @@ defmodule ExAutoresearch.DeepResearch.Scraper do
           {:ok, %{markdown: String.t(), metadata: map()}} | {:error, term()}
   def fetch(url, opts \\ []) do
     primary = Application.fetch_env!(:ex_autoresearch, :scraper)
+    fallback = ExAutoresearch.DeepResearch.Scraper.Native
 
-    metadata = %{
+    base_metadata = %{
       url: url,
       primary_impl: primary,
       report_id: Keyword.get(opts, :report_id),
       investigation_id: Keyword.get(opts, :investigation_id)
     }
 
-    :telemetry.span([:ex_autoresearch, :scraper, :fetch], metadata, fn ->
-      case primary.fetch(url, opts) do
-        {:ok, result} ->
-          {{:ok, mark_metadata(result, false, nil)},
-           Map.put(metadata, :outcome, :primary_success)}
-
-        {:error, reason} when primary != ExAutoresearch.DeepResearch.Scraper.Native ->
-          Logger.warning(
-            "Scraper #{inspect(primary)} failed for #{url}: #{inspect(reason)}; falling back to Native"
-          )
-
-          case ExAutoresearch.DeepResearch.Scraper.Native.fetch(url, opts) do
-            {:ok, result} ->
-              {{:ok, mark_metadata(result, true, reason)},
-               Map.merge(metadata, %{outcome: :fallback_success, primary_error: reason})}
-
-            {:error, native_reason} ->
-              Logger.warning(
-                "Both primary (#{inspect(primary)}) and Native scraper failed for #{url}: #{inspect(reason)} | #{inspect(native_reason)}"
-              )
-
-              {{:error, {:both_failed, primary: reason, native: native_reason}},
-               Map.merge(metadata, %{
-                 outcome: :both_failed,
-                 primary_error: reason,
-                 native_error: native_reason
-               })}
-          end
-
-        {:error, reason} ->
-          Logger.warning("Native scraper failed for #{url}: #{inspect(reason)}")
-          {{:error, reason}, Map.put(metadata, :outcome, :native_failed)}
+    runner_opts = [
+      outcome_names: %{primary_only_failed: :native_failed},
+      transform_ok: fn result, outcome, primary_error ->
+        mark_metadata(result, outcome == :fallback_success, primary_error)
+      end,
+      stop_metadata: fn meta ->
+        case Map.pop(meta, :fallback_error) do
+          {nil, m} -> m
+          {err, m} -> Map.put(m, :native_error, err)
+        end
       end
-    end)
+    ]
+
+    case ProviderRunner.run(
+           primary,
+           fallback,
+           :fetch,
+           [url, opts],
+           [:ex_autoresearch, :scraper, :fetch],
+           base_metadata,
+           runner_opts
+         ) do
+      {:error, {:both_failed, primary: reason, fallback: native_reason}} ->
+        {:error, {:both_failed, primary: reason, native: native_reason}}
+
+      other ->
+        other
+    end
   end
 
   defp mark_metadata(result, fallback_used?, primary_error) do

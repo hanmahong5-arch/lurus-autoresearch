@@ -14,6 +14,8 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
   alias DeepResearch.Tools.ResearchRunner
   alias ExAutoresearch.Agent.LLMClient
 
+  @parallelism_default 5
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"template_id" => template_id, "organization_id" => org_id}}) do
     Logger.info("[ResearchWorker] Starting research for template #{template_id}, org #{org_id}")
@@ -32,120 +34,79 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
   Executes a full research cycle from a template, stores the result as a Report.
   """
   def execute_research(template) do
-    # Create initial report
-    {:ok, report} = Ash.create(Research.Report, %{
-      title: "#{template.name} - #{Date.utc_today()}",
-      query: template.query_template,
-      model: template.model,
-      max_depth: template.max_depth,
-      max_sources: template.max_sources,
-      category: template.category
-    }, action: :start, tenant: template.organization_id)
+    {:ok, report} =
+      Ash.create(
+        Research.Report,
+        %{
+          title: "#{template.name} - #{Date.utc_today()}",
+          query: template.query_template,
+          model: template.model,
+          max_depth: template.max_depth,
+          max_sources: template.max_sources,
+          category: template.category
+        },
+        action: :start,
+        tenant: template.organization_id
+      )
 
-    Phoenix.PubSub.broadcast(
-      ExAutoresearch.PubSub,
-      "research:events",
-      {:status_changed, %{status: :researching, report_id: report.id}}
-    )
-
+    broadcast({:status_changed, %{status: :researching, report_id: report.id}})
     Ash.update!(report, %{status: :researching}, action: :update_status)
 
-    # Execute research
-    result = run_research_loop(report, template)
-
-    case result do
+    case run_research_loop(report, template) do
       {:ok, markdown_body, findings} ->
-        Ash.update!(report, %{
-          status: :completed,
-          markdown_body: markdown_body,
-          progress_pct: 1.0,
-          summary: "#{length(findings)} findings collected"
-        }, action: :complete)
-
-        Phoenix.PubSub.broadcast(
-          ExAutoresearch.PubSub,
-          "research:events",
-          {:research_step, %{step: "writing", report_id: report.id}}
+        Ash.update!(
+          report,
+          %{
+            status: :completed,
+            markdown_body: markdown_body,
+            progress_pct: 1.0,
+            summary: "#{length(findings)} findings collected"
+          },
+          action: :complete
         )
 
-        # Send notification
+        broadcast({:research_step, %{step: "writing", report_id: report.id}})
         ExAutoresearch.Notifications.Notifier.report_completed(report)
-
         {:ok, report}
 
       {:error, reason} ->
-        Ash.update!(report, %{
-          status: :failed,
-          summary: inspect(reason)
-        }, action: :update_status)
-
+        Ash.update!(report, %{status: :failed, summary: inspect(reason)}, action: :update_status)
         {:error, reason}
     end
   end
 
   defp run_research_loop(report, template) do
-    llm_pid = start_llm(report.model)
-
-    try do
-      queries = generate_queries(report.query, template.max_depth, llm_pid)
-
-      if queries == [] do
+    case generate_queries(report.query, template.max_depth) do
+      [] ->
         {:error, :no_queries}
-      else
-        investigations = execute_searches(report, queries, llm_pid)
-        synthesize(report, investigations, llm_pid)
-      end
-    after
-      if llm_pid && Process.alive?(llm_pid) do
-        GenServer.stop(llm_pid, :normal)
-      end
+
+      queries ->
+        investigations = run_investigations(report, queries)
+        synthesize(report, investigations)
     end
   end
 
-  defp start_llm(model), do: start_llm_backend(model)
-
-  defp start_llm_backend(model) do
-    case LLMClient.start_link(model: model) do
-      {:ok, pid} -> pid
-      _ -> nil
-    end
-  rescue
-    _ -> nil
-  end
-
-  defp generate_queries(query, _max_depth, nil) do
-    [query]
-  end
-
-  defp generate_queries(query, max_depth, llm_pid) do
+  defp generate_queries(query, max_depth) do
     prompt = """
     Given this research question: "#{query}"
     Generate #{min(max_depth * 3, 9)} specific search queries.
     Respond with ONLY a JSON array: ["q1", "q2", ...]
     """
 
-    case GenServer.call(llm_pid, {:prompt, prompt, nil}, :timer.minutes(2)) do
-      {:ok, response} ->
-        case Regex.run(~r/\[.*\]/s, response) do
-          [json] ->
-            case Jason.decode(json) do
-              {:ok, qs} when is_list(qs) -> Enum.filter(qs, &is_binary/1)
-              _ -> [query]
-            end
-
-          _ -> [query]
-        end
-
+    with {:ok, response} <- LLMClient.complete(prompt, tier: :fast, timeout: :timer.minutes(2)),
+         [json] <- Regex.run(~r/\[.*\]/s, response),
+         {:ok, qs} when is_list(qs) <- Jason.decode(json) do
+      Enum.filter(qs, &is_binary/1)
+    else
       _ -> [query]
     end
   end
 
-  defp execute_searches(report, queries, _llm_pid) do
-    max_threads =
-      Application.get_env(:ex_autoresearch, :research, [])[:max_threads] || 5
+  defp run_investigations(report, queries) do
+    threads = Application.get_env(:ex_autoresearch, :research, [])[:max_threads] || @parallelism_default
 
     queries
-    |> Enum.chunk_every(max_threads)
+    |> Enum.chunk_every(threads)
     |> Enum.flat_map(fn batch ->
       batch
       |> Enum.map(&Task.async(fn -> run_investigation(report, &1) end))
@@ -155,28 +116,40 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
 
   defp run_investigation(report, query) do
     inv =
-      Ash.create!(Research.Investigation, %{
-        report_id: report.id,
-        depth: 0,
-        query: query,
-        tool: :search,
-        reasoning: "Scheduled research for: #{query}"
-      }, action: :start)
+      Ash.create!(
+        Research.Investigation,
+        %{
+          report_id: report.id,
+          depth: 0,
+          query: query,
+          tool: :search,
+          reasoning: "Scheduled research for: #{query}"
+        },
+        action: :start
+      )
 
     case ResearchRunner.run(query, :search) do
       {:ok, findings} ->
-        Ash.update!(inv, %{
-          status: :completed,
-          findings: findings.content,
-          quality_score: findings.quality_score,
-          sources_count: length(findings.sources),
-          url: List.first(findings.sources, %{})["url"]
-        }, action: :complete)
+        Ash.update!(
+          inv,
+          %{
+            status: :completed,
+            findings: findings.content,
+            quality_score: findings.quality_score,
+            sources_count: length(findings.sources),
+            url: List.first(findings.sources, %{})["url"]
+          },
+          action: :complete
+        )
 
-        Ash.update!(report, %{
-          total_sources: report.total_sources + length(findings.sources),
-          total_investigations: report.total_investigations + 1
-        }, action: :update_result)
+        Ash.update!(
+          report,
+          %{
+            total_sources: report.total_sources + length(findings.sources),
+            total_investigations: report.total_investigations + 1
+          },
+          action: :update_result
+        )
 
         %{id: inv.id, query: query, findings: findings.content, status: :completed}
 
@@ -185,34 +158,39 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
         %{id: inv.id, query: query, findings: nil, status: :failed}
     end
   rescue
-    _e -> %{id: nil, query: query, findings: nil, status: :failed}
+    _ -> %{id: nil, query: query, findings: nil, status: :failed}
   end
 
-  defp synthesize(report, investigations, llm_pid) do
-    successful = Enum.filter(investigations, &(&1.status == :completed))
+  defp synthesize(report, investigations) do
+    case Enum.filter(investigations, &(&1.status == :completed)) do
+      [] ->
+        {:error, :no_findings}
 
-    if successful == [] do
-      {:error, :no_findings}
-    else
-      findings_text =
-        successful
-        |> Enum.map_join("\n\n---\n\n", fn inv ->
-          "## #{inv.query}\n#{inv.findings || "No content"}"
-        end)
+      successful ->
+        findings_text =
+          Enum.map_join(successful, "\n\n---\n\n", fn inv ->
+            "## #{inv.query}\n#{inv.findings || "No content"}"
+          end)
 
-      prompt = """
-      Write a comprehensive research report answering: "#{report.query}"
+        prompt = """
+        Write a comprehensive research report answering: "#{report.query}"
 
-      Research findings:
-      #{findings_text}
+        Research findings:
+        #{findings_text}
 
-      Format as markdown with sections for Executive Summary, Detailed Analysis, Key Findings.
-      """
+        Format as markdown with sections for Executive Summary, Detailed Analysis, Key Findings.
+        """
 
-      case GenServer.call(llm_pid, {:prompt, prompt, nil}, :timer.minutes(5)) do
-        {:ok, body} -> {:ok, body, successful}
-        _ -> {:ok, "# #{report.title}\n\n#{findings_text}", successful}
-      end
+        case LLMClient.complete(prompt, tier: :main, timeout: :timer.minutes(5)) do
+          {:ok, body} -> {:ok, body, successful}
+          _ -> {:ok, "# #{report.title}\n\n#{findings_text}", successful}
+        end
     end
+  end
+
+  defp broadcast(msg) do
+    Phoenix.PubSub.broadcast(ExAutoresearch.PubSub, "research:events", msg)
+  rescue
+    _ -> :ok
   end
 end

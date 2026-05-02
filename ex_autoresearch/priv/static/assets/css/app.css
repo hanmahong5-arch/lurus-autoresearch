@@ -2375,6 +2375,12 @@
   .border-base-300 {
     border-color: var(--color-base-300);
   }
+  .border-primary\/30 {
+    border-color: var(--color-primary);
+    @supports (color: color-mix(in lab, red, red)) {
+      border-color: color-mix(in oklab, var(--color-primary) 30%, transparent);
+    }
+  }
   .table-zebra {
     tbody {
       tr {
@@ -2438,6 +2444,12 @@
   .bg-neutral {
     background-color: var(--color-neutral);
   }
+  .bg-primary\/5 {
+    background-color: var(--color-primary);
+    @supports (color: color-mix(in lab, red, red)) {
+      background-color: color-mix(in oklab, var(--color-primary) 5%, transparent);
+    }
+  }
   .bg-success {
     background-color: var(--color-success);
   }
@@ -2456,6 +2468,9 @@
   }
   .p-2 {
     padding: calc(var(--spacing) * 2);
+  }
+  .p-4 {
+    padding: calc(var(--spacing) * 4);
   }
   .menu-title {
     padding-inline: calc(0.25rem * 3);
@@ -2864,6 +2879,10 @@
   .badge-info {
     --badge-color: var(--color-info);
     --badge-fg: var(--color-info-content);
+  }
+  .badge-primary {
+    --badge-color: var(--color-primary);
+    --badge-fg: var(--color-primary-content);
   }
   .badge-secondary {
     --badge-color: var(--color-secondary);

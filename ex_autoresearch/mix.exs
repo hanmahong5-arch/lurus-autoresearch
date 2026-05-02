@@ -46,6 +46,9 @@ defmodule ExAutoresearch.MixProject do
       # HTTP client
       {:req, "~> 0.5"},
 
+      # HTML parsing for DuckDuckGo search backend
+      {:floki, "~> 0.36"},
+
       # Data
       {:jason, "~> 1.2"},
       {:nimble_options, "~> 1.1"},

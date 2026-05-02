@@ -36,7 +36,7 @@ defmodule ExAutoresearch.Research.Report do
     end
 
     update :complete do
-      accept [:markdown_body]
+      accept [:markdown_body, :status, :progress_pct, :summary]
     end
 
     update :update_result do

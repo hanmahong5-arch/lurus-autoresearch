@@ -21,6 +21,21 @@ if System.get_env("OPENROUTER_API_KEY") do
   config :ex_autoresearch, :llm, openrouter_api_key: System.get_env("OPENROUTER_API_KEY")
 end
 
+# OpenAI-compatible gateway (中转站, vLLM, LM Studio, ...).
+# Two model tiers: main (pro/planning/synthesis) and fast (flash/sub-queries).
+openai_compat =
+  [
+    base_url: System.get_env("OPENAI_COMPAT_BASE_URL"),
+    api_key: System.get_env("OPENAI_COMPAT_API_KEY"),
+    model_main: System.get_env("OPENAI_COMPAT_MODEL_MAIN") || System.get_env("OPENAI_COMPAT_MODEL"),
+    model_fast: System.get_env("OPENAI_COMPAT_MODEL_FAST")
+  ]
+  |> Enum.reject(fn {_, v} -> v in [nil, ""] end)
+
+if openai_compat != [] do
+  config :ex_autoresearch, :llm, openai_compat: openai_compat
+end
+
 # Maximum concurrent search threads
 config :ex_autoresearch, :research,
   max_threads: String.to_integer(System.get_env("RESEARCH_MAX_THREADS", "5"))
@@ -29,6 +44,26 @@ case System.get_env("EX_AUTORESEARCH_SCRAPER") do
   "crawl4ai" -> config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Crawl4ai
   "native" -> config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Native
   _ -> :ok
+end
+
+case System.get_env("EX_AUTORESEARCH_SEARCH") do
+  "duckduckgo" ->
+    config :ex_autoresearch, :search_backend, ExAutoresearch.DeepResearch.Search.DuckDuckGo
+
+  "serper" ->
+    config :ex_autoresearch, :search_backend, ExAutoresearch.DeepResearch.Search.Serper
+
+  "searxng" ->
+    config :ex_autoresearch, :search_backend, ExAutoresearch.DeepResearch.Search.SearXNG
+
+  _ ->
+    :ok
+end
+
+if base_url = System.get_env("SEARXNG_BASE_URL") do
+  cfg = Application.get_env(:ex_autoresearch, :search, [])
+  cfg = if is_list(cfg), do: cfg, else: []
+  config :ex_autoresearch, :search, Keyword.put(cfg, :searxng_base_url, base_url)
 end
 
 if base_url = System.get_env("CRAWL4AI_BASE_URL") do

@@ -3,10 +3,14 @@ defmodule ExAutoresearch.Agent.LLMClient do
   Simple HTTP-based LLM client supporting multiple providers.
 
   Providers:
-    - anthropic: Direct Anthropic API (Claude)
-    - openrouter: OpenRouter API (supports multiple models)
+    - openai_compat: Any OpenAI-compatible gateway (中转站, vLLM, LM Studio, ...)
+    - anthropic:    Direct Anthropic API (Claude)
+    - openrouter:   OpenRouter API
 
   Configure via environment variables:
+    - OPENAI_COMPAT_BASE_URL  (e.g. https://newapi.lurus.cn/v1)
+    - OPENAI_COMPAT_API_KEY
+    - OPENAI_COMPAT_MODEL     (e.g. gpt-4o-mini)
     - ANTHROPIC_API_KEY
     - OPENROUTER_API_KEY
   """
@@ -15,42 +19,142 @@ defmodule ExAutoresearch.Agent.LLMClient do
 
   require Logger
 
-  defstruct [:provider, :model, :api_key, status: :idle]
+  defstruct [:provider, :model, :api_key, :base_url, status: :idle]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @impl true
-  def init(opts) do
-    provider = Keyword.get(opts, :provider, default_provider())
-    model = Keyword.get(opts, :model, default_model(provider))
-    api_key = get_api_key(provider)
+  @doc """
+  Run a single completion against the configured provider.
 
-    if api_key do
-      Logger.info("LLM client ready: provider=#{provider}, model=#{model}")
-      {:ok, %__MODULE__{provider: provider, model: model, api_key: api_key}}
-    else
-      Logger.warning("No API key found for provider #{provider}")
-      {:ok, %__MODULE__{provider: provider, model: model}}
+  Manages the underlying short-lived GenServer for you — callers pass a prompt
+  and (optionally) a tier (`:main` for planning/synthesis, `:fast` for
+  per-investigation queries) plus an explicit `model` override or `timeout`.
+
+  Returns `{:ok, text}` or `{:error, reason}`. Never raises; GenServer.call
+  exits are caught and surfaced as `{:error, {:llm_call_failed, reason}}`.
+  """
+  @spec complete(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def complete(prompt, opts \\ []) when is_binary(prompt) do
+    tier = Keyword.get(opts, :tier, :main)
+    model = Keyword.get(opts, :model)
+    timeout = Keyword.get(opts, :timeout, :timer.minutes(5))
+
+    case start_link(model: model) do
+      {:ok, pid} ->
+        try do
+          GenServer.call(pid, {:prompt, prompt, tier}, timeout)
+        catch
+          :exit, reason -> {:error, {:llm_call_failed, reason}}
+        after
+          if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+        end
+
+      {:error, reason} ->
+        {:error, {:llm_start_failed, reason}}
     end
   end
 
   @impl true
-  def handle_call({:prompt, text, requested_model}, _from, state) do
-    model = requested_model || state.model
-    result = do_completion(text, model, state.api_key, state.provider)
+  def init(opts) do
+    provider = Keyword.get(opts, :provider, default_provider())
+
+    explicit_model =
+      case Keyword.get(opts, :model) do
+        nil -> nil
+        "" -> nil
+        v when is_binary(v) -> v
+      end
+
+    api_key = get_api_key(provider)
+    base_url = base_url_for(provider)
+
+    state = %__MODULE__{
+      provider: provider,
+      model: explicit_model,
+      api_key: api_key,
+      base_url: base_url
+    }
+
+    if api_key do
+      Logger.info(
+        "LLM client ready: provider=#{provider}#{explicit_model && " model=#{explicit_model}"}"
+      )
+    else
+      Logger.warning("No API key found for provider #{provider}")
+    end
+
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_call({:prompt, text, override}, _from, state) do
+    model = resolve_model(override, state)
+    result = do_completion(text, model, state.api_key, state.provider, state.base_url)
     {:reply, result, state}
   end
 
+  # tier resolution — explicit model from start_link wins; otherwise tier picks
+  # main/fast model from provider config (atom :main | :fast | nil treated as :main)
+  defp resolve_model(_override, %{model: m}) when is_binary(m), do: m
+  defp resolve_model(:fast, state), do: tier_model(:fast, state.provider)
+  defp resolve_model(_, state), do: tier_model(:main, state.provider)
+
   # --- Provider logic ---
 
-  defp do_completion(_prompt, _model, nil, _provider) do
+  defp do_completion(_prompt, _model, nil, _provider, _base_url) do
     {:error, :no_api_key}
   end
 
-  defp do_completion(prompt, model, api_key, :anthropic) do
+  defp do_completion(prompt, model, api_key, :openai_compat, base_url)
+       when is_binary(base_url) do
+    body =
+      Jason.encode!(%{
+        model: model,
+        max_tokens: 8192,
+        messages: [
+          %{role: "system", content: "You are a deep research assistant."},
+          %{role: "user", content: prompt}
+        ]
+      })
+
+    url = String.trim_trailing(base_url, "/") <> "/chat/completions"
+
+    case Req.post(url,
+           headers: %{
+             "authorization" => "Bearer #{api_key}",
+             "content-type" => "application/json"
+           },
+           body: body,
+           retry: false,
+           receive_timeout: 120_000
+         ) do
+      {:ok, %Req.Response{status: 200, body: data}} ->
+        text = get_in(data, ["choices", Access.at(0), "message", "content"]) || ""
+        Logger.debug("OpenAI-compat OK model=#{model} content_len=#{byte_size(text)}")
+        {:ok, text}
+
+      {:ok, %Req.Response{status: status} = resp} ->
+        Logger.error("OpenAI-compat API error (#{status}): #{inspect(resp.body, limit: 500)}")
+        {:error, {:api_error, status, resp.body}}
+
+      {:error, reason} ->
+        Logger.error("OpenAI-compat request_failed: #{inspect(reason, limit: 500)}")
+        {:error, {:request_failed, reason}}
+    end
+  rescue
+    e ->
+      Logger.error("OpenAI-compat exception: #{Exception.message(e)} | #{inspect(e, limit: 200)}")
+      {:error, {:exception, Exception.message(e)}}
+  end
+
+  defp do_completion(_prompt, _model, _api_key, :openai_compat, _base_url) do
+    {:error, :missing_base_url}
+  end
+
+  defp do_completion(prompt, model, api_key, :anthropic, _base_url) do
     body = Jason.encode!(%{
       model: model,
       max_tokens: 8192,
@@ -65,8 +169,8 @@ defmodule ExAutoresearch.Agent.LLMClient do
              "content-type" => "application/json"
            },
            body: body,
-           retry: :temporary,
-           retry_max: 2
+           retry: false,
+           receive_timeout: 120_000
          ) do
       {:ok, %Req.Response{status: 200, body: data}} ->
         text =
@@ -88,7 +192,7 @@ defmodule ExAutoresearch.Agent.LLMClient do
     e -> {:error, {:exception, Exception.message(e)}}
   end
 
-  defp do_completion(prompt, model, api_key, :openrouter) do
+  defp do_completion(prompt, model, api_key, :openrouter, _base_url) do
     body = Jason.encode!(%{
       model: model,
       max_tokens: 8192,
@@ -105,8 +209,8 @@ defmodule ExAutoresearch.Agent.LLMClient do
              "http-referer" => "http://localhost:4000"
            },
            body: body,
-           retry: :temporary,
-           retry_max: 2
+           retry: false,
+           receive_timeout: 120_000
          ) do
       {:ok, %Req.Response{status: 200, body: data}} ->
         text = get_in(data, ["choices", Access.at(0), "message", "content"]) || ""
@@ -125,15 +229,45 @@ defmodule ExAutoresearch.Agent.LLMClient do
 
   defp default_provider do
     cond do
+      openai_compat_configured?() -> :openai_compat
       System.get_env("ANTHROPIC_API_KEY") -> :anthropic
       System.get_env("OPENROUTER_API_KEY") -> :openrouter
       true -> :anthropic
     end
   end
 
-  defp default_model(:anthropic), do: "claude-sonnet-4-20250514"
-  defp default_model(:openrouter), do: "anthropic/claude-sonnet-4"
+  defp openai_compat_configured? do
+    cfg = openai_compat_config()
+    is_binary(cfg[:base_url]) and is_binary(cfg[:api_key]) and
+      cfg[:base_url] != "" and cfg[:api_key] != ""
+  end
 
+  defp openai_compat_config do
+    case Application.get_env(:ex_autoresearch, :llm, []) do
+      kw when is_list(kw) -> Keyword.get(kw, :openai_compat, []) |> Enum.into(%{})
+      _ -> %{}
+    end
+  end
+
+  # Tier → concrete model name. main = pro (planning, synthesis, deep eval);
+  # fast = flash (per-investigation query generation, scoring).
+  defp tier_model(:fast, :openai_compat) do
+    cfg = openai_compat_config()
+    cfg[:model_fast] || cfg[:model_main] || "gpt-4o-mini"
+  end
+
+  defp tier_model(_, :openai_compat) do
+    cfg = openai_compat_config()
+    cfg[:model_main] || cfg[:model_fast] || "gpt-4o-mini"
+  end
+
+  defp tier_model(_, :anthropic), do: "claude-sonnet-4-20250514"
+  defp tier_model(_, :openrouter), do: "anthropic/claude-sonnet-4"
+
+  defp get_api_key(:openai_compat), do: openai_compat_config()[:api_key]
   defp get_api_key(:anthropic), do: System.get_env("ANTHROPIC_API_KEY")
   defp get_api_key(:openrouter), do: System.get_env("OPENROUTER_API_KEY")
+
+  defp base_url_for(:openai_compat), do: openai_compat_config()[:base_url]
+  defp base_url_for(_), do: nil
 end

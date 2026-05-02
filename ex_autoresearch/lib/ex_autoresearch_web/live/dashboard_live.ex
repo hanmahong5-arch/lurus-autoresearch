@@ -29,7 +29,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
       |> assign(:title, "")
       |> assign(:max_depth, 3)
       |> assign(:max_sources, 25)
-      |> assign(:model, "claude-sonnet-4")
+      |> assign(:model, "")
       |> assign(:active_report, nil)
       |> assign(:research_step, nil)
       |> assign(:progress, 0)
@@ -261,6 +261,9 @@ defmodule ExAutoresearchWeb.DashboardLive do
               phx-change="set_model"
               class="select select-bordered w-full"
             >
+              <option value="" selected={@model in [nil, ""]}>
+                OpenAI Gateway · Auto tier
+              </option>
               <option value="claude-sonnet-4" selected={@model == "claude-sonnet-4"}>
                 Claude Sonnet 4
               </option>

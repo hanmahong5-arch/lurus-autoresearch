@@ -5,15 +5,23 @@ defmodule ExAutoresearchWeb.SettingsLive do
 
   use ExAutoresearchWeb, :live_view
 
+  alias ExAutoresearch.Settings
+
   @impl true
   def mount(_params, _session, socket) do
     org = get_org(socket)
+
+    socket =
+      Enum.reduce(Settings.field_ids(), socket, fn id, s ->
+        assign(s, id, Settings.get(id))
+      end)
 
     {:ok,
      socket
      |> assign(:org, org)
      |> assign(:webhook_url, System.get_env("WEBHOOK_URL", ""))
      |> assign(:notifications_email, "")
+     |> assign(:search_backend, Settings.search_backend())
      |> assign(:tab, :general)}
   end
 
@@ -40,16 +48,23 @@ defmodule ExAutoresearchWeb.SettingsLive do
     {:noreply, socket}
   end
 
-  def handle_event("set_serper_key", %{"value" => v}, socket) do
-    Application.put_env(:ex_autoresearch, :search, %{serper_api_key: v})
-    System.put_env("SERPER_API_KEY", v)
-    {:noreply, put_flash(socket, :info, "Serper API key saved")}
+  def handle_event("set_field", %{"field" => name, "value" => v}, socket) do
+    field_id = String.to_existing_atom(name)
+    Settings.put(field_id, v)
+    socket = assign(socket, field_id, v)
+
+    socket =
+      case Settings.field(field_id) do
+        %{flash: msg} when is_binary(msg) -> put_flash(socket, :info, msg)
+        _ -> socket
+      end
+
+    {:noreply, socket}
   end
 
-  def handle_event("set_anthropic_key", %{"value" => v}, socket) do
-    Application.put_env(:ex_autoresearch, :llm, %{anthropic_api_key: v})
-    System.put_env("ANTHROPIC_API_KEY", v)
-    {:noreply, put_flash(socket, :info, "Anthropic API key saved")}
+  def handle_event("set_search_backend", %{"value" => v}, socket) do
+    Settings.put_search_backend(v)
+    {:noreply, assign(socket, :search_backend, v) |> put_flash(:info, "Search backend: #{v}")}
   end
 
   def handle_event("set_webhook", %{"value" => v}, socket) do
@@ -123,7 +138,13 @@ defmodule ExAutoresearchWeb.SettingsLive do
         <% end %>
 
         <%= if @tab == :integrations do %>
-          <.integrations_tab />
+          <.integrations_tab
+            openai_compat_base_url={@openai_compat_base_url}
+            openai_compat_model_main={@openai_compat_model_main}
+            openai_compat_model_fast={@openai_compat_model_fast}
+            search_backend={@search_backend}
+            searxng_base_url={@searxng_base_url}
+          />
         <% end %>
 
         <%= if @tab == :notifications do %>
@@ -193,7 +214,176 @@ defmodule ExAutoresearchWeb.SettingsLive do
           </p>
         </div>
 
-        <div class="form-control">
+        <div class="rounded-box border border-primary/30 bg-primary/5 p-4 space-y-4">
+          <div class="flex items-baseline justify-between">
+            <h3 class="font-semibold text-sm flex items-center gap-2">
+              OpenAI-Compatible Gateway
+              <span class="badge badge-primary badge-sm">Recommended</span>
+            </h3>
+            <span class="text-xs text-base-content/60">中转站 / vLLM / LM Studio</span>
+          </div>
+          <p class="text-xs text-base-content/70">
+            Two model tiers: <strong>Main</strong> handles planning, deep evaluation, and final
+            report writing; <strong>Fast</strong> handles per-investigation sub-query generation.
+            Pair e.g. <code class="text-xs">deepseek-v4-pro</code> /
+            <code class="text-xs">deepseek-v4-flash</code>.
+          </p>
+
+          <form
+            phx-change="set_field"
+            phx-value-field="openai_compat_base_url"
+            autocomplete="off"
+            class="form-control"
+          >
+            <label class="label" for="oc-base-url-input">
+              <span class="label-text font-medium text-sm">Base URL</span>
+            </label>
+            <input
+              id="oc-base-url-input"
+              type="text"
+              name="value"
+              value={@openai_compat_base_url}
+              phx-debounce="500"
+              placeholder="https://newapi.lurus.cn/v1"
+              class="input input-bordered w-full font-mono text-sm"
+            />
+            <label class="label">
+              <span class="label-text-alt text-base-content/50">
+                Without trailing slash. <code>/chat/completions</code> is appended automatically.
+              </span>
+            </label>
+          </form>
+
+          <form
+            phx-change="set_field"
+            phx-value-field="openai_compat_api_key"
+            autocomplete="off"
+            class="form-control"
+          >
+            <label class="label" for="oc-api-key-input">
+              <span class="label-text font-medium text-sm">API Key</span>
+            </label>
+            <input
+              id="oc-api-key-input"
+              type="password"
+              name="value"
+              phx-debounce="800"
+              placeholder="sk-..."
+              class="input input-bordered w-full font-mono text-sm"
+            />
+          </form>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <form
+              phx-change="set_field"
+              phx-value-field="openai_compat_model_main"
+              autocomplete="off"
+              class="form-control"
+            >
+              <label class="label" for="oc-model-main-input">
+                <span class="label-text font-medium text-sm">Model (Main)</span>
+                <span class="label-text-alt badge badge-soft badge-primary badge-sm">Pro</span>
+              </label>
+              <input
+                id="oc-model-main-input"
+                type="text"
+                name="value"
+                value={@openai_compat_model_main}
+                phx-debounce="500"
+                placeholder="deepseek-v4-pro"
+                class="input input-bordered w-full font-mono text-sm"
+              />
+            </form>
+
+            <form
+              phx-change="set_field"
+              phx-value-field="openai_compat_model_fast"
+              autocomplete="off"
+              class="form-control"
+            >
+              <label class="label" for="oc-model-fast-input">
+                <span class="label-text font-medium text-sm">Model (Fast)</span>
+                <span class="label-text-alt badge badge-soft badge-secondary badge-sm">Flash</span>
+              </label>
+              <input
+                id="oc-model-fast-input"
+                type="text"
+                name="value"
+                value={@openai_compat_model_fast}
+                phx-debounce="500"
+                placeholder="deepseek-v4-flash"
+                class="input input-bordered w-full font-mono text-sm"
+              />
+            </form>
+          </div>
+        </div>
+
+        <div class="divider my-1"></div>
+
+        <form phx-change="set_search_backend" class="form-control">
+          <label class="label" for="search-backend-select">
+            <span class="label-text font-medium">Web Search Backend</span>
+          </label>
+          <select
+            id="search-backend-select"
+            name="value"
+            class="select select-bordered w-full"
+          >
+            <option value="searxng" selected={@search_backend == "searxng"}>
+              SearXNG · self-hosted metasearch (recommended)
+            </option>
+            <option value="duckduckgo" selected={@search_backend == "duckduckgo"}>
+              DuckDuckGo · zero-config (may be rate-limited)
+            </option>
+            <option value="serper" selected={@search_backend == "serper"}>
+              Serper · Google results (requires API key below)
+            </option>
+          </select>
+          <label class="label">
+            <span class="label-text-alt text-base-content/50">
+              Auto-falls back to DuckDuckGo if the selected backend errors.
+            </span>
+          </label>
+        </form>
+
+        <%= if @search_backend == "searxng" do %>
+          <form
+            phx-change="set_field"
+            phx-value-field="searxng_base_url"
+            autocomplete="off"
+            class="form-control"
+          >
+            <label class="label" for="searxng-base-url-input">
+              <span class="label-text font-medium text-sm">SearXNG Base URL</span>
+            </label>
+            <input
+              id="searxng-base-url-input"
+              type="text"
+              name="value"
+              value={@searxng_base_url}
+              phx-debounce="500"
+              placeholder="http://localhost:8888"
+              class="input input-bordered w-full font-mono text-sm"
+            />
+            <label class="label">
+              <span class="label-text-alt text-base-content/50">
+                Run with:
+                <code class="text-xs">
+                  docker run -d -p 8888:8080 searxng/searxng
+                </code>
+                — make sure the instance has <code>formats: [html, json]</code>
+                in its <code>settings.yml</code>.
+              </span>
+            </label>
+          </form>
+        <% end %>
+
+        <form
+          phx-change="set_field"
+          phx-value-field="serper_api_key"
+          autocomplete="off"
+          class="form-control"
+        >
           <label class="label" for="serper-key-input">
             <span class="label-text font-medium">Serper API Key</span>
             <span class="label-text-alt badge badge-soft badge-info badge-sm">Search</span>
@@ -201,8 +391,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
           <input
             id="serper-key-input"
             type="password"
-            name="serper_key"
-            phx-change="set_serper_key"
+            name="value"
             phx-debounce="800"
             placeholder="Enter Serper API key"
             class="input input-bordered w-full font-mono text-sm"
@@ -215,9 +404,14 @@ defmodule ExAutoresearchWeb.SettingsLive do
               </a>
             </span>
           </label>
-        </div>
+        </form>
 
-        <div class="form-control">
+        <form
+          phx-change="set_field"
+          phx-value-field="anthropic_api_key"
+          autocomplete="off"
+          class="form-control"
+        >
           <label class="label" for="anthropic-key-input">
             <span class="label-text font-medium">Anthropic API Key</span>
             <span class="label-text-alt badge badge-soft badge-secondary badge-sm">LLM</span>
@@ -225,8 +419,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
           <input
             id="anthropic-key-input"
             type="password"
-            name="anthropic_key"
-            phx-change="set_anthropic_key"
+            name="value"
             phx-debounce="800"
             placeholder="Enter Anthropic API key"
             class="input input-bordered w-full font-mono text-sm"
@@ -244,7 +437,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
               </a>
             </span>
           </label>
-        </div>
+        </form>
 
         <div class="divider my-1"></div>
 
