@@ -25,8 +25,11 @@ defmodule ExAutoresearchWeb.AuthLive do
   end
 
   @impl true
-  def handle_event("set_email", %{"value" => v}, socket), do: {:noreply, assign(socket, :email, v)}
-  def handle_event("set_password", %{"value" => v}, socket), do: {:noreply, assign(socket, :password, v)}
+  def handle_event("set_email", %{"value" => v}, socket),
+    do: {:noreply, assign(socket, :email, v)}
+
+  def handle_event("set_password", %{"value" => v}, socket),
+    do: {:noreply, assign(socket, :password, v)}
 
   @impl true
   def render(assigns) do
@@ -48,7 +51,7 @@ defmodule ExAutoresearchWeb.AuthLive do
           <div class="card-body space-y-5">
             <header>
               <h2 class="text-xl font-semibold">
-                <%= if @mode == :login, do: "Welcome back", else: "Create your account" %>
+                {if @mode == :login, do: "Welcome back", else: "Create your account"}
               </h2>
               <p class="text-xs text-base-content/60 mt-1">
                 <%= if @mode == :login do %>
@@ -59,7 +62,11 @@ defmodule ExAutoresearchWeb.AuthLive do
               </p>
             </header>
 
-            <form method="post" action={if @mode == :login, do: "/session", else: "/register"} class="space-y-4">
+            <form
+              method="post"
+              action={if @mode == :login, do: "/session", else: "/register"}
+              class="space-y-4"
+            >
               <input type="hidden" name="_csrf_token" value={Plug.CSRFProtection.get_csrf_token()} />
 
               <div class="form-control">
@@ -94,7 +101,7 @@ defmodule ExAutoresearchWeb.AuthLive do
               </div>
 
               <button type="submit" class="btn btn-primary w-full">
-                <%= if @mode == :login, do: "Sign in", else: "Create account" %>
+                {if @mode == :login, do: "Sign in", else: "Create account"}
               </button>
             </form>
 

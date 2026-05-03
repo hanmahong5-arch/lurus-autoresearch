@@ -38,7 +38,8 @@ defmodule ExAutoresearch.Repo.Migrations.InitialDeepResearch do
             column: :id,
             name: "templates_organization_id_fkey",
             type: :uuid
-          ), null: false
+          ),
+          null: false
 
       add :description, :text
       add :name, :text, null: false
@@ -98,7 +99,8 @@ defmodule ExAutoresearch.Repo.Migrations.InitialDeepResearch do
             column: :id,
             name: "memberships_organization_id_fkey",
             type: :uuid
-          ), null: false
+          ),
+          null: false
 
       add :user_id,
           references(:users, column: :id, name: "memberships_user_id_fkey", type: :uuid),

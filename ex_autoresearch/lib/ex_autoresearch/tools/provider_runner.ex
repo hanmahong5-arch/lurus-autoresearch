@@ -105,9 +105,7 @@ defmodule ExAutoresearch.Tools.ProviderRunner do
     apply(module, callback, args)
   rescue
     e ->
-      Logger.error(
-        "Provider #{inspect(module)}.#{callback} crashed: #{Exception.message(e)}"
-      )
+      Logger.error("Provider #{inspect(module)}.#{callback} crashed: #{Exception.message(e)}")
 
       {:error, {:exception, Exception.message(e)}}
   end

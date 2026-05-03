@@ -30,6 +30,7 @@ defmodule ExAutoresearch.Accounts.Membership do
     uuid_v7_primary_key :id
     attribute :user_id, :uuid_v7, allow_nil?: false, public?: true
     attribute :organization_id, :uuid_v7, allow_nil?: false, public?: true
+
     attribute :role, :atom,
       constraints: [one_of: [:owner, :admin, :member]],
       default: :member,

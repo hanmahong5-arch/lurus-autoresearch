@@ -19,7 +19,10 @@ defmodule ExAutoresearchWeb.LiveHelpers do
 
       true ->
         assigns
-        |> Map.put(:flash, Map.get(assigns, :flash, %{}) |> Map.put(:error, "You must be logged in"))
+        |> Map.put(
+          :flash,
+          Map.get(assigns, :flash, %{}) |> Map.put(:error, "You must be logged in")
+        )
         |> Map.put(:redirect_to, "/login")
     end
   end

@@ -37,7 +37,8 @@ defmodule ExAutoresearchWeb.Layouts do
 
   attr :active_nav, :atom,
     default: nil,
-    doc: "which top-level nav entry to highlight (:dashboard | :templates | :schedules | :settings)"
+    doc:
+      "which top-level nav entry to highlight (:dashboard | :templates | :schedules | :settings)"
 
   attr :container, :string,
     default: "max-w-6xl",
@@ -61,30 +62,30 @@ defmodule ExAutoresearchWeb.Layouts do
         <div class="flex-none">
           <ul class="menu menu-horizontal px-1 gap-1 items-center">
             <li><.nav_link to={~p"/"} active={@active_nav == :dashboard}>Dashboard</.nav_link></li>
+
             <li>
               <.nav_link to={~p"/templates"} active={@active_nav == :templates}>Templates</.nav_link>
             </li>
+
             <li>
               <.nav_link to={~p"/schedules"} active={@active_nav == :schedules}>Schedules</.nav_link>
             </li>
+
             <li>
               <.nav_link to={~p"/settings"} active={@active_nav == :settings}>Settings</.nav_link>
             </li>
+
             <li class="ml-1"><.theme_toggle /></li>
-            <li class="ml-1">
-              <.user_menu current_user={@current_user} />
-            </li>
+
+            <li class="ml-1"><.user_menu current_user={@current_user} /></li>
           </ul>
         </div>
       </header>
 
       <main class="px-4 py-6 sm:px-6 lg:px-8">
-        <div class={["mx-auto space-y-4", @container]}>
-          {render_slot(@inner_block)}
-        </div>
+        <div class={["mx-auto space-y-4", @container]}>{render_slot(@inner_block)}</div>
       </main>
     </div>
-
     <.flash_group flash={@flash} />
     """
   end
@@ -103,10 +104,12 @@ defmodule ExAutoresearchWeb.Layouts do
               </span>
             </div>
           </div>
+
           <span class="hidden sm:inline text-xs font-medium opacity-80 max-w-[12rem] truncate">
             {@current_user.email}
           </span>
         </div>
+
         <ul
           tabindex="0"
           class="dropdown-content menu menu-sm bg-base-100 rounded-box z-40 mt-2 w-48 p-2 shadow-lg border border-base-300"
@@ -114,19 +117,16 @@ defmodule ExAutoresearchWeb.Layouts do
           <li class="menu-title px-2 py-1 text-xs">
             <span class="truncate">{@current_user.email}</span>
           </li>
+
           <li>
             <form method="get" action="/logout" class="contents">
-              <button type="submit" class="text-error hover:bg-error/10">
-                Sign out
-              </button>
+              <button type="submit" class="text-error hover:bg-error/10">Sign out</button>
             </form>
           </li>
         </ul>
       </div>
     <% else %>
-      <.link navigate={~p"/login"} class="btn btn-primary btn-sm">
-        Sign in
-      </.link>
+      <.link navigate={~p"/login"} class="btn btn-primary btn-sm">Sign in</.link>
     <% end %>
     """
   end
@@ -162,9 +162,7 @@ defmodule ExAutoresearchWeb.Layouts do
   def flash_group(assigns) do
     ~H"""
     <div id={@id} aria-live="polite">
-      <.flash kind={:info} flash={@flash} />
-      <.flash kind={:error} flash={@flash} />
-
+      <.flash kind={:info} flash={@flash} /> <.flash kind={:error} flash={@flash} />
       <.flash
         id="client-error"
         kind={:error}
@@ -201,7 +199,6 @@ defmodule ExAutoresearchWeb.Layouts do
     ~H"""
     <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
       <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 transition-[left]" />
-
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
@@ -209,7 +206,6 @@ defmodule ExAutoresearchWeb.Layouts do
       >
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
-
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
@@ -217,7 +213,6 @@ defmodule ExAutoresearchWeb.Layouts do
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
-
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}

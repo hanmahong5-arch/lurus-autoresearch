@@ -18,10 +18,14 @@ defmodule ExAutoresearch.Notifications.Webhook do
            retry: :temporary,
            retry_max: 2
          ) do
-      {:ok, %Req.Response{status: status}} when status in 200..299 -> :ok
+      {:ok, %Req.Response{status: status}} when status in 200..299 ->
+        :ok
+
       {:ok, %Req.Response{status: status} = resp} ->
         {:error, {:http_error, status, resp.body}}
-      {:error, reason} -> {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   rescue
     e -> {:error, {:exception, Exception.message(e)}}

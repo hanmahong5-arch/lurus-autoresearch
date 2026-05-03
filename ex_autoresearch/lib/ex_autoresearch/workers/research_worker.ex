@@ -103,7 +103,8 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
   end
 
   defp run_investigations(report, queries) do
-    threads = Application.get_env(:ex_autoresearch, :research, [])[:max_threads] || @parallelism_default
+    threads =
+      Application.get_env(:ex_autoresearch, :research, [])[:max_threads] || @parallelism_default
 
     queries
     |> Enum.chunk_every(threads)

@@ -10,6 +10,7 @@ defmodule ExAutoresearchWeb.Plugs.Auth do
 
   import Plug.Conn
   import Phoenix.Controller
+
   use Phoenix.VerifiedRoutes,
     endpoint: ExAutoresearchWeb.Endpoint,
     router: ExAutoresearchWeb.Router,

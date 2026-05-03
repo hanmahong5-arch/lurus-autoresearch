@@ -106,9 +106,7 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Crawl4ai do
   end
 
   defp poll_task(_task_id, _base_url, url, 0, _plug_opt) do
-    Logger.warning(
-      "Crawl4AI poll exceeded #{@max_polls * @poll_interval}ms for #{url}"
-    )
+    Logger.warning("Crawl4AI poll exceeded #{@max_polls * @poll_interval}ms for #{url}")
 
     {:error, {:crawl4ai_failed, :poll_timeout}}
   end

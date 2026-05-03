@@ -32,7 +32,9 @@ defmodule ExAutoresearch.DeepResearch.TelemetryBridgeTest do
       }
     )
 
-    assert_receive {:scraper_progress, %{report_id: "r1", outcome: :primary_success, message: msg}}
+    assert_receive {:scraper_progress,
+                    %{report_id: "r1", outcome: :primary_success, message: msg}}
+
     assert msg =~ "Crawl4AI"
     assert msg =~ "1ms"
   end

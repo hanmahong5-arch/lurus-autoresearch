@@ -32,18 +32,21 @@ defmodule ExAutoresearchWeb.TemplateLive do
      |> assign(:templates, templates)
      |> assign(:editing_template, nil)
      |> assign(:show_form, false)
-     |> assign(:form, to_form(%{
-       "name" => "",
-       "query_template" => "",
-       "category" => "custom",
-       "max_depth" => 3,
-       "max_sources" => 25,
-       "model" => "claude-sonnet-4",
-       "schedule_cron" => "",
-       "enabled" => false,
-       "description" => "",
-       "tags" => ""
-     }))}
+     |> assign(
+       :form,
+       to_form(%{
+         "name" => "",
+         "query_template" => "",
+         "category" => "custom",
+         "max_depth" => 3,
+         "max_sources" => 25,
+         "model" => "claude-sonnet-4",
+         "schedule_cron" => "",
+         "enabled" => false,
+         "description" => "",
+         "tags" => ""
+       })
+     )}
   end
 
   @impl true
@@ -64,10 +67,14 @@ defmodule ExAutoresearchWeb.TemplateLive do
     do: {:noreply, assign(socket, form: socket.assigns.form |> Map.put("description", v))}
 
   def handle_event("set_depth", %{"value" => v}, socket),
-    do: {:noreply, assign(socket, form: socket.assigns.form |> Map.put("max_depth", String.to_integer(v)))}
+    do:
+      {:noreply,
+       assign(socket, form: socket.assigns.form |> Map.put("max_depth", String.to_integer(v)))}
 
   def handle_event("set_sources", %{"value" => v}, socket),
-    do: {:noreply, assign(socket, form: socket.assigns.form |> Map.put("max_sources", String.to_integer(v)))}
+    do:
+      {:noreply,
+       assign(socket, form: socket.assigns.form |> Map.put("max_sources", String.to_integer(v)))}
 
   def handle_event("set_model", %{"value" => v}, socket),
     do: {:noreply, assign(socket, form: socket.assigns.form |> Map.put("model", v))}

@@ -92,7 +92,7 @@ defmodule ExAutoresearch.DeepResearch.Scraper.Native do
     if size > max do
       Logger.warning(
         "Native scraper truncated content from #{size} to #{max} bytes" <>
-          if url, do: " for #{url}", else: ""
+          if(url, do: " for #{url}", else: "")
       )
     end
 

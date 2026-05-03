@@ -54,7 +54,6 @@ defmodule ExAutoresearch.MixProject do
       {:nimble_options, "~> 1.1"},
       {:table_rex, "~> 4.0"},
       {:mdex, "~> 0.11.6"},
-
       {:pbkdf2_elixir, "~> 2.2"},
 
       # Task queue

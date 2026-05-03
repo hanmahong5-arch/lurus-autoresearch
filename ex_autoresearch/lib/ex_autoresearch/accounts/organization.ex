@@ -34,6 +34,7 @@ defmodule ExAutoresearch.Accounts.Organization do
     uuid_v7_primary_key :id
 
     attribute :name, :string, allow_nil?: false, public?: true
+
     attribute :plan, :atom,
       constraints: [one_of: [:free, :pro, :enterprise]],
       default: :free,

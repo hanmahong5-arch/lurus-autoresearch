@@ -19,7 +19,9 @@ defmodule ExAutoresearch.Accounts do
           nil -> {:error, :not_found}
           user -> {:ok, user}
         end
-      {:error, reason} -> {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -39,7 +41,8 @@ defmodule ExAutoresearch.Accounts do
         end)
         |> Enum.reject(&is_nil/1)
 
-      {:error, _} -> []
+      {:error, _} ->
+        []
     end
   end
 
@@ -50,23 +53,27 @@ defmodule ExAutoresearch.Accounts do
     case Ash.read(Membership) do
       {:ok, memberships} ->
         case Enum.find(memberships, fn m ->
-             m.user_id == user_id and m.organization_id == organization_id
-           end) do
+               m.user_id == user_id and m.organization_id == organization_id
+             end) do
           nil -> {:error, :not_found}
           membership -> {:ok, membership}
         end
-      {:error, reason} -> {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   def create_organization(name, user_id) do
     with {:ok, org} <- Ash.create(Organization, %{name: name, plan: :free}, action: :create),
          {:ok, _membership} <-
-           Ash.create(Membership, %{
-             user_id: user_id,
-             organization_id: org.id,
-             role: :owner
-           }, action: :create) do
+           Ash.create(
+             Membership,
+             %{
+               user_id: user_id,
+               organization_id: org.id,
+               role: :owner
+             }, action: :create) do
       {:ok, org}
     end
   end

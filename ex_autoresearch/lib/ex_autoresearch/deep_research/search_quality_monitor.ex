@@ -34,7 +34,10 @@ defmodule ExAutoresearch.DeepResearch.SearchQualityMonitor do
   end
 
   @impl true
-  def handle_info({:investigation_completed, %{investigation_id: id, quality_score: score}}, state)
+  def handle_info(
+        {:investigation_completed, %{investigation_id: id, quality_score: score}},
+        state
+      )
       when is_number(score) do
     state = %{state | scores: Map.put(state.scores, id, score)}
     state = %{state | total_score: state.total_score + score, count: state.count + 1}
@@ -46,7 +49,10 @@ defmodule ExAutoresearch.DeepResearch.SearchQualityMonitor do
 
     cond do
       length(recent_scores) >= 3 and avg_score < @quality_threshold ->
-        Logger.info("[Monitor] Quality too low (avg: #{Float.round(avg_score, 2)}), signaling pivot")
+        Logger.info(
+          "[Monitor] Quality too low (avg: #{Float.round(avg_score, 2)}), signaling pivot"
+        )
+
         broadcast(:quality_alert, %{
           type: :low_quality,
           avg_score: avg_score,
@@ -55,8 +61,12 @@ defmodule ExAutoresearch.DeepResearch.SearchQualityMonitor do
 
       length(recent_scores) >= 3 ->
         recent_avg = Enum.sum(recent_scores) / length(recent_scores)
+
         if recent_avg < @diminishing_threshold do
-          Logger.info("[Monitor] Diminishing returns detected (recent avg: #{Float.round(recent_avg, 2)})")
+          Logger.info(
+            "[Monitor] Diminishing returns detected (recent avg: #{Float.round(recent_avg, 2)})"
+          )
+
           broadcast(:quality_alert, %{
             type: :diminishing_returns,
             avg_score: avg_score,

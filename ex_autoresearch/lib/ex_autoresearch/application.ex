@@ -17,7 +17,8 @@ defmodule ExAutoresearch.Application do
       {Phoenix.PubSub, name: ExAutoresearch.PubSub},
       %{
         id: ExAutoresearch.DeepResearch.TelemetryBridge,
-        start: {Task, :start_link, [fn -> ExAutoresearch.DeepResearch.TelemetryBridge.attach() end]},
+        start:
+          {Task, :start_link, [fn -> ExAutoresearch.DeepResearch.TelemetryBridge.attach() end]},
         restart: :transient
       },
       ExAutoresearch.DeepResearch.ResearchOrchestrator,

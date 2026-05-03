@@ -155,12 +155,13 @@ defmodule ExAutoresearch.Agent.LLMClient do
   end
 
   defp do_completion(prompt, model, api_key, :anthropic, _base_url) do
-    body = Jason.encode!(%{
-      model: model,
-      max_tokens: 8192,
-      system: "You are a deep research assistant. Provide thorough, well-reasoned responses.",
-      messages: [%{role: "user", content: prompt}]
-    })
+    body =
+      Jason.encode!(%{
+        model: model,
+        max_tokens: 8192,
+        system: "You are a deep research assistant. Provide thorough, well-reasoned responses.",
+        messages: [%{role: "user", content: prompt}]
+      })
 
     case Req.post("https://api.anthropic.com/v1/messages",
            headers: %{
@@ -193,14 +194,15 @@ defmodule ExAutoresearch.Agent.LLMClient do
   end
 
   defp do_completion(prompt, model, api_key, :openrouter, _base_url) do
-    body = Jason.encode!(%{
-      model: model,
-      max_tokens: 8192,
-      messages: [
-        %{role: "system", content: "You are a deep research assistant."},
-        %{role: "user", content: prompt}
-      ]
-    })
+    body =
+      Jason.encode!(%{
+        model: model,
+        max_tokens: 8192,
+        messages: [
+          %{role: "system", content: "You are a deep research assistant."},
+          %{role: "user", content: prompt}
+        ]
+      })
 
     case Req.post("https://openrouter.ai/api/v1/chat/completions",
            headers: %{
@@ -238,6 +240,7 @@ defmodule ExAutoresearch.Agent.LLMClient do
 
   defp openai_compat_configured? do
     cfg = openai_compat_config()
+
     is_binary(cfg[:base_url]) and is_binary(cfg[:api_key]) and
       cfg[:base_url] != "" and cfg[:api_key] != ""
   end

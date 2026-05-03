@@ -40,32 +40,30 @@ defmodule ExAutoresearch.Changelog do
 
   @offsets_with_meta Enum.zip(@offsets, @named)
 
-  @parsed_entries (
-                    case @offsets_with_meta do
-                      [] ->
-                        []
+  @parsed_entries (case @offsets_with_meta do
+                     [] ->
+                       []
 
-                      list ->
-                        list
-                        |> Enum.with_index()
-                        |> Enum.map(fn {{{start, len}, {version, date}}, idx} ->
-                          body_start = start + len
+                     list ->
+                       list
+                       |> Enum.with_index()
+                       |> Enum.map(fn {{{start, len}, {version, date}}, idx} ->
+                         body_start = start + len
 
-                          body_end =
-                            case Enum.at(list, idx + 1) do
-                              nil -> byte_size(@raw)
-                              {{next_start, _}, _} -> next_start
-                            end
+                         body_end =
+                           case Enum.at(list, idx + 1) do
+                             nil -> byte_size(@raw)
+                             {{next_start, _}, _} -> next_start
+                           end
 
-                          body =
-                            @raw
-                            |> binary_part(body_start, body_end - body_start)
-                            |> String.trim()
+                         body =
+                           @raw
+                           |> binary_part(body_start, body_end - body_start)
+                           |> String.trim()
 
-                          {version, date, body}
-                        end)
-                    end
-                  )
+                         {version, date, body}
+                       end)
+                   end)
 
   @entries Enum.map(@parsed_entries, fn {version, date, body_md} ->
              body_html =

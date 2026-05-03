@@ -27,7 +27,8 @@ openai_compat =
   [
     base_url: System.get_env("OPENAI_COMPAT_BASE_URL"),
     api_key: System.get_env("OPENAI_COMPAT_API_KEY"),
-    model_main: System.get_env("OPENAI_COMPAT_MODEL_MAIN") || System.get_env("OPENAI_COMPAT_MODEL"),
+    model_main:
+      System.get_env("OPENAI_COMPAT_MODEL_MAIN") || System.get_env("OPENAI_COMPAT_MODEL"),
     model_fast: System.get_env("OPENAI_COMPAT_MODEL_FAST")
   ]
   |> Enum.reject(fn {_, v} -> v in [nil, ""] end)

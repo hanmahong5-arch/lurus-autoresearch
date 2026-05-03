@@ -11,11 +11,6 @@ defmodule ExAutoresearch.Research.Template do
     domain: ExAutoresearch.Research,
     data_layer: AshSqlite.DataLayer
 
-  multitenancy do
-    strategy :attribute
-    attribute :organization_id
-  end
-
   sqlite do
     table "templates"
     repo ExAutoresearch.Repo
@@ -26,22 +21,45 @@ defmodule ExAutoresearch.Research.Template do
 
     create :create do
       accept [
-        :name, :description, :organization_id, :query_template, :category,
-        :schedule_cron, :enabled, :max_depth, :max_sources, :model, :tags
+        :name,
+        :description,
+        :organization_id,
+        :query_template,
+        :category,
+        :schedule_cron,
+        :enabled,
+        :max_depth,
+        :max_sources,
+        :model,
+        :tags
       ]
+
       primary? true
     end
 
     update :update do
       accept [
-        :name, :description, :query_template, :category, :schedule_cron,
-        :enabled, :max_depth, :max_sources, :model, :tags
+        :name,
+        :description,
+        :query_template,
+        :category,
+        :schedule_cron,
+        :enabled,
+        :max_depth,
+        :max_sources,
+        :model,
+        :tags
       ]
     end
 
     update :toggle do
       accept [:enabled]
     end
+  end
+
+  multitenancy do
+    strategy :attribute
+    attribute :organization_id
   end
 
   attributes do

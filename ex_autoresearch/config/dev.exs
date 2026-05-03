@@ -1,7 +1,6 @@
 import Config
 config :ash, policies: [show_policy_breakdowns?: true]
 
-
 # Configure your database
 config :ex_autoresearch, ExAutoresearch.Repo,
   database: Path.expand("../dev.db", __DIR__),

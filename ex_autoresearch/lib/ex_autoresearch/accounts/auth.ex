@@ -36,11 +36,13 @@ defmodule ExAutoresearch.Accounts.Auth do
             case Ash.create(Accounts.Organization, org_params, action: :create) do
               {:ok, org} ->
                 # Create membership
-                Ash.create(Accounts.Membership, %{
-                  user_id: user.id,
-                  organization_id: org.id,
-                  role: :owner
-                }, action: :create)
+                Ash.create(
+                  Accounts.Membership,
+                  %{
+                    user_id: user.id,
+                    organization_id: org.id,
+                    role: :owner
+                  }, action: :create)
 
                 {:ok, user, org}
 

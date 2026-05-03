@@ -60,11 +60,20 @@ defmodule ExAutoresearchWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("set_query", %{"query" => q}, socket), do: {:noreply, assign(socket, :query, q)}
-  def handle_event("set_title", %{"title" => t}, socket), do: {:noreply, assign(socket, :title, t)}
-  def handle_event("set_model", %{"model" => m}, socket), do: {:noreply, assign(socket, :model, m)}
-  def handle_event("set_depth", %{"depth" => d}, socket), do: {:noreply, assign(socket, :max_depth, String.to_integer(d))}
-  def handle_event("set_sources", %{"sources" => s}, socket), do: {:noreply, assign(socket, :max_sources, String.to_integer(s))}
+  def handle_event("set_query", %{"query" => q}, socket),
+    do: {:noreply, assign(socket, :query, q)}
+
+  def handle_event("set_title", %{"title" => t}, socket),
+    do: {:noreply, assign(socket, :title, t)}
+
+  def handle_event("set_model", %{"model" => m}, socket),
+    do: {:noreply, assign(socket, :model, m)}
+
+  def handle_event("set_depth", %{"depth" => d}, socket),
+    do: {:noreply, assign(socket, :max_depth, String.to_integer(d))}
+
+  def handle_event("set_sources", %{"sources" => s}, socket),
+    do: {:noreply, assign(socket, :max_sources, String.to_integer(s))}
 
   def handle_event("start_research", _params, socket) do
     query = String.trim(socket.assigns.query)
@@ -86,7 +95,9 @@ defmodule ExAutoresearchWeb.DashboardLive do
       ]
 
       research_params =
-        if org_id, do: Keyword.put(research_params, :organization_id, org_id), else: research_params
+        if org_id,
+          do: Keyword.put(research_params, :organization_id, org_id),
+          else: research_params
 
       DeepResearch.ResearchOrchestrator.start_research(research_params)
 
@@ -109,7 +120,8 @@ defmodule ExAutoresearchWeb.DashboardLive do
     end
   end
 
-  def handle_event("back_to_list", _params, socket), do: {:noreply, assign(socket, :active_report, nil)}
+  def handle_event("back_to_list", _params, socket),
+    do: {:noreply, assign(socket, :active_report, nil)}
 
   def handle_event("export_report", %{"id" => id}, socket), do: export_report(id, socket)
 
@@ -184,11 +196,12 @@ defmodule ExAutoresearchWeb.DashboardLive do
         <% else %>
           <div>
             <h1 class="text-2xl font-bold tracking-tight">Deep Research</h1>
+            
             <p class="text-sm text-base-content/60 mt-1">
               Ask a question. We'll plan, search, scrape, analyze and write a sourced report.
             </p>
           </div>
-
+          
           <.search_form
             query={@query}
             title={@title}
@@ -196,7 +209,6 @@ defmodule ExAutoresearchWeb.DashboardLive do
             max_depth={@max_depth}
             max_sources={@max_sources}
           />
-
           <%= if @status != :idle do %>
             <.progress_bar
               step={@research_step}
@@ -205,8 +217,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
               scraper_status={@scraper_status}
             />
           <% end %>
-
-          <.report_list reports={@reports} />
+           <.report_list reports={@reports} />
         <% end %>
       </div>
     </Layouts.app>
@@ -232,7 +243,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
             class="input input-bordered w-full"
           />
         </div>
-
+        
         <div class="form-control">
           <label class="label" for="dash-title">
             <span class="label-text font-medium">Report Title</span>
@@ -249,7 +260,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
             class="input input-bordered w-full"
           />
         </div>
-
+        
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div class="form-control">
             <label class="label" for="dash-model">
@@ -261,22 +272,24 @@ defmodule ExAutoresearchWeb.DashboardLive do
               phx-change="set_model"
               class="select select-bordered w-full"
             >
-              <option value="" selected={@model in [nil, ""]}>
-                OpenAI Gateway · Auto tier
-              </option>
+              <option value="" selected={@model in [nil, ""]}>OpenAI Gateway · Auto tier</option>
+              
               <option value="claude-sonnet-4" selected={@model == "claude-sonnet-4"}>
                 Claude Sonnet 4
               </option>
+              
               <option value="claude-opus-4-6" selected={@model == "claude-opus-4-6"}>
                 Claude Opus 4.6
               </option>
+              
               <option value="gpt-4.1" selected={@model == "gpt-4.1"}>GPT-4.1</option>
+              
               <option value="gemini-2.5-pro" selected={@model == "gemini-2.5-pro"}>
                 Gemini 2.5 Pro
               </option>
             </select>
           </div>
-
+          
           <div class="form-control">
             <label class="label" for="dash-depth">
               <span class="label-text font-medium">Max Depth</span>
@@ -293,7 +306,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
               class="input input-bordered w-full"
             />
           </div>
-
+          
           <div class="form-control">
             <label class="label" for="dash-sources">
               <span class="label-text font-medium">Max Sources</span>
@@ -311,11 +324,9 @@ defmodule ExAutoresearchWeb.DashboardLive do
             />
           </div>
         </div>
-
+        
         <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary">
-            Start Deep Research
-          </button>
+          <button type="submit" class="btn btn-primary">Start Deep Research</button>
         </div>
       </form>
     </section>
@@ -338,7 +349,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
             {Float.round(@progress / 1, 1)}%
           </span>
         </div>
-        <progress class="progress progress-primary w-full" value={@progress} max="100"></progress>
+         <progress class="progress progress-primary w-full" value={@progress} max="100"></progress>
         <%= if @scraper_status do %>
           <.scraper_status_row status={@scraper_status} />
         <% end %>
@@ -356,11 +367,10 @@ defmodule ExAutoresearchWeb.DashboardLive do
       <span class="font-mono shrink-0">{scraper_outcome_icon(@status.outcome)}</span>
       <div class="min-w-0 flex-1">
         <div class="font-medium truncate">{@status.url}</div>
+        
         <div class="opacity-70 mt-0.5">{@status.message}</div>
       </div>
-      <span class="opacity-60 shrink-0 tabular-nums font-mono">
-        {@status.duration_ms}ms
-      </span>
+       <span class="opacity-60 shrink-0 tabular-nums font-mono">{@status.duration_ms}ms</span>
     </div>
     """
   end
@@ -371,11 +381,12 @@ defmodule ExAutoresearchWeb.DashboardLive do
       <h2 class="text-sm font-semibold uppercase tracking-wider text-base-content/60 mb-3">
         Recent Reports
       </h2>
-
+      
       <%= if @reports == [] do %>
         <div class="card bg-base-100 border border-dashed border-base-300">
           <div class="card-body items-center text-center py-12">
             <p class="text-sm text-base-content/60">No reports yet.</p>
+            
             <p class="text-xs text-base-content/50 mt-1">
               Start a research query above to generate one.
             </p>
@@ -393,10 +404,12 @@ defmodule ExAutoresearchWeb.DashboardLive do
                 <div class="card-body py-4 px-5 flex flex-row items-start justify-between gap-4">
                   <div class="min-w-0 flex-1">
                     <h3 class="font-medium truncate">{report.title}</h3>
+                    
                     <p class="text-sm text-base-content/70 mt-1 line-clamp-1">
                       {String.slice(report.query, 0, 200)}
                     </p>
                   </div>
+                  
                   <div class="text-right shrink-0 space-y-1">
                     <span class={["badge badge-sm", status_badge_class(report.status)]}>
                       {status_label(report.status)}
@@ -419,8 +432,10 @@ defmodule ExAutoresearchWeb.DashboardLive do
       <header class="border-b border-base-300 px-6 py-4 flex items-center justify-between gap-4">
         <div class="min-w-0">
           <h2 class="text-lg font-semibold truncate">{@report.title}</h2>
+          
           <p class="text-sm text-base-content/70 mt-1 line-clamp-1">{@report.query}</p>
         </div>
+        
         <div class="flex items-center gap-2 shrink-0">
           <%= if @report.status == :completed do %>
             <button
@@ -431,12 +446,13 @@ defmodule ExAutoresearchWeb.DashboardLive do
               Export
             </button>
           <% end %>
+          
           <button phx-click="back_to_list" class="btn btn-ghost btn-sm gap-1">
             <span aria-hidden="true">&larr;</span> Back
           </button>
         </div>
       </header>
-
+      
       <div class="px-6 py-6">
         <%= if @report.status == :completed and @report.markdown_body do %>
           <div class="text-sm leading-relaxed max-w-none [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_a]:link [&_a]:link-primary [&_code]:text-xs [&_code]:bg-base-200 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-base-200 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-4 [&_blockquote]:border-base-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-base-content/70 [&_strong]:font-semibold">
@@ -447,12 +463,23 @@ defmodule ExAutoresearchWeb.DashboardLive do
             <span class="loading loading-spinner loading-md text-primary mb-3"></span>
             <p class="text-sm">
               {case @report.status do
-                :pending -> "Waiting to start..."
-                :researching -> "Researching... (#{Float.round((@report.progress_pct || 0) * 100 / 1, 1)}%)"
-                :analyzing -> "Analyzing findings..."
-                :writing -> "Writing report..."
-                :failed -> "Research failed"
-                _ -> "In progress..."
+                :pending ->
+                  "Waiting to start..."
+
+                :researching ->
+                  "Researching... (#{Float.round((@report.progress_pct || 0) * 100 / 1, 1)}%)"
+
+                :analyzing ->
+                  "Analyzing findings..."
+
+                :writing ->
+                  "Writing report..."
+
+                :failed ->
+                  "Research failed"
+
+                _ ->
+                  "In progress..."
               end}
             </p>
           </div>
