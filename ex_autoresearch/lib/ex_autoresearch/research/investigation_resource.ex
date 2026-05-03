@@ -22,7 +22,18 @@ defmodule ExAutoresearch.Research.Investigation do
     end
 
     update :complete do
-      accept [:status, :findings, :quality_score, :sources_count, :content_length, :url]
+      accept [
+        :status,
+        :findings,
+        :quality_score,
+        :sources_count,
+        :content_length,
+        :url,
+        :fetched_at,
+        :content_hash,
+        :scraper_source,
+        :fallback_used
+      ]
     end
 
     update :fail do
@@ -56,6 +67,16 @@ defmodule ExAutoresearch.Research.Investigation do
     attribute :content_length, :integer, default: 0, public?: true
     attribute :url, :string, public?: true
     attribute :error, :string, public?: true
+
+    attribute :fetched_at, :utc_datetime_usec, public?: true
+    attribute :content_hash, :string, public?: true
+
+    attribute :scraper_source, :atom,
+      constraints: [one_of: [:crawl4ai, :native, :unknown]],
+      default: :unknown,
+      public?: true
+
+    attribute :fallback_used, :boolean, default: false, public?: true
 
     timestamps()
   end

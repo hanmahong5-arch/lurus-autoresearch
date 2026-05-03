@@ -42,7 +42,7 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
   require Ash.Query
 
   alias ExAutoresearch.Research
-  alias ExAutoresearch.DeepResearch.{Tools.ResearchRunner, SearchQualityMonitor}
+  alias ExAutoresearch.DeepResearch.{Tools.ResearchRunner, SearchQualityMonitor, SourcesBlock}
   alias ExAutoresearch.Agent.LLMClient
 
   @max_plan_retries 3
@@ -445,6 +445,8 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
   end
 
   defp complete_investigation(inv, report, findings, query) do
+    first_source = List.first(findings.sources) || %{}
+
     Ash.update!(
       inv,
       %{
@@ -452,7 +454,11 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
         findings: findings.content,
         quality_score: findings.quality_score,
         sources_count: length(findings.sources),
-        url: List.first(findings.sources, [])["url"]
+        url: Map.get(first_source, :url),
+        fetched_at: Map.get(first_source, :fetched_at),
+        content_hash: Map.get(first_source, :content_hash),
+        scraper_source: Map.get(first_source, :scraper_source, :unknown),
+        fallback_used: Map.get(first_source, :fallback_used, false)
       },
       action: :complete
     )
@@ -575,11 +581,13 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
   end
 
   defp update_report_complete(report, body, source_count, progress \\ 1.0) do
+    final_body = body <> SourcesBlock.build(report)
+
     Ash.update!(
       report,
       %{
         status: :completed,
-        markdown_body: body,
+        markdown_body: final_body,
         progress_pct: progress,
         summary: "#{source_count} sources analyzed"
       },
