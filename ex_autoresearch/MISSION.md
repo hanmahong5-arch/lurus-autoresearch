@@ -55,25 +55,44 @@ These were chosen after explicit research and trade-off analysis. Each has a rea
 - **No closed-source dependencies on the canonical path.** AGPL is a flag-yellow; non-OSI is a flag-red.
 - **No "let's add LangChain too."** We have `jido`. That is sufficient.
 
-## Current sprint: Week 1–2 — Crawl4AI integration
+## Delivered (as of 2026-05-03)
 
-**Goal:** Replace the inline `Req.get` + regex HTML extraction at `lib/ex_autoresearch/deep_research/tools/research_runner.ex:76-103` with a swappable `Scraper` behaviour, with Crawl4AI as the default implementation.
+The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 
-**Concrete changes:**
-1. Define `ExAutoresearch.DeepResearch.Scraper` behaviour with `@callback fetch(url :: String.t(), opts :: keyword()) :: {:ok, %{markdown: String.t(), metadata: map()}} | {:error, term()}`.
-2. Implement `ExAutoresearch.DeepResearch.Scraper.Native` — extract current logic from `ResearchRunner` unchanged. Used as fallback / when Crawl4AI is unavailable.
-3. Implement `ExAutoresearch.DeepResearch.Scraper.Crawl4ai` — `POST /crawl` + poll `GET /task/{id}` against a self-hosted Crawl4AI instance. Configure base URL via `:ex_autoresearch, :crawl4ai_base_url` (default `http://localhost:11235`).
-4. (Optional, Week 2) Implement `ExAutoresearch.DeepResearch.Scraper.Firecrawl` using the `firecrawl` Hex SDK — for cloud-spillover.
-5. Configure default via `config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Crawl4ai` (with `Native` as the fallback when env var `EX_AUTORESEARCH_SCRAPER=native` is set).
-6. Modify `ResearchRunner.do_run/3` line 38 to call the configured scraper instead of inline `fetch_page_content`. Keep `fetch_page_content` private only for the `Scraper.Native` path.
-7. Add unit tests for each `Scraper` implementation (mock Crawl4AI HTTP via Bypass / Req's testing API).
-8. Add `docker-compose.yml` snippet committed to repo for `unclecode/crawl4ai:latest`.
+**Scraper layer (Week 1-2 + extras):**
+- `Scraper` behaviour with `Native` + `Crawl4ai` impls; configured default via `:scraper` app-env.
+- `Scraper.fetch/2` wrapper auto-falls-back to Native on primary failure (telemetry-instrumented). `{:both_failed, primary: ..., native: ...}` when both die.
+- `docker-compose.yml` ships an `unclecode/crawl4ai:latest` service with `--shm-size=1g`.
+- Telemetry events on `[:ex_autoresearch, :scraper, :fetch, :start|:stop]` carry `report_id`, `investigation_id`, `outcome`, `primary_error`.
+- **Not done:** the "3 representative URLs" smoke test from the original acceptance — needs a live Crawl4AI container.
 
-**Acceptance:**
-- `mix precommit` clean.
-- `Scraper.Crawl4ai` returns clean markdown for at least 3 representative URLs (one static, one JS-heavy, one with paywall — paywall expected to fail gracefully).
-- `Scraper.Native` still passes tests (regression guard).
-- No change to `ResearchRunner.run/2,3` public API.
+**Real-time UI (Week 4 pulled in early):**
+- `TelemetryBridge` re-emits scraper stop events as `{:scraper_progress, ...}` on the `"research:events"` PubSub topic.
+- DashboardLive renders per-URL progress with a daisyUI alert that turns amber when fallback was used and surfaces the underlying reason ("Crawl4AI failed (HTTP 503), fell back to native scraper").
+
+**Citation-grade provenance (the legal/compliance differentiator):**
+- Every `Investigation` persists `fetched_at`, `content_hash` (SHA-256 hex), `scraper_source`, `fallback_used`.
+- Final report markdown gets an automatic `## Sources` block with numbered clickable links, fetched-at timestamps, hash prefix, and ⚠ marker if Crawl4AI fell back.
+
+**Append-only audit log:**
+- `ExAutoresearch.Audit` domain + `Event` resource, multi-tenant by `organization_id`, declares only `:read` and `:record` actions so immutability is enforced by the domain itself.
+- Hooks at: DashboardLive `start_research` / `export_report`; ResearchOrchestrator `update_report_complete` / `fail_report`.
+- `/audit` LiveView with filter chips, real-time PubSub append, designed empty state, tenant-isolated.
+
+**Health probes:**
+- `GET /healthz` (always 200 with version) + `GET /readyz` (Repo `SELECT 1`; Crawl4AI status reported informationally — never flips readiness because the auto-fallback means we still serve traffic).
+
+**Acceptance status:** `mix precommit` 56 tests, 0 failures, 0 skipped. Format clean. deps.unlock --unused clean. Compile clean.
+
+## Current sprint: pick one of
+
+1. **Week 5 — Langfuse self-hosted observability.** Per-research-run cost + latency + LLM call tree. Already have telemetry events at scraper boundary; need to wire LLMClient to emit similarly + run Langfuse in docker-compose. **Blocking story:** "every LLM call is auditable for compliance review."
+
+2. **Week 6 — pgvector + Bumblebee local embeddings.** Switch SQLite → Postgres for the data layer (schema migration via Ash), add `Embedding` resource per Investigation, semantic-search past research before kicking off a new run. **Blocking story:** "duplicate queries don't re-burn tokens; partner can semantically search the corpus."
+
+3. **End-to-end demo.** Boot the docker-compose stack, run a real research query against Crawl4AI, screenshot the LiveView + the Sources block + the audit log. Surfaces real bugs (Playwright OOM, Serper quotas) before customers do.
+
+4. **Week 3 — jido-ization** (deferred from original plan because the manual GenServer state machine works fine; jido pays off when we add Symphony in Week 8).
 
 ## Robustness standards (every feature must hit these)
 
