@@ -20,11 +20,29 @@ defmodule ExAutoresearch.Audit do
     case Map.fetch(attrs, :organization_id) do
       {:ok, org_id} ->
         params = Map.put(attrs, :event_type, event_type)
-        Ash.create(__MODULE__.Event, params, action: :record, tenant: org_id)
+
+        case Ash.create(__MODULE__.Event, params, action: :record, tenant: org_id) do
+          {:ok, event} = ok ->
+            broadcast(event)
+            ok
+
+          {:error, _} = err ->
+            err
+        end
 
       :error ->
         {:error, "organization_id is required"}
     end
+  end
+
+  defp broadcast(event) do
+    Phoenix.PubSub.broadcast(
+      ExAutoresearch.PubSub,
+      "audit:events",
+      {:audit_event_recorded, event}
+    )
+  rescue
+    _ -> :ok
   end
 
   @doc """

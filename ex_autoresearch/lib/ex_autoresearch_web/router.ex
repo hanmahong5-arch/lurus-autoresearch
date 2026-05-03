@@ -56,6 +56,7 @@ defmodule ExAutoresearchWeb.Router do
       live "/templates", TemplateLive, :index
       live "/templates/:id", TemplateLive, :show
       live "/schedules", ScheduleLive, :index
+      live "/audit", AuditLive, :index
       live "/settings", SettingsLive, :index
       live "/reports/:id", ReportDetailLive, :show
     end
