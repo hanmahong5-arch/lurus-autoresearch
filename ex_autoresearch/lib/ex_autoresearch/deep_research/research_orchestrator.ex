@@ -593,6 +593,20 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
       },
       action: :complete
     )
+
+    if report.organization_id do
+      ExAutoresearch.Audit.record!(:report_completed, %{
+        organization_id: report.organization_id,
+        target_type: :report,
+        target_id: report.id,
+        summary: String.slice(report.title || "", 0, 200),
+        metadata: %{
+          total_sources: report.total_sources,
+          total_investigations: report.total_investigations,
+          final_score: report.final_score
+        }
+      })
+    end
   rescue
     _ -> :ok
   end
@@ -605,6 +619,16 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
       %{status: :failed, summary: to_string(reason), progress_pct: 0.0},
       action: :update_status
     )
+
+    if report.organization_id do
+      ExAutoresearch.Audit.record!(:report_failed, %{
+        organization_id: report.organization_id,
+        target_type: :report,
+        target_id: report.id,
+        summary: String.slice(report.title || "", 0, 200),
+        metadata: %{reason: to_string(reason)}
+      })
+    end
   rescue
     _ -> :ok
   end
