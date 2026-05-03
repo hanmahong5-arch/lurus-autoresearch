@@ -1,22 +1,17 @@
 defmodule ExAutoresearch.Research.Report do
   @moduledoc """
-  A deep research report — a named research session with AI-generated content.
+  A deep research report - a named research session with AI-generated content.
 
   Each report belongs to an organization and can be filtered/created
   via authenticated user sessions.
 
   Note: Multi-tenant isolation is enforced at the application level
-  — always filter by organization_id when reading/writing reports.
+  - always filter by organization_id when reading/writing reports.
   """
 
   use Ash.Resource,
     domain: ExAutoresearch.Research,
     data_layer: AshSqlite.DataLayer
-
-  multitenancy do
-    strategy :attribute
-    attribute :organization_id
-  end
 
   sqlite do
     table "reports"
@@ -27,7 +22,17 @@ defmodule ExAutoresearch.Research.Report do
     defaults [:read]
 
     create :start do
-      accept [:title, :query, :model, :max_depth, :max_sources, :organization_id, :category, :tags]
+      accept [
+        :title,
+        :query,
+        :model,
+        :max_depth,
+        :max_sources,
+        :organization_id,
+        :category,
+        :tags
+      ]
+
       primary? true
     end
 
@@ -42,6 +47,11 @@ defmodule ExAutoresearch.Research.Report do
     update :update_result do
       accept [:total_sources, :total_investigations, :final_score]
     end
+  end
+
+  multitenancy do
+    strategy :attribute
+    attribute :organization_id
   end
 
   attributes do
@@ -87,12 +97,12 @@ defmodule ExAutoresearch.Research.Report do
     timestamps()
   end
 
-  identities do
-    identity :unique_title, [:title]
-  end
-
   relationships do
     has_many :investigations, ExAutoresearch.Research.Investigation
     belongs_to :organization, ExAutoresearch.Accounts.Organization
+  end
+
+  identities do
+    identity :unique_title, [:title]
   end
 end

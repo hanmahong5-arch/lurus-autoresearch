@@ -42,7 +42,9 @@ defmodule ExAutoresearch.Accounts.Auth do
                     user_id: user.id,
                     organization_id: org.id,
                     role: :owner
-                  }, action: :create)
+                  },
+                  action: :create
+                )
 
                 {:ok, user, org}
 
