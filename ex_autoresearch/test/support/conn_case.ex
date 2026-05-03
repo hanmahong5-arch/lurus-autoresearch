@@ -35,4 +35,27 @@ defmodule ExAutoresearchWeb.ConnCase do
     ExAutoresearch.DataCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  @doc """
+  Registers a user (with first organization) and returns a `conn` whose
+  session carries `:user_id`, so subsequent `live(conn, "/")` calls pass
+  the `:require_auth` pipeline and hydrate `current_user` + `current_org_id`
+  via `LiveAuth.on_mount/4`.
+
+  Returns `{conn, user, organization}`.
+  """
+  def register_and_log_in_user(conn, attrs \\ []) do
+    suffix = System.unique_integer([:positive])
+    email = Keyword.get(attrs, :email, "test-#{suffix}@example.test")
+    password = Keyword.get(attrs, :password, "test-password-#{suffix}")
+
+    {:ok, user, org} = ExAutoresearch.Accounts.Auth.register(email, password, "Test User")
+
+    conn =
+      conn
+      |> Phoenix.ConnTest.init_test_session(%{})
+      |> Plug.Conn.put_session(:user_id, user.id)
+
+    {conn, user, org}
+  end
 end
