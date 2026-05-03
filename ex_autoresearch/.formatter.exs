@@ -2,7 +2,6 @@
   import_deps: [
     :ash_oban,
     :oban,
-    :ash_admin,
     :ash_sqlite,
     :ash_phoenix,
     :ash,
