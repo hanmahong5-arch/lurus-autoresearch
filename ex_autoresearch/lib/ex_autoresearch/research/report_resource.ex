@@ -47,6 +47,10 @@ defmodule ExAutoresearch.Research.Report do
     update :update_result do
       accept [:total_sources, :total_investigations, :final_score]
     end
+
+    update :track_llm_usage do
+      accept [:total_input_tokens, :total_output_tokens, :llm_calls_count]
+    end
   end
 
   multitenancy do
@@ -93,6 +97,11 @@ defmodule ExAutoresearch.Research.Report do
     # Final report
     attribute :markdown_body, :string
     attribute :summary, :string
+
+    # LLM usage telemetry
+    attribute :total_input_tokens, :integer, default: 0, public?: true
+    attribute :total_output_tokens, :integer, default: 0, public?: true
+    attribute :llm_calls_count, :integer, default: 0, public?: true
 
     timestamps()
   end

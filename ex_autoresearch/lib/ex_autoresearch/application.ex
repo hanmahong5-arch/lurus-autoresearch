@@ -21,6 +21,12 @@ defmodule ExAutoresearch.Application do
           {Task, :start_link, [fn -> ExAutoresearch.DeepResearch.TelemetryBridge.attach() end]},
         restart: :transient
       },
+      %{
+        id: ExAutoresearch.Observability.LLMUsageBridge,
+        start:
+          {Task, :start_link, [fn -> ExAutoresearch.Observability.LLMUsageBridge.attach() end]},
+        restart: :transient
+      },
       ExAutoresearch.DeepResearch.ResearchOrchestrator,
       ExAutoresearch.Workers.TemplateScheduler,
       ExAutoresearchWeb.Endpoint

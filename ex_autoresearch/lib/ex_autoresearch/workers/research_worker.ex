@@ -76,7 +76,10 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
   end
 
   defp run_research_loop(report, template) do
-    case generate_queries(report.query, template.max_depth) do
+    case generate_queries(report.query, template.max_depth,
+           report_id: report.id,
+           organization_id: report.organization_id
+         ) do
       [] ->
         {:error, :no_queries}
 
@@ -86,14 +89,18 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
     end
   end
 
-  defp generate_queries(query, max_depth) do
+  defp generate_queries(query, max_depth, llm_opts) do
     prompt = """
     Given this research question: "#{query}"
     Generate #{min(max_depth * 3, 9)} specific search queries.
     Respond with ONLY a JSON array: ["q1", "q2", ...]
     """
 
-    with {:ok, response} <- LLMClient.complete(prompt, tier: :fast, timeout: :timer.minutes(2)),
+    with {:ok, response} <-
+           LLMClient.complete(
+             prompt,
+             [tier: :fast, timeout: :timer.minutes(2)] ++ llm_opts
+           ),
          [json] <- Regex.run(~r/\[.*\]/s, response),
          {:ok, qs} when is_list(qs) <- Jason.decode(json) do
       Enum.filter(qs, &is_binary/1)
@@ -182,7 +189,12 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
         Format as markdown with sections for Executive Summary, Detailed Analysis, Key Findings.
         """
 
-        case LLMClient.complete(prompt, tier: :main, timeout: :timer.minutes(5)) do
+        case LLMClient.complete(prompt,
+               tier: :main,
+               timeout: :timer.minutes(5),
+               report_id: report.id,
+               organization_id: report.organization_id
+             ) do
           {:ok, body} -> {:ok, body, successful}
           _ -> {:ok, "# #{report.title}\n\n#{findings_text}", successful}
         end

@@ -222,7 +222,12 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
   # ── State entry actions ────────────────────────────────────────────────────
 
   defp enter(:planning, %{report: report, opts: opts} = state) do
-    spawn_phase(state, :planning, fn -> generate_plan(report.query, opts[:max_depth]) end)
+    spawn_phase(state, :planning, fn ->
+      generate_plan(report.query, opts[:max_depth],
+        report_id: report.id,
+        organization_id: report.organization_id
+      )
+    end)
   end
 
   defp enter(:searching, %{report: report, queries: queries} = state) do
@@ -231,7 +236,10 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
 
   defp enter(:analyzing, %{report: report, investigations: invs, opts: opts} = state) do
     spawn_phase(state, :analyzing, fn ->
-      analyze(report.query, invs, opts[:max_depth])
+      analyze(report.query, invs, opts[:max_depth],
+        report_id: report.id,
+        organization_id: report.organization_id
+      )
     end)
   end
 
@@ -355,7 +363,7 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
     %{state | pending_task: task}
   end
 
-  defp generate_plan(query, max_depth) do
+  defp generate_plan(query, max_depth, llm_opts) do
     n = min(max_depth * 3, 9)
 
     prompt = """
@@ -369,7 +377,8 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
     ["query 1", "query 2", "query 3"]
     """
 
-    with {:ok, body} <- LLMClient.complete(prompt, tier: :main, timeout: @plan_timeout),
+    with {:ok, body} <-
+           LLMClient.complete(prompt, [tier: :main, timeout: @plan_timeout] ++ llm_opts),
          {:ok, queries} <- parse_json_array(body) do
       {:ok, Enum.take(queries, n)}
     else
@@ -481,7 +490,7 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
     }
   end
 
-  defp analyze(question, investigations, max_depth) do
+  defp analyze(question, investigations, max_depth, llm_opts) do
     case filter_completed(investigations) do
       [] ->
         {:no_findings}
@@ -503,7 +512,7 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
         """
 
         with {:ok, body} <-
-               LLMClient.complete(prompt, tier: :main, timeout: @analyze_timeout),
+               LLMClient.complete(prompt, [tier: :main, timeout: @analyze_timeout] ++ llm_opts),
              {:ok, decision} <- parse_analysis(body, max_depth, summary) do
           decision
         else
@@ -545,7 +554,12 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
     4. Sources (list sources at the end)
     """
 
-    case LLMClient.complete(prompt, tier: :main, timeout: @synth_timeout) do
+    case LLMClient.complete(prompt,
+           tier: :main,
+           timeout: @synth_timeout,
+           report_id: report.id,
+           organization_id: report.organization_id
+         ) do
       {:ok, body} -> {:ok, body}
       _ -> {:fallback, "# #{report.title}\n\n#{findings_text}"}
     end

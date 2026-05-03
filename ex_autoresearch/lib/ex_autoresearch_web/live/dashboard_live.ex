@@ -483,6 +483,19 @@ defmodule ExAutoresearchWeb.DashboardLive do
       </header>
 
       <div class="px-6 py-6">
+        <%= if (@report.llm_calls_count || 0) > 0 do %>
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span class="badge badge-ghost badge-sm text-xs">
+              {@report.total_input_tokens || 0} in-tokens
+            </span>
+            <span class="badge badge-ghost badge-sm text-xs">
+              {@report.total_output_tokens || 0} out-tokens
+            </span>
+            <span class="badge badge-ghost badge-sm text-xs">
+              {@report.llm_calls_count} LLM calls
+            </span>
+          </div>
+        <% end %>
         <%= if @report.status == :completed and @report.markdown_body do %>
           <div class="text-sm leading-relaxed max-w-none [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-5 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2 [&_li]:my-1 [&_a]:link [&_a]:link-primary [&_code]:text-xs [&_code]:bg-base-200 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-base-200 [&_pre]:p-3 [&_pre]:rounded-md [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-4 [&_blockquote]:border-base-300 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-base-content/70 [&_strong]:font-semibold">
             {format_markdown(@report.markdown_body)}

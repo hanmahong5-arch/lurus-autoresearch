@@ -41,20 +41,57 @@ defmodule ExAutoresearch.Agent.LLMClient do
     tier = Keyword.get(opts, :tier, :main)
     model = Keyword.get(opts, :model)
     timeout = Keyword.get(opts, :timeout, :timer.minutes(5))
+    report_id = Keyword.get(opts, :report_id)
+    organization_id = Keyword.get(opts, :organization_id)
+    investigation_id = Keyword.get(opts, :investigation_id)
 
-    case start_link(model: model) do
-      {:ok, pid} ->
-        try do
-          GenServer.call(pid, {:prompt, prompt, tier}, timeout)
-        catch
-          :exit, reason -> {:error, {:llm_call_failed, reason}}
-        after
-          if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+    meta = %{
+      provider: nil,
+      model: model,
+      report_id: report_id,
+      organization_id: organization_id,
+      investigation_id: investigation_id
+    }
+
+    :telemetry.span([:ex_autoresearch, :llm, :complete], meta, fn ->
+      inner_result =
+        case start_link(model: model) do
+          {:ok, pid} ->
+            try do
+              GenServer.call(pid, {:prompt, prompt, tier}, timeout)
+            catch
+              :exit, reason -> {:error, {:llm_call_failed, reason}}
+            after
+              if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+            end
+
+          {:error, reason} ->
+            {:error, {:llm_start_failed, reason}}
         end
 
-      {:error, reason} ->
-        {:error, {:llm_start_failed, reason}}
-    end
+      case inner_result do
+        {:ok, text, usage} ->
+          stop_meta =
+            Map.merge(meta, %{
+              outcome: :ok,
+              input_tokens: Map.get(usage, :input_tokens, 0),
+              output_tokens: Map.get(usage, :output_tokens, 0)
+            })
+
+          {{:ok, text}, stop_meta}
+
+        {:error, reason} ->
+          stop_meta =
+            Map.merge(meta, %{
+              outcome: :error,
+              reason: reason,
+              input_tokens: 0,
+              output_tokens: 0
+            })
+
+          {{:error, reason}, stop_meta}
+      end
+    end)
   end
 
   @impl true
@@ -93,6 +130,7 @@ defmodule ExAutoresearch.Agent.LLMClient do
   def handle_call({:prompt, text, override}, _from, state) do
     model = resolve_model(override, state)
     result = do_completion(text, model, state.api_key, state.provider, state.base_url)
+
     {:reply, result, state}
   end
 
@@ -134,7 +172,13 @@ defmodule ExAutoresearch.Agent.LLMClient do
       {:ok, %Req.Response{status: 200, body: data}} ->
         text = get_in(data, ["choices", Access.at(0), "message", "content"]) || ""
         Logger.debug("OpenAI-compat OK model=#{model} content_len=#{byte_size(text)}")
-        {:ok, text}
+
+        usage = %{
+          input_tokens: get_in(data, ["usage", "prompt_tokens"]) || 0,
+          output_tokens: get_in(data, ["usage", "completion_tokens"]) || 0
+        }
+
+        {:ok, text, usage}
 
       {:ok, %Req.Response{status: status} = resp} ->
         Logger.error("OpenAI-compat API error (#{status}): #{inspect(resp.body, limit: 500)}")
@@ -180,7 +224,12 @@ defmodule ExAutoresearch.Agent.LLMClient do
           |> Enum.filter(&(&1["type"] == "text"))
           |> Enum.map_join("", & &1["text"])
 
-        {:ok, text}
+        usage = %{
+          input_tokens: get_in(data, ["usage", "input_tokens"]) || 0,
+          output_tokens: get_in(data, ["usage", "output_tokens"]) || 0
+        }
+
+        {:ok, text, usage}
 
       {:ok, %Req.Response{status: status} = resp} ->
         Logger.error("Anthropic API error (#{status}): #{inspect(resp.body, limit: 200)}")
@@ -216,7 +265,13 @@ defmodule ExAutoresearch.Agent.LLMClient do
          ) do
       {:ok, %Req.Response{status: 200, body: data}} ->
         text = get_in(data, ["choices", Access.at(0), "message", "content"]) || ""
-        {:ok, text}
+
+        usage = %{
+          input_tokens: get_in(data, ["usage", "prompt_tokens"]) || 0,
+          output_tokens: get_in(data, ["usage", "completion_tokens"]) || 0
+        }
+
+        {:ok, text, usage}
 
       {:ok, %Req.Response{status: status} = resp} ->
         Logger.error("OpenRouter API error (#{status}): #{inspect(resp.body, limit: 200)}")
