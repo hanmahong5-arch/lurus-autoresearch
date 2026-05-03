@@ -27,6 +27,14 @@ defmodule ExAutoresearchWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Health probes — public, no auth, no session, no CSRF
+  scope "/", ExAutoresearchWeb do
+    pipe_through :api
+
+    get "/healthz", HealthController, :liveness
+    get "/readyz", HealthController, :readiness
+  end
+
   # Public auth routes
   scope "/", ExAutoresearchWeb do
     pipe_through [:browser, :redirect_if_auth]
