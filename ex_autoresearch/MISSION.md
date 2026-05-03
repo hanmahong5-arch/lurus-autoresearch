@@ -79,20 +79,29 @@ The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 - Hooks at: DashboardLive `start_research` / `export_report`; ResearchOrchestrator `update_report_complete` / `fail_report`.
 - `/audit` LiveView with filter chips, real-time PubSub append, designed empty state, tenant-isolated.
 
+**LLM token telemetry (local-visible half of Week 5):**
+- `LLMClient.complete/2` wrapped in `:telemetry.span` on `[:ex_autoresearch, :llm, :complete]`. Public return signature unchanged — usage flows via telemetry metadata, not return value.
+- Each provider parses its own `usage` shape (OpenAI `prompt_tokens`/`completion_tokens`; Anthropic `input_tokens`/`output_tokens`).
+- `Observability.LLMUsageBridge` attaches at app boot, accumulates onto the owning `Report` via the new `:track_llm_usage` action, tenant-scoped, `authorize?: false`. Skips on nil `report_id` or `:error` outcome.
+- `Report` gains `total_input_tokens`, `total_output_tokens`, `llm_calls_count`. DashboardLive `report_detail` shows a 3-column daisyUI `stats` row when `llm_calls_count > 0`.
+- **Not done in this scope:** actually shipping a trace to a self-hosted Langfuse — that becomes a separate commit when the Langfuse docker-compose stack lands.
+
 **Health probes:**
 - `GET /healthz` (always 200 with version) + `GET /readyz` (Repo `SELECT 1`; Crawl4AI status reported informationally — never flips readiness because the auto-fallback means we still serve traffic).
 
-**Acceptance status:** `mix precommit` 56 tests, 0 failures, 0 skipped. Format clean. deps.unlock --unused clean. Compile clean.
+**Acceptance status:** `mix precommit` 60 tests, 0 failures, 0 skipped. Format clean. deps.unlock --unused clean. Compile clean.
 
 ## Current sprint: pick one of
 
-1. **Week 5 — Langfuse self-hosted observability.** Per-research-run cost + latency + LLM call tree. Already have telemetry events at scraper boundary; need to wire LLMClient to emit similarly + run Langfuse in docker-compose. **Blocking story:** "every LLM call is auditable for compliance review."
+1. **Langfuse upload — close the loop on Week 5.** LLM telemetry already emits everything we need (span events on `[:ex_autoresearch, :llm, :complete]` with provider, model, tokens, outcome, report_id). What's missing: a `LangfuseExporter` that POSTs traces to a self-hosted Langfuse, plus the docker-compose entry. Smallest credible scope.
 
 2. **Week 6 — pgvector + Bumblebee local embeddings.** Switch SQLite → Postgres for the data layer (schema migration via Ash), add `Embedding` resource per Investigation, semantic-search past research before kicking off a new run. **Blocking story:** "duplicate queries don't re-burn tokens; partner can semantically search the corpus."
 
-3. **End-to-end demo.** Boot the docker-compose stack, run a real research query against Crawl4AI, screenshot the LiveView + the Sources block + the audit log. Surfaces real bugs (Playwright OOM, Serper quotas) before customers do.
+3. **End-to-end demo.** Boot the docker-compose stack, run a real research query against Crawl4AI, screenshot the LiveView + the Sources block + the audit log + the LLM stats. Surfaces real bugs (Playwright OOM, Serper quotas, provider rate limits) before customers do.
 
-4. **Week 3 — jido-ization** (deferred from original plan because the manual GenServer state machine works fine; jido pays off when we add Symphony in Week 8).
+4. **Cost USD calculation.** Add a model→price table (or a `Settings` resource for self-hosted customers to enter their own rates) so the `Report` shows cost in USD, not just tokens. Adds two columns + a tiny UI widget.
+
+5. **Week 3 — jido-ization** (deferred from original plan because the manual GenServer state machine works fine; jido pays off when we add Symphony in Week 8).
 
 ## Robustness standards (every feature must hit these)
 
