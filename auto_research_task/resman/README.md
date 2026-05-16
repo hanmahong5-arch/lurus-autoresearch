@@ -102,6 +102,8 @@ resman watch results.tsv -t apr17 -i 2   # re-imports on every change
 | `export out.json` | Dump the full store as JSON. |
 | `watch <tsv>` | Poll a TSV; auto re-import on mtime change. |
 | `mcp` | Run as an MCP server over stdio — agents call tools directly. See [docs/MCP.md](docs/MCP.md). |
+| `doctor` | Six-check health probe (data dir, env, runs, usage telemetry, MCP wiring, store invariants). One call replaces a dozen exploratory probes. `-o table\|json\|tsv`. |
+| `usage` | Analyse `usage.jsonl` MCP telemetry. `--summary` / `--by-tool` / `--errors` / `--sequences`; `--tool`/`--since`/`--top` filters; three formats. |
 
 Global flags: `-D, --data-dir <path>` overrides the data dir for any command.
 
@@ -151,17 +153,45 @@ Add to `.claude/mcp.json` (Claude Code) or `~/.cursor/mcp.json`:
 { "mcpServers": { "resman": { "command": "resman", "args": ["mcp"] } } }
 ```
 
-Now the agent can call `resman_search`, `resman_best`, `resman_near`,
-`resman_list_recent`, `resman_add_experiment` as native tools — no bash
-escaping, no stdout parsing, fewer tokens. Full wiring guide: [docs/MCP.md](docs/MCP.md).
+Now the agent gets **eleven structured tools** out of the box, all returning
+parseable JSON (no substring match on English prose):
+
+- `resman_doctor` — one-shot health probe, call this first.
+- `resman_list_recent` — discovery probe; `total === 0` ⇒ fresh store.
+- `resman_distill` — long-term-memory artifact (best, lineage, signals,
+  unexplored neighbors, suggestions). Call at end of session.
+- `resman_best` — current baseline. `composite: true` for the multi-dim
+  resume-from-here score.
+- `resman_search` — "has this idea been tried?" before wasting compute.
+- `resman_near` — neighbors of a target val_bpb for grounding.
+- `resman_find_by_signal` — failure triage by typed crash kind (oom,
+  cuda_error, nan_loss, assert_fail, timeout, diverged_loss, slow_mfu).
+- `resman_diff_tags`, `resman_lineage` — branch- and chain-level analysis.
+- `resman_add_experiment` — log every run (keep, discard, crash).
+  Returns `lineage chain broken` warning when `parent_commit` is missed
+  on a non-fresh tag.
+- `resman_verify` — promote a reproduced experiment to `status=verified`.
+
+Every `tools/call` is logged to `$RESMAN_HOME/usage.jsonl` for `resman usage`
+analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`. Full wiring guide:
+[docs/MCP.md](docs/MCP.md). Field-level schema decisions: [docs/SCHEMA.md](docs/SCHEMA.md).
 
 ## Roadmap
 
-- `resman diff <tagA> <tagB>` — config-level diff between the best of two runs
-- `resman tree` — draw a lineage tree from `parent_commit` links
-- `resman serve` — zero-dep HTTP dashboard (requested in upstream PR #114)
-- `resman sync` — opt-in cloud sync for teams (paid tier, OSS CLI stays free)
-- `resman import --from wandb` / `--from mlflow` — migration helpers
+Shipped in v0.9: `doctor`, `usage`, structured MCP JSON across all tools,
+typed signals `diverged_loss` / `slow_mfu`, schema_version, property tests.
+See [CHANGELOG.md](CHANGELOG.md) and field-level decisions in
+[docs/SCHEMA.md](docs/SCHEMA.md).
+
+Next:
+- **v1.0 schema freeze** — `val_bpb` → `primary_metric`, `memory_gb` →
+  `peak_memory_gb` (single PR, `serde(alias)` keeps all prior stores).
+- **Composite-weight tuning** — data-driven, gated on first batch of
+  real `usage.jsonl` from agent sessions.
+- **`resman serve`** — zero-dep HTTP dashboard (upstream request).
+- **`resman sync`** — opt-in cloud sync for teams (paid tier; OSS CLI
+  stays free).
+- **`resman import --from wandb` / `--from mlflow`** — migration helpers.
 
 ## License
 

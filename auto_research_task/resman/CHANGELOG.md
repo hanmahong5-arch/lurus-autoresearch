@@ -1,5 +1,119 @@
 # Changelog
 
+## [0.9.0] — Industrial-grade agent memory layer (2026-05-16)
+
+v0.7-v0.8 built the surface: signals, verified status, composite scoring,
+terminal UX. v0.9 hardens it for production as **the** memory layer agents
+rely on across overnight sessions — structured JSON everywhere, one-call
+self-probe, schema-version lock, property-tested store, two more typed
+crash signals, and full per-MCP-call telemetry.
+
+### Added — agent surface
+
+- **`resman doctor`** — six-check health probe (data_dir writable,
+  `RESMAN_HOME` resolution, runs present, `usage.jsonl` activity,
+  `.mcp.json` discoverable, store invariants). Returns ok/warn/fresh/fail
+  + actionable hint per check, three output formats, exit 1 on any fail.
+  Exposed as MCP tool `resman_doctor` so agents self-probe at session
+  start — one call replaces a dozen exploratory probes.
+- **`resman usage`** — analyse `usage.jsonl` telemetry. Four flavors
+  (`--summary` / `--by-tool` / `--errors` / `--sequences`), three formats,
+  `--tool` / `--since` / `--top` filters. Streaming line-by-line read,
+  graceful on empty/missing file. `docs/MCP.md` jq stub block replaced
+  with a 10-recipe library (R1–R10) covering latency/error/adoption/
+  dissent/transition analyses.
+- **`Signal::DivergedLoss { detail }`** + **`Signal::SlowMfu { mfu_percent }`** —
+  the two variants deferred since v0.6. `classify(tail)` detects
+  `loss=inf` (NanLoss still wins on `loss=nan`) and `mfu_percent < 20`.
+
+### Changed — MCP tools all return structured JSON
+
+Eight tools converted from prose to JSON-string output:
+`resman_best` (plain + composite breakdown), `resman_search`, `resman_near`,
+`resman_find_by_signal`, `resman_diff_tags`, `resman_lineage`, `resman_verify`,
+and `resman_list_recent` (was the first, shipped earlier in the cycle).
+`resman_distill` already supported `format=json`. `resman_add_experiment`
+keeps its short ack — and now appends `warning: ... lineage chain broken`
+when `parent_commit` is omitted on a tag with prior experiments, so agents
+detect lineage breaks at write time instead of silently producing a
+disconnected history.
+
+CLI commands (`cmd_best`, `cmd_search`, …) unchanged — humans still get
+tables and friendly text.
+
+### Added — per-call MCP telemetry
+
+- **`usage.jsonl`** is written by `resman mcp` on every `tools/call` —
+  one JSONL line: `{ts, tool, args, ok, duration_ms, result_chars}`.
+  Source of truth for "which agents call which tools, with what success
+  rate" — the dataset that will tune composite weights and distill
+  templates before v1.0 schema freeze. Opt out with
+  `RESMAN_DISABLE_USAGE_LOG=1`. Failures stderr-once, never block a call.
+
+### Added — schema durability
+
+- **`RunLog.schema_version: u32`** (v0.8 stores backfill to 1 via serde
+  default). Bump only on incompatible changes; readers should silently
+  ignore higher values.
+- **`docs/SCHEMA.md`** — field-level v1.0 freeze decisions. Composite
+  weights frozen on hardcoded `0.5 / 0.2 / 0.2 / 0.1` (no data to tune
+  yet). `val_bpb` → `primary_metric` and `memory_gb` → `peak_memory_gb`
+  rename deferred to a dedicated post-dogfood PR (50+ refs; will ship
+  with `#[serde(alias = …)]` for v0.1–v0.9 store compatibility). No
+  `deny_unknown_fields` (forward-compat over typo guard). No
+  `resman migrate` (serde alias covers the rename scope).
+- **proptest save/load roundtrip** — random tags + 0–5 experiments
+  through `save_run` / `load_run`, all fields preserved. Plus an explicit
+  legacy-store test (hand-written v0.7-shape JSON loads with
+  `schema_version=1`).
+
+### Added — `auto_research_task/program.md` protocol upgrade
+
+The autoresearch agent's protocol document, mandating resman MCP as the
+canonical long-term memory:
+
+- New "Memory layer (resman MCP) — read before you act" section with the
+  10-tool usage table mapping situation → tool → purpose.
+- Setup step 5 rewritten: `resman_list_recent` is the discovery probe;
+  `total === 0` is the structured fresh-store signal (was a fragile
+  substring match on English prose).
+- Experiment loop: consult `resman_search` / `resman_best --composite`
+  before coding; `resman_add_experiment` after every run; near-best
+  triggers `resman_verify`; every 10 runs `resman_distill`.
+- Verify tolerance semantics tightened: explicit "absolute, direction-
+  sensitive, default 0.01" with worked val_bpb examples covering both
+  sides of the boundary (was "within ~1% directionally" — misleading
+  for any metric not already near val_bpb's ~1.0 magnitude).
+- Step 9 makes "log to resman before `git reset`" explicit — reset
+  destroys the commit from `git log`; resman is the only place the
+  attempt is remembered.
+- `.mcp.json` shipped at the autoresearch repo root so Claude Code /
+  Cursor pick up the resman MCP server out of the box.
+
+### Test counts
+
+87 → **124 tests** (118 unit + 6 CLI). New: 9 list_recent/parent-warning
+tests, 11 MCP structured JSON tests, 10 doctor tests, 6 usage tests, 1
+proptest, 1 legacy-store check, 4 signal tests. Clippy 0 warnings.
+
+### Invariants preserved
+
+- `resman best -f value` still byte-identical to v0.7 (single float +
+  newline, no ANSI even on TTY).
+- All v0.1–v0.8 JSON-on-disk stores load unchanged.
+- `cargo install resman` still produces one static binary, no runtime,
+  no new dependencies in production deps (proptest is dev-only).
+
+### Explicitly deferred (not in v0.9)
+
+- **`val_bpb` / `memory_gb` rename** — single dedicated PR after first
+  dogfood session; aliases preserve all prior stores.
+- **Composite-weight tuning** — wait for usage.jsonl signal.
+- **`resman_unverify`** — symmetric retraction. Add when a real
+  reproduction-of-reproduction case appears.
+- **Stagnation detector** — flag tags with N runs and no improvement
+  in distill output. v1.0 nice-to-have.
+
 ## [0.8.0] — Human-friendly terminal + HTML distill (2026-04-18)
 
 v0.7 closed the agent-facing feature set (signals, distill, verify, composite).
