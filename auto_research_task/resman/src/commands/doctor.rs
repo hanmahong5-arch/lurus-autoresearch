@@ -587,6 +587,7 @@ mod tests {
                 experiments: vec![make_exp("abc001", None)],
                 metric_name: None,
                 metric_direction: None,
+                schema_version: 1,
             };
             crate::store::save_run(&path, &run).unwrap();
         }
@@ -611,7 +612,9 @@ mod tests {
         let usage_path = path.join("usage.jsonl");
         let now = chrono::Utc::now();
         let ts = now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let line = format!("{{\"ts\":\"{ts}\",\"tool\":\"resman_best\",\"args\":{{}},\"ok\":true,\"duration_ms\":5,\"result_chars\":42}}\n");
+        let line = format!(
+            "{{\"ts\":\"{ts}\",\"tool\":\"resman_best\",\"args\":{{}},\"ok\":true,\"duration_ms\":5,\"result_chars\":42}}\n"
+        );
         let mut f = fs::File::create(&usage_path).unwrap();
         f.write_all(line.as_bytes()).unwrap();
         let r = check_usage_telemetry(&path);
@@ -657,6 +660,7 @@ mod tests {
             experiments: vec![make_exp("aaa001", None), make_exp("bbb002", Some("aaa001"))],
             metric_name: None,
             metric_direction: None,
+            schema_version: 1,
         };
         crate::store::save_run(&path, &run).unwrap();
         let r = check_invariants(&path);
@@ -678,6 +682,7 @@ mod tests {
             experiments: vec![make_exp("aaa001", Some("zzz999"))],
             metric_name: None,
             metric_direction: None,
+            schema_version: 1,
         };
         crate::store::save_run(&path, &run).unwrap();
         let r = check_invariants(&path);

@@ -321,6 +321,7 @@ mod tests {
             created_at: String::new(),
             metric_name: None,
             metric_direction: direction,
+            schema_version: 1,
         }
     }
 

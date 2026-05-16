@@ -37,6 +37,7 @@ fn make_run(tag: &str, exps: Vec<Experiment>) -> RunLog {
         experiments: exps,
         metric_name: None,
         metric_direction: None,
+        schema_version: 1,
     }
 }
 

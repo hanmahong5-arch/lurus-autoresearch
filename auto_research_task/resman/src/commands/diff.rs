@@ -414,6 +414,7 @@ mod tests {
             experiments: exps,
             metric_name: None,
             metric_direction: None,
+            schema_version: 1,
         }
     }
 

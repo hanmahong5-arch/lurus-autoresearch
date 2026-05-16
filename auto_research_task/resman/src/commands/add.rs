@@ -109,6 +109,7 @@ pub fn cmd_add(data_dir: &Path, opts: AddOpts<'_>) -> Result<()> {
             // When creating a new run, set run-level defaults from opts (first-set-wins).
             metric_name: opts.metric_name.map(str::to_string),
             metric_direction: parsed_direction,
+            schema_version: 1,
         },
     };
 

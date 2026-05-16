@@ -192,6 +192,7 @@ mod tests {
             ],
             metric_name: None,
             metric_direction: None,
+            schema_version: 1,
         };
         crate::store::save_run(&data_dir, &run).unwrap();
 

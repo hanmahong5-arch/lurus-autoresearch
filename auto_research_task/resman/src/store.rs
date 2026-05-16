@@ -262,6 +262,7 @@ mod tests {
                 experiments: vec![],
                 metric_name: None,
                 metric_direction: None,
+                schema_version: 1,
             };
             save_run(&dir, &run).unwrap();
         }
@@ -303,5 +304,66 @@ mod tests {
             "expected no-tags message, got: {msg}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn proptest_save_load_roundtrip_preserves_fields() {
+        use proptest::prelude::*;
+        proptest!(|(
+            tag in "[a-z][a-z0-9]{2,10}",
+            n_exp in 0usize..6,
+        )| {
+            let dir = tempfile::tempdir().unwrap();
+            ensure_initialized(dir.path()).unwrap();
+
+            let experiments: Vec<crate::model::Experiment> = (0..n_exp).map(|i| crate::model::Experiment {
+                commit: format!("c{i:07x}"),
+                val_bpb: i as f64 * 0.1 + 0.5,
+                memory_gb: i as f64,
+                status: crate::model::Status::Keep,
+                description: format!("exp {i}"),
+                timestamp: "2026-05-16T00:00:00Z".to_string(),
+                params: std::collections::HashMap::new(),
+                parent_commit: None,
+                crash_excerpt: None,
+                metric_name: None,
+                metric_direction: None,
+                signals: vec![],
+            }).collect();
+
+            let run = crate::model::RunLog {
+                run_tag: tag.clone(),
+                created_at: "2026-05-16T00:00:00Z".to_string(),
+                experiments,
+                metric_name: None,
+                metric_direction: None,
+                schema_version: 1,
+            };
+
+            save_run(dir.path(), &run).unwrap();
+            let loaded = load_run(dir.path(), &tag).unwrap().expect("must reload");
+            prop_assert_eq!(loaded.run_tag, run.run_tag);
+            prop_assert_eq!(loaded.created_at, run.created_at);
+            prop_assert_eq!(loaded.experiments.len(), run.experiments.len());
+            prop_assert_eq!(loaded.schema_version, 1u32);
+            for (a, b) in loaded.experiments.iter().zip(run.experiments.iter()) {
+                prop_assert_eq!(a.commit.clone(), b.commit.clone());
+                prop_assert_eq!(a.val_bpb, b.val_bpb);
+            }
+        });
+    }
+
+    #[test]
+    fn legacy_store_missing_schema_version_loads_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_initialized(dir.path()).unwrap();
+        // Hand-write a v0.7-shape JSON: experiments + run_tag + created_at, no schema_version.
+        let json = r#"{"run_tag":"legacy","created_at":"2026-05-16T00:00:00Z","experiments":[]}"#;
+        std::fs::write(runs_dir(dir.path()).join("legacy.json"), json).unwrap();
+        let r = load_run(dir.path(), "legacy").unwrap().expect("must load");
+        assert_eq!(
+            r.schema_version, 1,
+            "legacy stores must default to schema_version=1"
+        );
     }
 }

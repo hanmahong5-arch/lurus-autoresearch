@@ -135,6 +135,14 @@ impl Experiment {
     }
 }
 
+/// Returns the canonical schema version for newly-written RunLogs.
+///
+/// Bump only on a v1.0-incompatible change. Older stores omit this field;
+/// `#[serde(default)]` backfills it to 1, which is the v0.8 contract.
+pub fn default_schema_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunLog {
     pub experiments: Vec<Experiment>,
@@ -149,6 +157,15 @@ pub struct RunLog {
     /// Run-level default direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metric_direction: Option<Direction>,
+
+    // --- fields added in v0.8 ---
+    /// On-disk schema version. v0.1-v0.7 stores omit it and load with the
+    /// serde default of 1. Bump only on incompatible changes. v1.0 reading
+    /// a higher version SHOULD silently drop unknown fields (we do not set
+    /// `deny_unknown_fields`); reading a record with a missing field MUST
+    /// fall back to type defaults. See docs/SCHEMA.md.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
 }
 
 impl RunLog {
@@ -199,6 +216,7 @@ mod model_tests {
             created_at: String::new(),
             metric_name: name.map(str::to_string),
             metric_direction: dir,
+            schema_version: 1,
         }
     }
 

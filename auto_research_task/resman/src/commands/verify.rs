@@ -263,6 +263,7 @@ mod tests {
             created_at: Local::now().to_rfc3339(),
             metric_name: None,
             metric_direction: None,
+            schema_version: 1,
         }
     }
 

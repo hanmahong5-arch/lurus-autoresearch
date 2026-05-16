@@ -52,6 +52,7 @@ pub fn cmd_import(
         experiments,
         metric_name,
         metric_direction: parsed_direction,
+        schema_version: 1,
     };
 
     let out_path = save_run(data_dir, &run_log)?;
