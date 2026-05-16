@@ -61,6 +61,7 @@ Summarize what you learned to the user in 2-3 bullets before coding.
 | Moment | Tool | Why |
 |---|---|---|
 | Session start (always) | `resman_doctor` | Confirm wiring. One call replaces a dozen probes. |
+| Session start (optional) | `resman_tags` | Per-tag snapshot: one row per tag (count, best, last_update). Easier than scanning list_recent for tag boundaries. |
 | Session start (always) | `resman_list_recent` | Fresh-store probe (`total === 0`) + most-recent-tag lookup. |
 | Session start (if not fresh) | `resman_distill` | Long-term memory artifact. Read every section. |
 | Session start (if you'll run risky configs) | `resman_find_by_signal` | "Has this OOM'd before?" / "what NaN's the loss?" |

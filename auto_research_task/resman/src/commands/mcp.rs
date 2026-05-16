@@ -143,6 +143,7 @@ fn initialize_result() -> Value {
             "resman is your long-term memory across training sessions. All tools return JSON — parse, don't substring-match. ",
             "Session lifecycle: ",
             "(0) First call `resman_doctor {}` — read summary.fail; if non-zero, fix the failing check's hint before continuing. ",
+            "(0b) Optional but recommended: `resman_tags {}` for a per-tag snapshot (count, best, last_update). One row per tag — easier than scanning list_recent for tag boundaries. ",
             "(1) Then `resman_list_recent { n: 20 }`. If total === 0 the store is fresh; tell the user. Otherwise pass tags[0] to `resman_distill { tag }` and read every section. ",
             "(2) Before any experiment: `resman_search { pattern }` to avoid duplicate ideas, and `resman_best { composite: true }` for the resume-from-here ranking. ",
             "Pre-flight checks for risky configs: `resman_find_by_signal { signal_type: 'oom' }` to skip known crashers. ",
