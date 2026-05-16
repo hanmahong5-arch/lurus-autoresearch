@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(
@@ -394,5 +395,18 @@ pub enum Commands {
         /// Restrict search to this run tag (optional)
         #[arg(long)]
         tag: Option<String>,
+    },
+
+    /// Generate shell completion script for the given shell.
+    ///
+    /// One-shot: install completions for bash/zsh/fish/powershell/elvish.
+    ///
+    /// Examples:
+    ///   bash:  source <(resman completions bash)
+    ///   zsh:   resman completions zsh > ~/.zsh/_resman
+    ///   fish:  resman completions fish > ~/.config/fish/completions/resman.fish
+    Completions {
+        /// Shell to generate completion script for
+        shell: Shell,
     },
 }

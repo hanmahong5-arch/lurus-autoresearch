@@ -12,7 +12,7 @@ mod usage;
 
 use std::process::ExitCode;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use cli::{Cli, Commands};
 use store::default_data_dir;
@@ -184,6 +184,11 @@ fn main() -> ExitCode {
             },
         ),
         Commands::Doctor { format } => commands::doctor::cmd_doctor(&data_dir, &format),
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "resman", &mut std::io::stdout());
+            Ok(())
+        }
     };
 
     match result {
