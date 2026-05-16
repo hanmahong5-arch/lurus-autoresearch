@@ -303,6 +303,14 @@ fn tool_manifest() -> Value {
             }
         },
         {
+            "name": "resman_tags",
+            "description": "Per-tag snapshot — one entry per tag, sorted by last_update desc. Returns JSON array of {tag, experiment_count, best_commit, best_value, metric_name, direction, last_update, schema_version}. Use this for 'what tags do I have, what is each one's headline?' — a higher-level probe than resman_list_recent (per-experiment) and complementary to resman_doctor (env/wiring).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
             "name": "resman_unverify",
             "description": "Symmetric retraction of `resman_verify`. Reverts a Verified experiment back to Keep status. Use when a verified result turns out to be a fluke (subsequent re-runs disagree). The val_bpb value is retained — only the trust label changes. Returns JSON: {unverified:true, tag, commit, metric, retained_value, previous_status, new_status}. Refuses experiments not currently in `verified` status (returns error).",
             "inputSchema": {
@@ -340,6 +348,7 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
         "resman_verify" => tool_verify(data_dir, &args),
         "resman_unverify" => tool_unverify(data_dir, &args),
         "resman_doctor" => tool_doctor(data_dir, &args),
+        "resman_tags" => tool_tags(data_dir, &args),
         other => Err(format!("unknown tool: {other}")),
     }
 }
@@ -853,6 +862,11 @@ fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn tool_tags(data_dir: &Path, _args: &Value) -> std::result::Result<String, String> {
+    let snaps = crate::commands::tags::build_tag_snapshots(data_dir).map_err(|e| e.to_string())?;
+    serde_json::to_string(&snaps).map_err(|e| e.to_string())
 }
 
 fn tool_unverify(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {

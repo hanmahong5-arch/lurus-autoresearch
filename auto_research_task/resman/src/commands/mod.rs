@@ -14,6 +14,7 @@ pub mod parse_log;
 pub mod report;
 pub mod search;
 pub mod stats;
+pub mod tags;
 pub mod tree;
 pub mod usage;
 pub mod verify;

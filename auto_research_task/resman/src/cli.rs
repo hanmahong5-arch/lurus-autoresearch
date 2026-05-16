@@ -397,6 +397,18 @@ pub enum Commands {
         tag: Option<String>,
     },
 
+    /// Per-tag snapshot — one row per tag, sorted by last update.
+    ///
+    /// Headline view across the whole store: each tag's experiment count,
+    /// best metric + commit, last update timestamp, schema_version. The
+    /// "what tags do I have?" answer that complements `resman stats`
+    /// (aggregate) and `resman list` (per-experiment).
+    Tags {
+        /// Output format
+        #[arg(short = 'o', long, default_value = "table")]
+        format: OutputFormat,
+    },
+
     /// Retract a `Verified` experiment back to `Keep`.
     ///
     /// Use when a verified result turns out to be a fluke (subsequent re-runs

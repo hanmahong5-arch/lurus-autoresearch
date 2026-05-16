@@ -184,6 +184,7 @@ fn main() -> ExitCode {
             },
         ),
         Commands::Doctor { format } => commands::doctor::cmd_doctor(&data_dir, &format),
+        Commands::Tags { format } => commands::tags::cmd_tags(&data_dir, &format),
         Commands::Unverify { commit, tag } => commands::verify::cmd_unverify(
             &data_dir,
             commands::verify::UnverifyOpts {
