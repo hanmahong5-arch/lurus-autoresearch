@@ -531,6 +531,118 @@ fn suggestions_include_keep_but_reverted_when_verified_surpasses_keep_ancestor()
     );
 }
 
+/// Branch verdict: non-best branch whose terminal is `keep` is `converged`.
+#[test]
+fn branch_verdicts_converged_for_keep_terminal() {
+    // Best is `bestC` (val 0.9, keep). Side branch root `sideR` keep → `sideT` keep.
+    let exps = vec![
+        make_exp("bestC", 0.9, Status::Keep, "main", None, vec![]),
+        make_exp("sideR", 0.95, Status::Keep, "side-baseline", None, vec![]),
+        make_exp(
+            "sideT",
+            0.93,
+            Status::Keep,
+            "side-tweak",
+            Some("sideR"),
+            vec![],
+        ),
+    ];
+    let run = make_run("conv", exps);
+    let report = build_distill(&run);
+    assert_eq!(report.branch_verdicts.len(), 1);
+    let v = &report.branch_verdicts[0];
+    assert_eq!(v.root_commit, "sideR");
+    assert_eq!(v.terminal_commit, "sideT");
+    assert_eq!(v.verdict, "converged");
+    assert_eq!(v.depth, 2);
+    assert!(v.note.is_none());
+}
+
+/// Branch verdict: non-best branch whose terminal is `crash` is `broke`
+/// and carries the first signal kind as a note.
+#[test]
+fn branch_verdicts_broke_with_signal_note() {
+    let exps = vec![
+        make_exp("bestC", 0.9, Status::Keep, "main", None, vec![]),
+        make_exp("sideR", 0.95, Status::Keep, "side-baseline", None, vec![]),
+        make_exp(
+            "sideX",
+            0.0,
+            Status::Crash,
+            "OOM crash",
+            Some("sideR"),
+            vec![Signal::Oom],
+        ),
+    ];
+    let run = make_run("broke", exps);
+    let report = build_distill(&run);
+    assert_eq!(report.branch_verdicts.len(), 1);
+    let v = &report.branch_verdicts[0];
+    assert_eq!(v.verdict, "broke");
+    assert_eq!(v.note.as_deref(), Some("oom"));
+    assert_eq!(v.terminal_status, "crash");
+}
+
+/// Branch verdict: non-best branch terminating in `discard` is `abandoned`.
+#[test]
+fn branch_verdicts_abandoned_for_discard_terminal() {
+    let exps = vec![
+        make_exp("bestC", 0.9, Status::Keep, "main", None, vec![]),
+        make_exp("sideR", 0.95, Status::Discard, "tried thing", None, vec![]),
+        make_exp(
+            "sideX",
+            0.97,
+            Status::Discard,
+            "tried again",
+            Some("sideR"),
+            vec![],
+        ),
+    ];
+    let run = make_run("abandon", exps);
+    let report = build_distill(&run);
+    assert_eq!(report.branch_verdicts.len(), 1);
+    let v = &report.branch_verdicts[0];
+    assert_eq!(v.verdict, "abandoned");
+    assert_eq!(v.terminal_status, "discard");
+}
+
+/// Branch verdicts: empty when every experiment is on the best lineage.
+#[test]
+fn branch_verdicts_empty_when_all_on_best_chain() {
+    let exps = vec![
+        make_exp("a", 0.95, Status::Keep, "base", None, vec![]),
+        make_exp("b", 0.92, Status::Keep, "tweak", Some("a"), vec![]),
+        make_exp("c", 0.90, Status::Best, "winner", Some("b"), vec![]),
+    ];
+    let run = make_run("linear", exps);
+    let report = build_distill(&run);
+    assert!(
+        report.branch_verdicts.is_empty(),
+        "all experiments on best lineage; expected no other branches, got: {:?}",
+        report.branch_verdicts
+    );
+}
+
+/// Branch verdict markdown rendering exposes the verdict section.
+#[test]
+fn render_markdown_includes_branch_verdicts_section() {
+    let exps = vec![
+        make_exp("bestC", 0.9, Status::Keep, "main", None, vec![]),
+        make_exp("sideR", 0.0, Status::Crash, "oom", None, vec![Signal::Oom]),
+    ];
+    let run = make_run("mix", exps);
+    let report = build_distill(&run);
+    let md = super::render::render_markdown(&report);
+    assert!(
+        md.contains("## Other branches"),
+        "expected branch-verdict section in markdown"
+    );
+    assert!(
+        md.contains("verdict=broke"),
+        "expected verdict=broke in markdown"
+    );
+}
+
 /// Keep-but-reverted does NOT fire when no verified ancestor chain exists.
 #[test]
 fn suggestions_no_keep_reverted_without_verified() {

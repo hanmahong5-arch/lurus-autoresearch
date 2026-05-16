@@ -66,12 +66,30 @@ pub struct NeighborEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BranchVerdict {
+    pub root_commit: String,
+    pub depth: usize,
+    pub terminal_commit: String,
+    pub terminal_status: String,
+    /// "converged" (terminal is keep/best/verified) |
+    /// "broke" (terminal is crash) |
+    /// "abandoned" (terminal is discard)
+    pub verdict: String,
+    /// For "broke" verdicts, the first signal kind on the terminal commit.
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DistillReport {
     pub tag: String,
     pub generated_at: String,
     pub summary: DistillSummary,
     pub best: Option<DistillBest>,
     pub lineage: Vec<LineageEntry>,
+    /// Non-best branch root verdicts (added v0.11). Empty when every
+    /// experiment is on the best lineage.
+    #[serde(default)]
+    pub branch_verdicts: Vec<BranchVerdict>,
     pub failure_signals: HashMap<String, Vec<FailureSignalEntry>>,
     pub unexplored_neighbors: Vec<NeighborEntry>,
     pub suggestions: Vec<String>,
@@ -230,16 +248,103 @@ pub fn build_distill(run: &RunLog) -> DistillReport {
     let suggestions =
         suggest::build_suggestions(run, &failure_signals, total, crash, best_exp, &tag);
 
+    // --- branch verdicts (non-best branches) ---
+    let best_chain: HashSet<String> = lineage.iter().map(|e| e.commit.clone()).collect();
+    let branch_verdicts = build_branch_verdicts(run, &best_chain);
+
     DistillReport {
         tag,
         generated_at,
         summary,
         best,
         lineage,
+        branch_verdicts,
         failure_signals,
         unexplored_neighbors,
         suggestions,
     }
+}
+
+/// Walk descendants of every "root" commit (parent_commit absent or
+/// pointing outside this run) that is NOT already on the best lineage.
+/// Take the deepest single-thread descendant chain for each root, label
+/// the terminus, and return one BranchVerdict per surfaced root.
+fn build_branch_verdicts(run: &RunLog, best_chain: &HashSet<String>) -> Vec<BranchVerdict> {
+    if run.experiments.is_empty() {
+        return Vec::new();
+    }
+
+    // commit → first descendant index (children pointing to this commit
+    // via parent_commit). For multi-child branches we take the deepest
+    // single-child path, which is sufficient for a verdict summary.
+    let mut children: HashMap<String, Vec<usize>> = HashMap::new();
+    for (idx, exp) in run.experiments.iter().enumerate() {
+        if let Some(p) = &exp.parent_commit {
+            children.entry(p.clone()).or_default().push(idx);
+        }
+    }
+    let by_commit: HashMap<&str, usize> = run
+        .experiments
+        .iter()
+        .enumerate()
+        .map(|(i, e)| (e.commit.as_str(), i))
+        .collect();
+
+    // Roots: commits whose parent is absent or not in this run.
+    let mut roots: Vec<&Experiment> = run
+        .experiments
+        .iter()
+        .filter(|e| match &e.parent_commit {
+            None => true,
+            Some(p) => !by_commit.contains_key(p.as_str()),
+        })
+        .filter(|e| !best_chain.contains(&e.commit))
+        .collect();
+    // Stable order for deterministic output: by commit string.
+    roots.sort_by(|a, b| a.commit.cmp(&b.commit));
+
+    roots
+        .into_iter()
+        .map(|root| {
+            // Walk one chain from this root to its deepest descendant. Take
+            // the first child each step (cycle/depth guarded at 50 hops).
+            let mut chain_indices: Vec<usize> = vec![by_commit[root.commit.as_str()]];
+            let mut current = root.commit.clone();
+            let mut hops = 0usize;
+            while let Some(kids) = children.get(&current) {
+                if hops >= 50 {
+                    break;
+                }
+                hops += 1;
+                let next_idx = kids[0]; // deepest single path
+                if chain_indices.contains(&next_idx) {
+                    break; // cycle guard
+                }
+                chain_indices.push(next_idx);
+                current = run.experiments[next_idx].commit.clone();
+            }
+
+            let terminal_idx = *chain_indices.last().unwrap();
+            let terminal = &run.experiments[terminal_idx];
+            let (verdict, note) = match terminal.status {
+                Status::Keep | Status::Best | Status::Verified => ("converged".to_string(), None),
+                Status::Crash => {
+                    let kind = terminal.signals.first().map(|s| s.kind().to_string());
+                    ("broke".to_string(), kind)
+                }
+                Status::Discard => ("abandoned".to_string(), None),
+            };
+
+            BranchVerdict {
+                root_commit: root.commit.clone(),
+                depth: chain_indices.len(),
+                terminal_commit: terminal.commit.clone(),
+                terminal_status: terminal.status.to_string(),
+                verdict,
+                note,
+            }
+        })
+        .collect()
 }
 
 fn build_lineage(run: &RunLog, best: &Experiment) -> Vec<LineageEntry> {

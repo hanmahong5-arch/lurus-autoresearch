@@ -58,6 +58,27 @@ pub fn render_markdown(report: &DistillReport) -> String {
     }
     out.push('\n');
 
+    // --- Other branches (non-best roots with verdict labels) ---
+    if !report.branch_verdicts.is_empty() {
+        out.push_str("## Other branches\n");
+        for v in &report.branch_verdicts {
+            let note = match &v.note {
+                Some(n) => format!(" ({n})"),
+                None => String::new(),
+            };
+            out.push_str(&format!(
+                "- `{}` → … → `{}` [{}]  depth={} verdict={}{}\n",
+                short_commit(&v.root_commit),
+                short_commit(&v.terminal_commit),
+                v.terminal_status,
+                v.depth,
+                v.verdict,
+                note,
+            ));
+        }
+        out.push('\n');
+    }
+
     // --- Failure signals ---
     out.push_str("## Failure signals\n\n");
     let any_signals = report.failure_signals.values().any(|v| !v.is_empty());
