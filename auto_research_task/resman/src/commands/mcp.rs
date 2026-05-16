@@ -140,16 +140,22 @@ fn initialize_result() -> Value {
         "capabilities": { "tools": {} },
         "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION },
         "instructions": concat!(
-            "Use these tools to record and query ML training experiments. ",
-            "Call `resman_best` before starting an experiment to know the current baseline. ",
-            "Pass `composite: true` to get a multi-dim 'resume-from-here' score (metric + verification + lineage + description). ",
-            "Call `resman_search` before trying an idea — it may already have been attempted. ",
-            "Call `resman_add_experiment` after every run (keep, discard, or crash). ",
-            "Tags group experiments into a session (e.g. `apr17-overnight`). ",
-            "Metrics can be any name via `metric_name`; set `metric_direction` to `max` for higher-better metrics like accuracy. ",
-            "If you have the last ~50 lines of the training log, pass it as `log_tail` in `resman_add_experiment` and resman will auto-classify crash signals (OOM, NaN, etc.). ",
-            "Call `resman_verify` after a reproduction run to promote the experiment to verified if within tolerance. ",
-            "At the end of a session, call `resman_distill` — it is the preferred end-of-session summary tool and gives the agent structured memory of what happened without reading every experiment."
+            "resman is your long-term memory across training sessions. All tools return JSON — parse, don't substring-match. ",
+            "Session lifecycle: ",
+            "(0) First call `resman_doctor {}` — read summary.fail; if non-zero, fix the failing check's hint before continuing. ",
+            "(1) Then `resman_list_recent { n: 20 }`. If total === 0 the store is fresh; tell the user. Otherwise pass tags[0] to `resman_distill { tag }` and read every section. ",
+            "(2) Before any experiment: `resman_search { pattern }` to avoid duplicate ideas, and `resman_best { composite: true }` for the resume-from-here ranking. ",
+            "Pre-flight checks for risky configs: `resman_find_by_signal { signal_type: 'oom' }` to skip known crashers. ",
+            "Lineage: branching from non-HEAD? `resman_lineage { tag }` shows which chains converged or dead-ended. ",
+            "(3) After every run: `resman_add_experiment { tag, commit, val_bpb, memory_gb, status, description, parent_commit, log_tail }`. ",
+            "parent_commit is required to keep lineage intact — if you omit it on a non-fresh tag, the response includes a `lineage chain broken` warning. Always note the parent SHA before you commit so you have it for this call. ",
+            "log_tail = last ~50 lines of run.log — resman auto-classifies OOM / NaN / DivergedLoss / SlowMfu / etc. Pass it even on success runs. ",
+            "(4) After a reproduction near a prior baseline: `resman_verify { commit, value }`. Tolerance is absolute (default 0.01), direction-sensitive: minimize passes if new <= original + tolerance. ",
+            "(5) If later evidence disagrees with a verified result, retract: `resman_unverify { commit }`. Symmetric — val_bpb retained, only the trust label moves back to keep. ",
+            "(6) Every ~10 runs and at session end: `resman_distill { tag }`. This is what the next session will inherit — make sure it tells the story you'd want to read. ",
+            "Tags group experiments into a session (e.g. `apr17-overnight`). Metrics can be any name via metric_name; set metric_direction to 'max' for higher-better metrics. ",
+            "Diagnostic surface: `resman_diff_tags` for branch-vs-branch comparison, `resman_near` for grounding a new bpb. ",
+            "See docs/AGENT_QUICKSTART.md for the full protocol."
         ),
     })
 }
