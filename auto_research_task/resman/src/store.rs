@@ -440,6 +440,79 @@ mod tests {
         }
     }
 
+    /// Performance benchmark: load 50 tags × 20 experiments = 1000 records.
+    /// Validates the README's "loads in milliseconds" claim with a real
+    /// measurement on the per-tag JSON layout. `#[ignore]` so it doesn't
+    /// run in `cargo test` by default — invoke with
+    /// `cargo test --release -- --ignored --nocapture bench_load_all_runs`.
+    ///
+    /// Fails only if wall time exceeds 5s (catastrophic-regression guard,
+    /// not a perf gate — actual time varies by FS/CPU/AV-scanner).
+    #[test]
+    #[ignore]
+    fn bench_load_all_runs_1000_experiments_50_tags() {
+        use std::time::Instant;
+        let dir = tempfile::tempdir().unwrap();
+        ensure_initialized(dir.path()).unwrap();
+
+        const N_TAGS: usize = 50;
+        const N_EXP_PER_TAG: usize = 20;
+
+        for t in 0..N_TAGS {
+            let experiments: Vec<crate::model::Experiment> = (0..N_EXP_PER_TAG)
+                .map(|i| crate::model::Experiment {
+                    commit: format!("t{t:03}e{i:03}c{:07x}", t * 100 + i),
+                    val_bpb: 0.9 + (t as f64) * 0.001 + (i as f64) * 0.0001,
+                    memory_gb: 40.0 + (i as f64) * 0.1,
+                    status: crate::model::Status::Keep,
+                    description: format!("benchmark t={t} e={i} — some long-ish description to better simulate real-world JSON size"),
+                    timestamp: format!("2026-05-16T{:02}:{:02}:00Z", t % 24, i),
+                    params: std::collections::HashMap::from([
+                        ("lr".to_string(), "0.04".to_string()),
+                        ("optim".to_string(), "muon".to_string()),
+                        ("depth".to_string(), "8".to_string()),
+                    ]),
+                    parent_commit: if i > 0 {
+                        Some(format!("t{t:03}e{:03}c{:07x}", i - 1, t * 100 + i - 1))
+                    } else {
+                        None
+                    },
+                    crash_excerpt: None,
+                    metric_name: None,
+                    metric_direction: None,
+                    signals: vec![],
+                })
+                .collect();
+            let run = crate::model::RunLog {
+                run_tag: format!("bench{t:03}"),
+                created_at: "2026-05-16T00:00:00Z".to_string(),
+                experiments,
+                metric_name: None,
+                metric_direction: None,
+                schema_version: 1,
+            };
+            save_run(dir.path(), &run).unwrap();
+        }
+
+        let start = Instant::now();
+        let loaded = load_all_runs(dir.path()).expect("load_all_runs benchmark");
+        let elapsed = start.elapsed();
+
+        eprintln!(
+            "load_all_runs({} tags, {} experiments) took {:?}",
+            N_TAGS,
+            N_TAGS * N_EXP_PER_TAG,
+            elapsed
+        );
+        assert_eq!(loaded.len(), N_TAGS);
+        let total: usize = loaded.iter().map(|r| r.experiments.len()).sum();
+        assert_eq!(total, N_TAGS * N_EXP_PER_TAG);
+        assert!(
+            elapsed.as_secs() < 5,
+            "load_all_runs took {elapsed:?} — catastrophic regression"
+        );
+    }
+
     /// Concurrency stress: parallel writes to the **same tag**. Last writer
     /// wins (no global lock) but the file on disk must always be parseable
     /// JSON — the atomic tmp+rename guarantees no reader sees a partial write.

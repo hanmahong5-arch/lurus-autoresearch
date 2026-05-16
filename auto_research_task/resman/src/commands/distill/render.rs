@@ -272,6 +272,33 @@ pub fn render_html(report: &DistillReport) -> String {
         body.push_str("</ol>\n");
     }
 
+    // --- other branches (non-best roots with verdict labels) ---
+    if !report.branch_verdicts.is_empty() {
+        body.push_str("<h2>Other branches</h2>\n<ul>\n");
+        for v in &report.branch_verdicts {
+            let badge_kind = match v.verdict.as_str() {
+                "converged" => BadgeKind::Keep,
+                "broke" => BadgeKind::Crash,
+                _ => BadgeKind::Discard, // abandoned
+            };
+            let verdict_badge = badge(&v.verdict, badge_kind);
+            let note_html = match &v.note {
+                Some(n) => format!(" <span class=\"detail\">({})</span>", html_escape(n)),
+                None => String::new(),
+            };
+            body.push_str(&format!(
+                "<li><code>{root}</code> → … → <code>{term}</code> [{status}]  depth={depth}  {badge}{note}</li>\n",
+                root = html_escape(short_commit(&v.root_commit)),
+                term = html_escape(short_commit(&v.terminal_commit)),
+                status = html_escape(&v.terminal_status),
+                depth = v.depth,
+                badge = verdict_badge,
+                note = note_html,
+            ));
+        }
+        body.push_str("</ul>\n");
+    }
+
     // --- failure signals ---
     body.push_str("<h2>Failure signals</h2>\n");
     let any_signals = report.failure_signals.values().any(|v| !v.is_empty());

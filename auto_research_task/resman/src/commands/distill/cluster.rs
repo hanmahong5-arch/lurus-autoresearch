@@ -17,9 +17,7 @@ pub(super) fn signal_detail(sig: &crate::signals::Signal) -> String {
     }
 }
 
-pub(super) fn build_failure_signals(
-    run: &RunLog,
-) -> HashMap<String, Vec<FailureSignalEntry>> {
+pub(super) fn build_failure_signals(run: &RunLog) -> HashMap<String, Vec<FailureSignalEntry>> {
     let mut failure_signals: HashMap<String, Vec<FailureSignalEntry>> = HashMap::new();
     for kind in crate::signals::ALL_KINDS {
         failure_signals.insert(kind.to_string(), vec![]);

@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const USAGE_FILE: &str = "usage.jsonl";
 const DISABLE_ENV: &str = "RESMAN_DISABLE_USAGE_LOG";
