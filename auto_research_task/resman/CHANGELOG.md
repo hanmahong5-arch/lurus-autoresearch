@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.12.0] — Per-tag snapshot probe (2026-05-16)
+
+A targeted polish release: one new command + matching MCP tool that fills
+a gap between "per-experiment list" and "aggregate stats".
+
+### Added
+
+- **`resman tags`** + MCP tool **`resman_tags`** — per-tag snapshot. One
+  row per tag: experiment_count, best_commit, best_value, metric_name,
+  direction, last_update, schema_version. Sorted by last_update desc
+  (most-recently touched first). Three output formats; MCP returns a
+  JSON array.
+
+  Why: `resman_list_recent` is per-experiment; `resman stats` is
+  cross-tag aggregate. Neither answers the higher-level "what tags do
+  I have and what is each one's headline?" question that agents and
+  humans both want as a follow-on to `resman_doctor`.
+
+### Test counts
+
+142 → **146 tests** (140 unit + 6 CLI). +4 covering empty store /
+single-tag fields / sort-by-last_update / long-metric-name table render.
+Clippy 0 warnings.
+
+### Invariants preserved
+
+- `resman_tags` exposes only fields already in RunLog — no schema change.
+- The thirteen MCP tools (was twelve in v0.11) all return parseable JSON.
+
 ## [0.11.0] — Agent narrative + onboarding (2026-05-16)
 
 v0.10 closed the verify ↔ unverify cycle. v0.11 makes the distill output

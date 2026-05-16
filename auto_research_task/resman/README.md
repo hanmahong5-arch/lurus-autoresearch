@@ -103,6 +103,7 @@ resman watch results.tsv -t apr17 -i 2   # re-imports on every change
 | `watch <tsv>` | Poll a TSV; auto re-import on mtime change. |
 | `mcp` | Run as an MCP server over stdio — agents call tools directly. See [docs/MCP.md](docs/MCP.md). |
 | `doctor` | Six-check health probe (data dir, env, runs, usage telemetry, MCP wiring, store invariants). One call replaces a dozen exploratory probes. `-o table\|json\|tsv`. |
+| `tags` | Per-tag snapshot — one row per tag (count, best, metric, last_update). Sorted most-recent first. The "what tags do I have?" answer. `-o table\|json\|tsv`. |
 | `usage` | Analyse `usage.jsonl` MCP telemetry. `--summary` / `--by-tool` / `--errors` / `--sequences`; `--tool`/`--since`/`--top` filters; three formats. |
 | `verify` / `unverify` | Promote a reproduced experiment to `verified` (within tolerance, direction-aware) — and retract it back to `keep` when evidence later disagrees. The trust label is symmetric. |
 | `completions <shell>` | Generate tab-completion script for bash / zsh / fish / powershell / elvish. `source <(resman completions bash)`. |
@@ -155,7 +156,7 @@ Add to `.claude/mcp.json` (Claude Code) or `~/.cursor/mcp.json`:
 { "mcpServers": { "resman": { "command": "resman", "args": ["mcp"] } } }
 ```
 
-Now the agent gets **twelve structured tools** out of the box, all returning
+Now the agent gets **thirteen structured tools** out of the box, all returning
 parseable JSON (no substring match on English prose):
 
 - `resman_doctor` — one-shot health probe, call this first.
