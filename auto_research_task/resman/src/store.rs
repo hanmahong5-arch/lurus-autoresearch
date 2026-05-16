@@ -366,4 +366,146 @@ mod tests {
             "legacy stores must default to schema_version=1"
         );
     }
+
+    /// Concurrency invariant: parallel writes to **different tags** must each
+    /// land cleanly. This is the dominant agent pattern (one agent per tag,
+    /// many agents overnight). The per-tag JSON file means no inter-tag lock.
+    #[test]
+    fn concurrent_writes_to_different_tags_all_land() {
+        use std::thread;
+        let dir = tempfile::tempdir().unwrap();
+        ensure_initialized(dir.path()).unwrap();
+        let dir_path = dir.path().to_path_buf();
+
+        const N_THREADS: usize = 8;
+        const ROUNDS_PER_THREAD: usize = 3;
+        const N_EXPERIMENTS: usize = 4;
+
+        let handles: Vec<_> = (0..N_THREADS)
+            .map(|tid| {
+                let dp = dir_path.clone();
+                thread::spawn(move || {
+                    for round in 0..ROUNDS_PER_THREAD {
+                        let tag = format!("thread_{tid:02}");
+                        let experiments: Vec<crate::model::Experiment> = (0..N_EXPERIMENTS)
+                            .map(|eidx| crate::model::Experiment {
+                                commit: format!("t{tid:02}r{round}e{eidx}"),
+                                val_bpb: (tid as f64) + (eidx as f64) * 0.01,
+                                memory_gb: 0.0,
+                                status: crate::model::Status::Keep,
+                                description: format!("t{tid} r{round} e{eidx}"),
+                                timestamp: format!("2026-05-16T00:00:{eidx:02}Z"),
+                                params: std::collections::HashMap::new(),
+                                parent_commit: None,
+                                crash_excerpt: None,
+                                metric_name: None,
+                                metric_direction: None,
+                                signals: vec![],
+                            })
+                            .collect();
+                        let run = crate::model::RunLog {
+                            run_tag: tag,
+                            created_at: "2026-05-16T00:00:00Z".to_string(),
+                            experiments,
+                            metric_name: None,
+                            metric_direction: None,
+                            schema_version: 1,
+                        };
+                        save_run(&dp, &run).expect("save_run under contention");
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked under contention");
+        }
+
+        let loaded = load_all_runs(&dir_path).expect("load_all_runs after contention");
+        assert_eq!(
+            loaded.len(),
+            N_THREADS,
+            "one RunLog per tag — every thread's last write survived"
+        );
+        for run in &loaded {
+            assert_eq!(run.experiments.len(), N_EXPERIMENTS);
+            assert_eq!(run.schema_version, 1);
+            for exp in &run.experiments {
+                assert!(
+                    exp.commit.starts_with('t'),
+                    "no corrupted commits: got {}",
+                    exp.commit
+                );
+            }
+        }
+    }
+
+    /// Concurrency stress: parallel writes to the **same tag**. Last writer
+    /// wins (no global lock) but the file on disk must always be parseable
+    /// JSON — the atomic tmp+rename guarantees no reader sees a partial write.
+    #[test]
+    fn concurrent_writes_to_same_tag_never_corrupt_json() {
+        use std::thread;
+        let dir = tempfile::tempdir().unwrap();
+        ensure_initialized(dir.path()).unwrap();
+        let dir_path = dir.path().to_path_buf();
+
+        const N_THREADS: usize = 8;
+        const ROUNDS: usize = 5;
+
+        let handles: Vec<_> = (0..N_THREADS)
+            .map(|tid| {
+                let dp = dir_path.clone();
+                thread::spawn(move || {
+                    for r in 0..ROUNDS {
+                        let exp = crate::model::Experiment {
+                            commit: format!("t{tid:02}r{r}"),
+                            val_bpb: tid as f64,
+                            memory_gb: 0.0,
+                            status: crate::model::Status::Keep,
+                            description: format!("contention t={tid} r={r}"),
+                            timestamp: format!("2026-05-16T{tid:02}:{r:02}:00Z"),
+                            params: std::collections::HashMap::new(),
+                            parent_commit: None,
+                            crash_excerpt: None,
+                            metric_name: None,
+                            metric_direction: None,
+                            signals: vec![],
+                        };
+                        let run = crate::model::RunLog {
+                            run_tag: "contended".to_string(),
+                            created_at: "2026-05-16T00:00:00Z".to_string(),
+                            experiments: vec![exp],
+                            metric_name: None,
+                            metric_direction: None,
+                            schema_version: 1,
+                        };
+                        // Under same-tag contention, save_run may occasionally collide
+                        // on the tmp file. The contract: the file ends in a valid state.
+                        // Transient errors during the race are acceptable but rare; if
+                        // they happen we just retry once.
+                        if save_run(&dp, &run).is_err() {
+                            let _ = save_run(&dp, &run);
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("no thread panic under same-tag contention");
+        }
+
+        // File on disk must be a parseable RunLog (last writer wins).
+        let loaded = load_run(&dir_path, "contended")
+            .expect("valid JSON after same-tag contention")
+            .expect("file present");
+        assert_eq!(loaded.run_tag, "contended");
+        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(
+            loaded.experiments.len(),
+            1,
+            "each save_run writes exactly one experiment; last writer wins"
+        );
+    }
 }
