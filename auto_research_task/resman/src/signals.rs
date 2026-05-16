@@ -32,6 +32,14 @@ pub enum Signal {
     /// Nothing matched a known pattern. `pattern` is the last non-empty
     /// line of the tail, for forensic later.
     Unknown { pattern: String },
+    /// Training loss diverged to +inf (or -inf). Distinct from `NanLoss`
+    /// which covers NaN; this catches the "loss blew up" case where the
+    /// value is finite-but-infinite. `detail` is the matching log line.
+    DivergedLoss { detail: String },
+    /// Hardware MFU (model FLOP utilization) is below 20 %, indicating
+    /// severe under-utilization (memory-bandwidth-bound or misconfigured
+    /// batch). `mfu_percent` is the parsed value.
+    SlowMfu { mfu_percent: f64 },
 }
 
 impl Signal {
@@ -45,6 +53,8 @@ impl Signal {
             Signal::AssertFail { .. } => "assert_fail",
             Signal::Timeout => "timeout",
             Signal::Unknown { .. } => "unknown",
+            Signal::DivergedLoss { .. } => "diverged_loss",
+            Signal::SlowMfu { .. } => "slow_mfu",
         }
     }
 }
@@ -56,6 +66,8 @@ pub const ALL_KINDS: &[&str] = &[
     "assert_fail",
     "timeout",
     "unknown",
+    "diverged_loss",
+    "slow_mfu",
 ];
 
 /// Classify a log tail (typically the last 50 lines from `logtail::tail_lines`)
@@ -72,6 +84,8 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     static RE_ASSERT: OnceLock<Regex> = OnceLock::new();
     static RE_ASSERT_LOC: OnceLock<Regex> = OnceLock::new();
     static RE_TIMEOUT: OnceLock<Regex> = OnceLock::new();
+    static RE_DIVERGED: OnceLock<Regex> = OnceLock::new();
+    static RE_MFU: OnceLock<Regex> = OnceLock::new();
 
     let re_oom = RE_OOM.get_or_init(|| {
         re(r"(?i)(CUDA out of memory|CUDAOutOfMemoryError|torch\.cuda\.OutOfMemoryError|out of memory while|RuntimeError:.*out of memory)")
@@ -87,6 +101,10 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     let re_timeout = RE_TIMEOUT.get_or_init(|| {
         re(r"(?i)(TimeoutError|wall\s*clock.*exceeded|budget exceeded|exceeded.*time limit|training time.*exceeded)")
     });
+    // Matches "loss=inf", "loss: inf", "loss = inf", "loss : inf" (0-2 spaces around = or :)
+    // Does NOT match NaN — NanLoss regex covers that; DivergedLoss is the inf-only fallback.
+    let re_diverged = RE_DIVERGED.get_or_init(|| re(r"(?i)loss\s{0,2}[=:]\s{0,2}inf\b"));
+    let re_mfu = RE_MFU.get_or_init(|| re(r"mfu_percent:\s*([\d.]+)"));
 
     let mut out = Vec::new();
 
@@ -114,6 +132,24 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     }
     if re_timeout.is_match(tail) {
         out.push(Signal::Timeout);
+    }
+    // DivergedLoss: only fire when NanLoss did NOT already match, so NaN takes priority.
+    // Primarily catches "loss=inf" / "loss: inf" cases.
+    if re_diverged.is_match(tail) && !out.iter().any(|s| matches!(s, Signal::NanLoss)) {
+        let detail = tail
+            .lines()
+            .find(|l| re_diverged.is_match(l))
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default();
+        out.push(Signal::DivergedLoss { detail });
+    }
+    // SlowMfu: parse the first mfu_percent value found; signal only if < 20.0.
+    if let Some(mfu) = re_mfu
+        .captures(tail)
+        .and_then(|cap| cap[1].parse::<f64>().ok())
+        .filter(|&v| v < 20.0)
+    {
+        out.push(Signal::SlowMfu { mfu_percent: mfu });
     }
 
     if out.is_empty() {
@@ -226,5 +262,62 @@ mod tests {
         assert!(json.contains(r#""type":"cuda_error""#));
         let parsed: Vec<Signal> = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn classify_diverged_loss_inf() {
+        let t = "step 10: loss=inf";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss, got {sigs:?}"
+        );
+        match sigs
+            .iter()
+            .find(|s| matches!(s, Signal::DivergedLoss { .. }))
+        {
+            Some(Signal::DivergedLoss { detail }) => assert!(detail.contains("loss=inf")),
+            _ => panic!("expected DivergedLoss"),
+        }
+    }
+
+    #[test]
+    fn classify_slow_mfu_under_threshold() {
+        let t = "mfu_percent: 15.3\n";
+        let sigs = classify(t);
+        match sigs.iter().find(|s| matches!(s, Signal::SlowMfu { .. })) {
+            Some(Signal::SlowMfu { mfu_percent }) => {
+                assert!((mfu_percent - 15.3).abs() < 1e-9, "mfu={mfu_percent}")
+            }
+            _ => panic!("expected SlowMfu, got {sigs:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_slow_mfu_above_threshold_no_signal() {
+        let t = "mfu_percent: 35.0";
+        let sigs = classify(t);
+        assert!(
+            !sigs.iter().any(|s| matches!(s, Signal::SlowMfu { .. })),
+            "unexpected SlowMfu for mfu=35.0"
+        );
+    }
+
+    #[test]
+    fn classify_nan_loss_still_works() {
+        let t = "loss: NaN";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter().any(|s| matches!(s, Signal::NanLoss)),
+            "NanLoss regression: expected NanLoss in {sigs:?}"
+        );
+        // NanLoss takes priority — DivergedLoss must NOT fire when NaN matched.
+        assert!(
+            !sigs
+                .iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "DivergedLoss should not fire when NanLoss already matched"
+        );
     }
 }
