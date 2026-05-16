@@ -15,7 +15,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::Result;
 use crate::model::Status;
@@ -295,6 +295,18 @@ fn tool_manifest() -> Value {
                 "type": "object",
                 "properties": {}
             }
+        },
+        {
+            "name": "resman_unverify",
+            "description": "Symmetric retraction of `resman_verify`. Reverts a Verified experiment back to Keep status. Use when a verified result turns out to be a fluke (subsequent re-runs disagree). The val_bpb value is retained — only the trust label changes. Returns JSON: {unverified:true, tag, commit, metric, retained_value, previous_status, new_status}. Refuses experiments not currently in `verified` status (returns error).",
+            "inputSchema": {
+                "type": "object",
+                "required": ["commit"],
+                "properties": {
+                    "commit": { "type": "string", "description": "Full or short commit hash of the verified experiment to retract." },
+                    "tag": { "type": "string", "description": "Optional: restrict search to this run tag." }
+                }
+            }
         }
     ])
 }
@@ -320,13 +332,14 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
         "resman_find_by_signal" => tool_find_by_signal(data_dir, &args),
         "resman_distill" => tool_distill(data_dir, &args),
         "resman_verify" => tool_verify(data_dir, &args),
+        "resman_unverify" => tool_unverify(data_dir, &args),
         "resman_doctor" => tool_doctor(data_dir, &args),
         other => Err(format!("unknown tool: {other}")),
     }
 }
 
 fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
-    use crate::commands::best::{composite_candidates, lineage_depth, CompositeScores};
+    use crate::commands::best::{CompositeScores, composite_candidates, lineage_depth};
     use crate::model::Direction;
 
     let tag = args.get("tag").and_then(|v| v.as_str());
@@ -836,8 +849,19 @@ fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
     .map_err(|e| e.to_string())
 }
 
+fn tool_unverify(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    let commit = args
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `commit`")?;
+    let tag = args.get("tag").and_then(|v| v.as_str());
+
+    super::verify::unverify_inner_json(data_dir, &super::verify::UnverifyOpts { commit, tag })
+        .map_err(|e| e.to_string())
+}
+
 fn tool_doctor(data_dir: &Path, _args: &Value) -> std::result::Result<String, String> {
-    use crate::commands::doctor::{run_checks, CheckStatus, DoctorReport, DoctorSummary};
+    use crate::commands::doctor::{CheckStatus, DoctorReport, DoctorSummary, run_checks};
     let checks = run_checks(data_dir);
     let mut ok = 0usize;
     let mut warn = 0usize;

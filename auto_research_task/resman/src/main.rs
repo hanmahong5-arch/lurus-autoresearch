@@ -184,6 +184,13 @@ fn main() -> ExitCode {
             },
         ),
         Commands::Doctor { format } => commands::doctor::cmd_doctor(&data_dir, &format),
+        Commands::Unverify { commit, tag } => commands::verify::cmd_unverify(
+            &data_dir,
+            commands::verify::UnverifyOpts {
+                commit: &commit,
+                tag: tag.as_deref(),
+            },
+        ),
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
             clap_complete::generate(shell, &mut cmd, "resman", &mut std::io::stdout());

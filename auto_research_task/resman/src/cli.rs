@@ -397,6 +397,22 @@ pub enum Commands {
         tag: Option<String>,
     },
 
+    /// Retract a `Verified` experiment back to `Keep`.
+    ///
+    /// Use when a verified result turns out to be a fluke (subsequent re-runs
+    /// disagree, or you decide the verification criterion was too lenient).
+    /// The experiment's val_bpb stays at whatever the prior verify wrote;
+    /// the retraction is about trust, not metric value.
+    ///
+    /// Refuses to unverify experiments not currently in `verified` status.
+    Unverify {
+        /// Full or short commit hash to unverify (prefix match)
+        commit: String,
+        /// Restrict search to this run tag (optional)
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
     /// Generate shell completion script for the given shell.
     ///
     /// One-shot: install completions for bash/zsh/fish/powershell/elvish.
