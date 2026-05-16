@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.10.0] — Agent UX symmetry + reliability validation (2026-05-16)
+
+v0.9 hardened the storage and protocol layer. v0.10 closes the symmetry
+gaps in the agent surface (verify ↔ unverify), adds the highest-leverage
+distill intelligence (stagnation, keep-but-reverted), validates the
+concurrent-write invariant with tests instead of just docs, and makes the
+CLI feel native via shell completions.
+
+### Added — agent surface
+
+- **`resman unverify <commit>`** + MCP tool **`resman_unverify`** —
+  symmetric retraction of `resman verify`. Reverts a Verified experiment
+  back to Keep when the verified result turns out to be a fluke (later
+  re-runs disagree, criterion too lenient). The val_bpb stays at the
+  verify-time value — retraction is about trust, not metric. Closes the
+  verify ↔ unverify cycle: agents can promote reproductions to verified,
+  and walk that label back when evidence changes.
+
+### Added — distill intelligence
+
+Two new heuristic suggestion patterns in `distill::suggest`:
+
+- **Stagnation detector** — fires when a tag has ≥10 experiments and ≥8
+  consecutive kept runs haven't advanced the rolling best. Reports the
+  anchor commit + val_bpb so the agent can revisit a non-best lineage
+  branch or pivot to a radically different direction. Direction-aware.
+
+- **Keep-but-reverted detection** — when a `keep` experiment is the
+  lineage ancestor of a strictly-better `verified` descendant on the
+  same `parent_commit` chain, surface as an under-explored direction
+  with "re-combine the kept idea with verified-tier insights" hint.
+  Walks ancestors with a 50-hop cycle guard.
+
+Both are pure pattern detection over existing fields — no schema changes,
+no LLM dependency.
+
+### Added — CLI polish
+
+- **`resman completions <shell>`** (bash / zsh / fish / powershell /
+  elvish) via `clap_complete`. Tab completion now covers every
+  subcommand, every flag, and clap-known enums (status, format, signal
+  types). Install: `source <(resman completions bash)`.
+
+### Added — industrial reliability tests
+
+- **Concurrent-write integrity tests** in `store::tests`:
+  - 8 threads × 3 rounds writing 8 distinct tags → every tag's last
+    write survives, no corruption, all schema_version=1.
+  - 8 threads × 5 rounds writing the *same* tag → last-writer-wins
+    semantics, but the atomic tmp+rename invariant guarantees the
+    on-disk file is always parseable JSON.
+
+  These elevate the README's "safe to run from 10 concurrent loops"
+  claim from prose to a deterministic test.
+
+### Test counts
+
+129 → **133 tests** (127 unit + 6 CLI). +4 unverify tests + 4 from prior
+distill work covered in the same window. Clippy 0 warnings. Builds with
+the same dependency set (proptest dev-only, clap_complete is the only
+production-side addition in v0.10).
+
+### Invariants preserved
+
+- `resman best -f value` still byte-identical to v0.7.
+- All v0.1–v0.9 JSON-on-disk stores load unchanged (`schema_version`
+  defaults to 1 via serde).
+- `cargo install resman` still produces one static binary; `clap_complete`
+  is the sole new transitive crate.
+
+### Explicitly deferred (not in v0.10)
+
+- **`val_bpb` / `memory_gb` rename** — SCHEMA.md decision still stands;
+  single dedicated PR after first dogfood session.
+- **Verified-anchored lineage rendering in distill** — visual polish that
+  belongs with a distill HTML re-pass; queued for v0.11.
+- **`.github/workflows/release.yml`** — release binary CI; queued for
+  v0.11 once a real dogfood session exists to validate against.
+
 ## [0.9.0] — Industrial-grade agent memory layer (2026-05-16)
 
 v0.7-v0.8 built the surface: signals, verified status, composite scoring,

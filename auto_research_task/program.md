@@ -184,6 +184,7 @@ LOOP FOREVER:
    - 如果你换了 metric（如 accuracy、rouge，量级不在 ~1 附近），传 `tolerance` 显式覆盖默认 `0.01`。例如 accuracy: `{commit, value: 0.823, tolerance: 0.005}`。
    - 完整 pass condition 表见「Verify tolerance — 精确语义」节。
    - Verified runs feed the composite score and tell future sessions "this is real, not a fluke."
+   - **If later evidence disagrees** with a verified result (e.g., the next reproduction gives 0.99 vs the verified 0.96), call `resman_unverify { commit }` to retract the label back to `keep`. The val_bpb stays at the verified-time value — only the trust label is removed. Symmetry matters: never let a fluke stay verified just because reverting feels unusual.
 9. **`git reset` only AFTER step 7 has logged the run to resman.** If val_bpb improved (lower), advance — keep the git commit. If equal or worse, `git reset --hard HEAD~1` back to where you started. The reset destroys the commit's existence from `git log`, so resman is the only place that remembers this attempt happened — **never reset before logging, or the failure is lost from agent memory and future sessions will keep re-trying the same dead idea.**
 10. **At the end of every ~10 runs, call `resman_distill { tag: <current-tag> }` and re-read it.** Treat this as your refresh-the-mental-model checkpoint. The distill output is what next session inherits — make sure it tells the story you'd want to inherit.
 

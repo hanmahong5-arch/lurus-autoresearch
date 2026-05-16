@@ -104,6 +104,8 @@ resman watch results.tsv -t apr17 -i 2   # re-imports on every change
 | `mcp` | Run as an MCP server over stdio — agents call tools directly. See [docs/MCP.md](docs/MCP.md). |
 | `doctor` | Six-check health probe (data dir, env, runs, usage telemetry, MCP wiring, store invariants). One call replaces a dozen exploratory probes. `-o table\|json\|tsv`. |
 | `usage` | Analyse `usage.jsonl` MCP telemetry. `--summary` / `--by-tool` / `--errors` / `--sequences`; `--tool`/`--since`/`--top` filters; three formats. |
+| `verify` / `unverify` | Promote a reproduced experiment to `verified` (within tolerance, direction-aware) — and retract it back to `keep` when evidence later disagrees. The trust label is symmetric. |
+| `completions <shell>` | Generate tab-completion script for bash / zsh / fish / powershell / elvish. `source <(resman completions bash)`. |
 
 Global flags: `-D, --data-dir <path>` overrides the data dir for any command.
 
@@ -153,7 +155,7 @@ Add to `.claude/mcp.json` (Claude Code) or `~/.cursor/mcp.json`:
 { "mcpServers": { "resman": { "command": "resman", "args": ["mcp"] } } }
 ```
 
-Now the agent gets **eleven structured tools** out of the box, all returning
+Now the agent gets **twelve structured tools** out of the box, all returning
 parseable JSON (no substring match on English prose):
 
 - `resman_doctor` — one-shot health probe, call this first.
@@ -170,7 +172,8 @@ parseable JSON (no substring match on English prose):
 - `resman_add_experiment` — log every run (keep, discard, crash).
   Returns `lineage chain broken` warning when `parent_commit` is missed
   on a non-fresh tag.
-- `resman_verify` — promote a reproduced experiment to `status=verified`.
+- `resman_verify` / `resman_unverify` — promote a reproduced experiment
+  to `status=verified`, and walk that label back when evidence disagrees.
 
 Every `tools/call` is logged to `$RESMAN_HOME/usage.jsonl` for `resman usage`
 analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`. Full wiring guide:
