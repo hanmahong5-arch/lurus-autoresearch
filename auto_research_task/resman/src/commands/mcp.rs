@@ -287,6 +287,14 @@ fn tool_manifest() -> Value {
                     "tag":    { "type": "string", "description": "Optional: restrict search to this run tag." }
                 }
             }
+        },
+        {
+            "name": "resman_doctor",
+            "description": "Run six environment + data-integrity checks (data_dir, resman_home_env, runs_present, usage_telemetry, mcp_wiring, invariants). Returns JSON: {summary:{ok,warn,fresh,fail}, checks:[{name,status,detail,hint}]}. Call this at session start to confirm the environment is wired correctly before relying on other tools — one call replaces a dozen exploratory probes.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
         }
     ])
 }
@@ -312,6 +320,7 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
         "resman_find_by_signal" => tool_find_by_signal(data_dir, &args),
         "resman_distill" => tool_distill(data_dir, &args),
         "resman_verify" => tool_verify(data_dir, &args),
+        "resman_doctor" => tool_doctor(data_dir, &args),
         other => Err(format!("unknown tool: {other}")),
     }
 }
@@ -825,6 +834,33 @@ fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn tool_doctor(data_dir: &Path, _args: &Value) -> std::result::Result<String, String> {
+    use crate::commands::doctor::{run_checks, CheckStatus, DoctorReport, DoctorSummary};
+    let checks = run_checks(data_dir);
+    let mut ok = 0usize;
+    let mut warn = 0usize;
+    let mut fresh = 0usize;
+    let mut fail = 0usize;
+    for c in &checks {
+        match c.status {
+            CheckStatus::Ok => ok += 1,
+            CheckStatus::Warn => warn += 1,
+            CheckStatus::Fresh => fresh += 1,
+            CheckStatus::Fail => fail += 1,
+        }
+    }
+    let report = DoctorReport {
+        summary: DoctorSummary {
+            ok,
+            warn,
+            fresh,
+            fail,
+        },
+        checks,
+    };
+    serde_json::to_string(&report).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

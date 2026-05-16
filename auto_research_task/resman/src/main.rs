@@ -183,6 +183,7 @@ fn main() -> ExitCode {
                 tag: tag.as_deref(),
             },
         ),
+        Commands::Doctor { format } => commands::doctor::cmd_doctor(&data_dir, &format),
     };
 
     match result {

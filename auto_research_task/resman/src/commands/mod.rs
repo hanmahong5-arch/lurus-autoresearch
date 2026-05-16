@@ -3,6 +3,7 @@ pub mod best;
 pub mod compare;
 pub mod diff;
 pub mod distill;
+pub mod doctor;
 pub mod export;
 pub mod import;
 pub mod init;

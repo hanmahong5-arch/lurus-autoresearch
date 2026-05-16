@@ -361,6 +361,21 @@ pub enum Commands {
         format: OutputFormat,
     },
 
+    /// Run a battery of environment + data-integrity checks
+    ///
+    /// Use this at session start (or whenever something feels off) to confirm
+    /// resman is wired correctly: data dir writable, RESMAN_HOME resolved as
+    /// expected, runs present, usage.jsonl active, MCP config discoverable,
+    /// store invariants holding. Returns structured pass/warn/fresh/fail
+    /// per check with an actionable hint when not ok.
+    ///
+    /// Exit code: 0 if no `fail` status, 1 if any.
+    Doctor {
+        /// Output format
+        #[arg(short = 'o', long, default_value = "table")]
+        format: OutputFormat,
+    },
+
     /// Re-verify an experiment by providing a new metric value from a re-run.
     ///
     /// If the new value is within tolerance in the expected direction,
