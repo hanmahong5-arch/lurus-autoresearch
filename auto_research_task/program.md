@@ -21,7 +21,7 @@ This is an experiment to have the LLM do its own research.
 | 确定下一步基线 | `resman_best { composite: true }` | 用复合分（指标+验证+谱系+描述）挑最值得继承的 commit |
 | 从非 HEAD 派生 | `resman_lineage { commit: <parent> }` | 看这条链上哪些路收敛、哪些断头 |
 | **每次跑完（无论成败）** | `resman_add_experiment { tag, commit, val_bpb, memory_gb, status, description, log_tail, parent_commit }` | 原子写入；`log_tail` 让 resman 自动分类 OOM / NaN / CUDA error |
-| 重复一个旧 commit | `resman_verify { commit, value }` | 若新值在容差内（默认 ±0.01），promote 到 `status=verified` |
+| 重复一个旧 commit | `resman_verify { commit, value }` | 若新值在容差内（绝对差，默认 `tolerance=0.01`，方向敏感——见下「Verify tolerance — 精确语义」节），promote 到 `status=verified` |
 
 **不要**只往 `results.tsv` 写 —— TSV 是 grep 友好的镜像，agent 的长期记忆在 resman。两者都写，但**有冲突时 resman 是 source of truth**。
 
@@ -133,6 +133,35 @@ d4e5f6g	0.000000	0.0	crash	double model width (OOM)
 
 Format rules: use 0.000000 for crashed val_bpb, 0.0 for crashed memory; `memory_gb = peak_vram_mb / 1024` rounded to .1f. Do **not** commit `results.tsv`.
 
+## Verify tolerance — 精确语义
+
+`resman_verify` 是判断"这次重跑出来的值是不是和上次一致"的工具。它**不对称、不百分比、方向敏感**——以下是精确规则。
+
+**Pass condition**（来自 `resman/src/commands/verify.rs:93-97`）：
+
+- Metric direction = **minimize**（默认，`val_bpb` 即是此类）：
+  - Pass iff `new_value <= original + tolerance`
+  - 即：新值可以**比 original 好任意多**；只有比 original 差超过 `tolerance` 才 fail。
+- Metric direction = **maximize**（如 accuracy）：
+  - Pass iff `new_value >= original - tolerance`
+  - 对称地：新值可以**比 original 大任意多**；只有比 original 小超过 `tolerance` 才 fail。
+
+**默认 `tolerance = 0.01`，绝对差**（不是百分比、不是 ±0.01 对称区间）。
+
+**val_bpb 的具体示例**（original `= 0.985`，default tolerance `= 0.01`）：
+
+| new_value | 判定 | 原因 |
+|---|---|---|
+| 0.970 | verified | 比 original 好 0.015，更好任意多都通过 |
+| 0.985 | verified | 相等 |
+| 0.990 | verified | 差 0.005 < tolerance |
+| 0.995 | verified | 差 0.010 = tolerance 边界（含等号） |
+| 0.996 | not verified | 差 0.011 > tolerance |
+
+**何时该 override 默认 `0.01`**：
+- 你换了 metric 且量级显著不在 ~1 附近——传一个跟 metric 噪声水平相称的绝对值（例如训练 loss 在 2-3 区间可能用 `0.05`；accuracy 在 0-1 区间但分辨率更细可能用 `0.005`）。
+- **不要**为了"宽松一点让它通过"而调大 `tolerance`——`verified` 是要让未来 session 信任的信号，妥协它就妥协了整个 composite score 的意义。
+
 ## The experiment loop
 
 The experiment runs on a dedicated branch (e.g. `autoresearch/apr4`).
@@ -149,7 +178,11 @@ LOOP FOREVER:
 5. Run the experiment: `uv run train.py > run.log 2>&1`
 6. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log`. If empty, the run crashed — `tail -n 50 run.log` for the stack trace. Easy bug? Fix and re-run. Fundamental? Mark crash and move on.
 7. **Log to resman first, TSV second.** Call `resman_add_experiment` with `{tag, commit, val_bpb, memory_gb, status, description, parent_commit, log_tail}` (see [Logging results](#logging-results)). Then mirror to `results.tsv`. `log_tail` enables auto signal-classification — pass it even on success runs so future `resman_find_by_signal` queries see the full picture.
-8. **If your val_bpb is at or near a prior commit's value** (within ~1% directionally), call `resman_verify { commit: <prior-commit>, value: <your-bpb> }` to promote it to `status=verified`. Verified runs feed the composite score and tell future sessions "this is real, not a fluke."
+8. **If your val_bpb is at or near a prior commit's value**, call `resman_verify { commit: <prior-commit>, value: <your-bpb> }` to promote it to `status=verified`.
+   - "At or near" 的精确含义（`val_bpb` 是 minimize 方向）：当 `your_bpb <= prior_bpb + 0.01`（默认 tolerance）时通过。换言之，新值不比旧值差超过 `0.01` 就算通过；新值比旧值好任意多都算通过。
+   - 如果你换了 metric（如 accuracy、rouge，量级不在 ~1 附近），传 `tolerance` 显式覆盖默认 `0.01`。例如 accuracy: `{commit, value: 0.823, tolerance: 0.005}`。
+   - 完整 pass condition 表见「Verify tolerance — 精确语义」节。
+   - Verified runs feed the composite score and tell future sessions "this is real, not a fluke."
 9. If val_bpb improved (lower), advance — keep the git commit. If equal or worse, `git reset --hard HEAD~1` back to where you started.
 10. **At the end of every ~10 runs, call `resman_distill { tag: <current-tag> }` and re-read it.** Treat this as your refresh-the-mental-model checkpoint. The distill output is what next session inherits — make sure it tells the story you'd want to inherit.
 
