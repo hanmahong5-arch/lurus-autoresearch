@@ -324,6 +324,43 @@ pub enum Commands {
         all: bool,
     },
 
+    /// Inspect MCP tool usage telemetry (usage.jsonl)
+    ///
+    /// Reads `<data_dir>/usage.jsonl` (written by `resman mcp`) and summarises
+    /// tool call frequency, latency, errors, and call sequences. Use this to
+    /// audit how an agent actually uses the MCP surface and to find tools that
+    /// are cold (never called) or expensive (high p95 latency).
+    ///
+    /// Default flavor is --summary (totals + adoption funnel) when no flavor
+    /// flag is given.
+    Usage {
+        /// Show per-tool counts, ok%, p50/p95 latency, avg response chars
+        #[arg(long, group = "flavor")]
+        by_tool: bool,
+        /// Show only error events (ok=false), most recent first, with args
+        #[arg(long, group = "flavor")]
+        errors: bool,
+        /// Show top tool→tool transition pairs (Markov-ish)
+        #[arg(long, group = "flavor")]
+        sequences: bool,
+        /// Totals + adoption funnel (added → verified → distilled per tag).
+        /// Default when no other flavor is set.
+        #[arg(long, group = "flavor")]
+        summary: bool,
+        /// Restrict to events with this tool name
+        #[arg(long)]
+        tool: Option<String>,
+        /// ISO 8601 cutoff; events with ts < since are dropped
+        #[arg(long)]
+        since: Option<String>,
+        /// Limit rows (default 20)
+        #[arg(short = 'n', long, default_value_t = 20)]
+        top: usize,
+        /// Output format
+        #[arg(short = 'o', long, default_value = "table")]
+        format: OutputFormat,
+    },
+
     /// Re-verify an experiment by providing a new metric value from a re-run.
     ///
     /// If the new value is within tolerance in the expected direction,

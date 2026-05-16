@@ -147,6 +147,28 @@ fn main() -> ExitCode {
                 )
             }
         }
+        Commands::Usage {
+            by_tool,
+            errors,
+            sequences,
+            summary,
+            tool,
+            since,
+            top,
+            format,
+        } => commands::usage::cmd_usage(
+            &data_dir,
+            commands::usage::UsageOpts {
+                by_tool,
+                errors,
+                sequences,
+                summary,
+                tool,
+                since,
+                top,
+                format,
+            },
+        ),
         Commands::Verify {
             commit,
             value,

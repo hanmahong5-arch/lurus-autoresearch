@@ -109,14 +109,95 @@ Every `tools/call` the server handles appends one JSONL event to `<data_dir>/usa
 | `duration_ms` | int | Wall-clock dispatch time |
 | `result_chars` | int | Length of the response text (proxy for payload size) |
 
-Quick analysis with `jq`:
+Quick analysis with `jq` (10 recipes):
+
+R1 — p50/p95 latency per tool, useful as a regression alarm after deploys:
 
 ```bash
-jq -r '.tool' $RESMAN_HOME/usage.jsonl | sort | uniq -c | sort -rn   # call frequency by tool
-jq -s 'group_by(.tool)|map({tool:.[0].tool, p50:(map(.duration_ms)|sort|.[length/2|floor])})' \
-   $RESMAN_HOME/usage.jsonl                                          # median latency by tool
-jq 'select(.ok==false)' $RESMAN_HOME/usage.jsonl                     # all error calls
+# R1. p50/p95 latency per tool — regression alarm
+jq -s 'group_by(.tool)|map({tool:.[0].tool, n:length,
+  p50:(map(.duration_ms)|sort|.[length/2|floor]),
+  p95:(map(.duration_ms)|sort|.[(length*0.95)|floor])})' usage.jsonl
 ```
+
+R2 — error rate per tool, surface which tools are flaky:
+
+```bash
+# R2. error rate per tool
+jq -s 'group_by(.tool)|map({tool:.[0].tool, n:length,
+  errs:(map(select(.ok==false))|length)})|map(.+{rate:(.errs/.n)})' usage.jsonl
+```
+
+R3 — distill adoption: fraction of per-tag sessions that ended with a distill call:
+
+```bash
+# R3. distill adoption — fraction of sessions that ended with distill
+jq -s 'group_by(.args.tag//"_")|map({tag:.[0].args.tag,
+  added:(map(select(.tool=="resman_add_experiment"))|length),
+  distilled:(map(select(.tool=="resman_distill"))|length)})' usage.jsonl
+```
+
+R4 — verify-after-keep ratio: how often agents follow up Keep experiments with a verify call:
+
+```bash
+# R4. verify-after-keep ratio
+jq -s '{verifies:(map(select(.tool=="resman_verify"))|length),
+        kept_adds:(map(select(.tool=="resman_add_experiment" and .args.status=="keep"))|length)}
+       |.+{ratio:(.verifies/(.kept_adds|if .==0 then 1 else . end))}' usage.jsonl
+```
+
+R5 — repeated `search` patterns: detect agents re-querying the same pattern (forgetting prior negative results):
+
+```bash
+# R5. repeated `search` patterns — agent forgetting prior negative results
+jq -r 'select(.tool=="resman_search")|.args.pattern' usage.jsonl | sort | uniq -c | sort -rn
+```
+
+R6 — composite-best dissent: count how often `best{composite=true}` is immediately followed by a search/near (agent disagreeing with composite ranking):
+
+```bash
+# R6. `best{composite=true}` dissent — composite-best immediately followed by search/near
+jq -s '[range(0;length-1) as $i | {a:.[$i], b:.[$i+1]}
+  | select(.a.tool=="resman_best" and (.a.args.composite==true)
+           and (.b.tool=="resman_search" or .b.tool=="resman_near"))] | length' usage.jsonl
+```
+
+R7 — top 8 tool transition pairs, the full Markov transition matrix condensed:
+
+```bash
+# R7. tool transition matrix — top 8 pairs
+jq -s '[range(0;length-1) as $i | "\(.[$i].tool)→\(.[$i+1].tool)"] | reduce .[] as $p ({}; .[$p]+=1)
+       | to_entries | sort_by(-.value) | .[0:8]' usage.jsonl
+```
+
+R8 — time from first add to first distill per tag (seconds), measures how quickly agents close the loop:
+
+```bash
+# R8. time-from-add to first distill per tag (seconds)
+jq -s 'group_by(.args.tag//"_")|map({tag:.[0].args.tag,
+  first_add:(map(select(.tool=="resman_add_experiment"))|.[0].ts),
+  first_distill:(map(select(.tool=="resman_distill"))|.[0].ts)})
+  |map(select(.first_add and .first_distill))' usage.jsonl
+```
+
+R9 — failing-call bigrams: which prior tool call most often precedes a failure:
+
+```bash
+# R9. failing-call bigrams — which prior calls predict failure
+jq -s '[range(1;length) as $i | select(.[$i].ok==false) | "\(.[$i-1].tool)→\(.[$i].tool)"]
+       | reduce .[] as $p ({}; .[$p]+=1)' usage.jsonl
+```
+
+R10 — tool co-occurrence within 5 s: discover which tools agents invoke in rapid succession:
+
+```bash
+# R10. tool co-occurrence within 5s
+jq -s '[range(0;length-1) as $i | {a:.[$i].tool, b:.[$i+1].tool,
+  dt:((.[$i+1].ts|fromdateiso8601)-(.[$i].ts|fromdateiso8601))}
+  | select(.dt<5 and .a!=.b) | "\(.a)+\(.b)"] | reduce .[] as $p ({}; .[$p]+=1)' usage.jsonl
+```
+
+> 若想避免维护这些 jq, 用 `resman usage` 子命令 (built-in)。
 
 **Opt out** with `RESMAN_DISABLE_USAGE_LOG=1`. Failures to write are logged once to stderr and silently swallowed — telemetry must never break a tool call.
 
