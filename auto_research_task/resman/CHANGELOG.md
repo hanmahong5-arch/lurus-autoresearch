@@ -17,8 +17,15 @@ agent-facing onboarding doc.
 - **HTML parity** — `distill --html <out>` now renders the same
   Other-branches section using the existing badge palette
   (converged=green, broke=red, abandoned=gray).
-- `DistillReport.branch_verdicts: Vec<BranchVerdict>` is `serde(default)`
-  so v0.6–v0.10 JSON consumers ignore the new field safely.
+- **Cross-tag continuation links** — when this tag's root experiment
+  has a parent_commit that lives in another tag, the distill header
+  surfaces `_continues from \`yesterday\` (commit \`bbb222d\`)._`. Sews
+  together overnight sessions where each tag inherits from the prior.
+  Pure detection via `find_continuation(run, all_runs)`; cmd_distill
+  and MCP `resman_distill` both populate it.
+- `DistillReport.branch_verdicts: Vec<BranchVerdict>` and
+  `continues_from: Option<ContinuationLink>` are both `serde(default)`
+  so v0.6–v0.10 JSON consumers ignore the new fields safely.
 
 ### Added — onboarding
 
