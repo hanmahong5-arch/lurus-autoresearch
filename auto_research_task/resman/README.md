@@ -176,8 +176,11 @@ parseable JSON (no substring match on English prose):
   to `status=verified`, and walk that label back when evidence disagrees.
 
 Every `tools/call` is logged to `$RESMAN_HOME/usage.jsonl` for `resman usage`
-analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`. Full wiring guide:
-[docs/MCP.md](docs/MCP.md). Field-level schema decisions: [docs/SCHEMA.md](docs/SCHEMA.md).
+analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`.
+
+- Agent-first onboarding: [docs/AGENT_QUICKSTART.md](docs/AGENT_QUICKSTART.md)
+- MCP wiring guide: [docs/MCP.md](docs/MCP.md)
+- Field-level schema decisions: [docs/SCHEMA.md](docs/SCHEMA.md)
 
 ## Roadmap
 
