@@ -90,6 +90,38 @@ printf '%s\n' \
 
 You should see three JSON-RPC responses.
 
+## Usage telemetry (`usage.jsonl`)
+
+Every `tools/call` the server handles appends one JSONL event to `<data_dir>/usage.jsonl`. This is the source of truth for "which agents call which tools, with what args, with what success rate" — the dataset used to tune composite weights and distill templates before v1.0 schema freeze.
+
+**Schema** (one line per call):
+
+```json
+{"ts":"2026-05-16T15:30:00.123Z","tool":"resman_distill","args":{"tag":"may16"},"ok":true,"duration_ms":12,"result_chars":482}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `ts` | ISO 8601 UTC, ms precision | When the call returned |
+| `tool` | string | e.g. `resman_best`, `resman_add_experiment` |
+| `args` | object | Full `arguments` payload (small) — useful for "which params are agents passing?" |
+| `ok` | bool | `false` iff the tool returned `isError: true` |
+| `duration_ms` | int | Wall-clock dispatch time |
+| `result_chars` | int | Length of the response text (proxy for payload size) |
+
+Quick analysis with `jq`:
+
+```bash
+jq -r '.tool' $RESMAN_HOME/usage.jsonl | sort | uniq -c | sort -rn   # call frequency by tool
+jq -s 'group_by(.tool)|map({tool:.[0].tool, p50:(map(.duration_ms)|sort|.[length/2|floor])})' \
+   $RESMAN_HOME/usage.jsonl                                          # median latency by tool
+jq 'select(.ok==false)' $RESMAN_HOME/usage.jsonl                     # all error calls
+```
+
+**Opt out** with `RESMAN_DISABLE_USAGE_LOG=1`. Failures to write are logged once to stderr and silently swallowed — telemetry must never break a tool call.
+
+**Not transmitted anywhere.** Local file only. Inspect it, delete it, ship it to your own analytics — your call.
+
 ## Design notes
 
 - **Transport is line-delimited JSON**, not the full LSP-style `Content-Length` framing. Claude Code / Cursor / the reference Python SDK all accept either; line-delimited is simpler and sufficient for stdio.

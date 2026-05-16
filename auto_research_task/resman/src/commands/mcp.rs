@@ -15,7 +15,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::error::Result;
 use crate::model::Status;
@@ -74,15 +74,30 @@ pub fn cmd_mcp(data_dir: PathBuf) -> Result<()> {
                 );
             }
             ("tools/call", Some(id)) => {
+                let tool_name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_args = params.get("arguments").cloned().unwrap_or(Value::Null);
+                let timer = crate::usage::CallTimer::start();
                 let res = handle_tool_call(&data_dir, &params);
-                match res {
-                    Ok(text) => {
-                        write_line(&mut out, &ok_response(id, tool_text_result(&text, false)))
-                    }
-                    Err(msg) => {
-                        write_line(&mut out, &ok_response(id, tool_text_result(&msg, true)))
-                    }
-                }
+                let (text, is_error) = match res {
+                    Ok(t) => (t, false),
+                    Err(m) => (m, true),
+                };
+                crate::usage::log_call(
+                    &data_dir,
+                    &tool_name,
+                    &tool_args,
+                    !is_error,
+                    timer.elapsed_ms(),
+                    text.len(),
+                );
+                write_line(
+                    &mut out,
+                    &ok_response(id, tool_text_result(&text, is_error)),
+                );
             }
             ("ping", Some(id)) => write_line(&mut out, &ok_response(id, json!({}))),
             // Notifications (no id) — ack silently.
@@ -302,7 +317,7 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
 }
 
 fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
-    use crate::commands::best::{CompositeScores, composite_candidates, lineage_depth};
+    use crate::commands::best::{composite_candidates, lineage_depth, CompositeScores};
     use crate::model::Direction;
 
     let tag = args.get("tag").and_then(|v| v.as_str());

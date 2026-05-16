@@ -8,6 +8,7 @@ mod model;
 mod signals;
 mod store;
 mod term;
+mod usage;
 
 use std::process::ExitCode;
 
