@@ -65,6 +65,14 @@ pub struct NeighborEntry {
     pub description: String,
 }
 
+/// A cross-tag link: this tag's root has a parent_commit that lives in
+/// some other tag, so this tag "continues from" that prior session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContinuationLink {
+    pub from_tag: String,
+    pub from_commit: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchVerdict {
     pub root_commit: String,
@@ -90,6 +98,11 @@ pub struct DistillReport {
     /// experiment is on the best lineage.
     #[serde(default)]
     pub branch_verdicts: Vec<BranchVerdict>,
+    /// Cross-tag continuation (added v0.11): this tag's root experiment
+    /// has a parent_commit that lives in another tag. None when this is
+    /// a standalone session start.
+    #[serde(default)]
+    pub continues_from: Option<ContinuationLink>,
     pub failure_signals: HashMap<String, Vec<FailureSignalEntry>>,
     pub unexplored_neighbors: Vec<NeighborEntry>,
     pub suggestions: Vec<String>,
@@ -259,10 +272,50 @@ pub fn build_distill(run: &RunLog) -> DistillReport {
         best,
         lineage,
         branch_verdicts,
+        continues_from: None,
         failure_signals,
         unexplored_neighbors,
         suggestions,
     }
+}
+
+/// Detect whether `run` has any root experiment whose `parent_commit`
+/// is recorded in a *different* tag, and return the first such link.
+///
+/// `other_runs` is the full set of runs (including `run` itself — the
+/// function filters by `run_tag` to skip self-matches). Pass an empty
+/// slice for "no context" (this is the default used by `build_distill`).
+pub fn find_continuation(run: &RunLog, other_runs: &[RunLog]) -> Option<ContinuationLink> {
+    let commits_in_run: HashSet<&str> = run.experiments.iter().map(|e| e.commit.as_str()).collect();
+    let external_parents: Vec<&str> = run
+        .experiments
+        .iter()
+        .filter_map(|e| e.parent_commit.as_deref())
+        .filter(|p| !commits_in_run.contains(p))
+        .collect();
+    if external_parents.is_empty() {
+        return None;
+    }
+
+    for parent in external_parents {
+        for other in other_runs {
+            if other.run_tag == run.run_tag {
+                continue;
+            }
+            for exp in &other.experiments {
+                if exp.commit == parent
+                    || exp.commit.starts_with(parent)
+                    || parent.starts_with(&*exp.commit)
+                {
+                    return Some(ContinuationLink {
+                        from_tag: other.run_tag.clone(),
+                        from_commit: exp.commit.clone(),
+                    });
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Walk descendants of every "root" commit (parent_commit absent or
@@ -569,8 +622,10 @@ pub fn cmd_distill(
     html_path: Option<&std::path::Path>,
 ) -> Result<()> {
     let run = load_run_or_suggest(data_dir, tag)?;
+    let all_runs = load_all_runs(data_dir).unwrap_or_default();
 
-    let report = build_distill(&run);
+    let mut report = build_distill(&run);
+    report.continues_from = find_continuation(&run, &all_runs);
 
     // Write HTML artifact if requested.
     if let Some(hp) = html_path {
@@ -628,7 +683,9 @@ pub fn distill_to_string(
     let run = load_run(data_dir, tag)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no such tag: {tag}"))?;
-    let report = build_distill(&run);
+    let all_runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
+    let mut report = build_distill(&run);
+    report.continues_from = find_continuation(&run, &all_runs);
     if json {
         serde_json::to_string_pretty(&report).map_err(|e| e.to_string())
     } else {

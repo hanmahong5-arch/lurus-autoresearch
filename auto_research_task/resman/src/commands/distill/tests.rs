@@ -623,6 +623,89 @@ fn branch_verdicts_empty_when_all_on_best_chain() {
     );
 }
 
+/// Cross-tag continuation: tag's root parent_commit lives in another tag.
+#[test]
+fn continuation_link_found_when_parent_lives_in_other_tag() {
+    use super::find_continuation;
+
+    let prior = make_run(
+        "yesterday",
+        vec![
+            make_exp("aaa111", 0.99, Status::Keep, "base", None, vec![]),
+            make_exp("bbb222", 0.97, Status::Best, "win", Some("aaa111"), vec![]),
+        ],
+    );
+    let today = make_run(
+        "today",
+        vec![make_exp(
+            "ccc333",
+            0.96,
+            Status::Keep,
+            "build on yesterday",
+            Some("bbb222"),
+            vec![],
+        )],
+    );
+
+    let link = find_continuation(&today, &[prior.clone(), today.clone()]);
+    assert!(link.is_some(), "expected continuation link");
+    let link = link.unwrap();
+    assert_eq!(link.from_tag, "yesterday");
+    assert_eq!(link.from_commit, "bbb222");
+}
+
+/// No link when the root's parent isn't in any other tag.
+#[test]
+fn continuation_link_none_when_parent_external() {
+    use super::find_continuation;
+    let today = make_run(
+        "today",
+        vec![make_exp(
+            "ccc333",
+            0.96,
+            Status::Keep,
+            "external parent",
+            Some("zzz999"),
+            vec![],
+        )],
+    );
+    let link = find_continuation(&today, &[today.clone()]);
+    assert!(link.is_none(), "expected no link; got: {:?}", link);
+}
+
+/// No link when the run has no external parents.
+#[test]
+fn continuation_link_none_when_no_external_parents() {
+    use super::find_continuation;
+    let today = make_run(
+        "today",
+        vec![
+            make_exp("c1", 0.99, Status::Keep, "base", None, vec![]),
+            make_exp("c2", 0.98, Status::Keep, "next", Some("c1"), vec![]),
+        ],
+    );
+    let link = find_continuation(&today, &[today.clone()]);
+    assert!(link.is_none());
+}
+
+/// Markdown header includes the continuation line when set.
+#[test]
+fn render_markdown_includes_continuation_line() {
+    let mut report = build_distill(&make_run(
+        "today",
+        vec![make_exp("c1", 0.99, Status::Keep, "x", None, vec![])],
+    ));
+    report.continues_from = Some(super::ContinuationLink {
+        from_tag: "yesterday".to_string(),
+        from_commit: "bbb222deadbeef".to_string(),
+    });
+    let md = super::render::render_markdown(&report);
+    assert!(
+        md.contains("continues from `yesterday`"),
+        "markdown must surface continuation; got:\n{md}"
+    );
+}
+
 /// Branch verdict markdown rendering exposes the verdict section.
 #[test]
 fn render_markdown_includes_branch_verdicts_section() {

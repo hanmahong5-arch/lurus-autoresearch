@@ -16,9 +16,17 @@ pub fn render_markdown(report: &DistillReport) -> String {
 
     out.push_str(&format!("# Distill: {}\n\n", report.tag));
     out.push_str(&format!(
-        "_Generated from {} experiments ({} crashes, {} keep, {} discard, {} best). Metric: {} ({})._\n\n",
+        "_Generated from {} experiments ({} crashes, {} keep, {} discard, {} best). Metric: {} ({})._\n",
         s.total, s.crash, s.keep, s.discard, s.best, s.metric_name, s.direction
     ));
+    if let Some(c) = &report.continues_from {
+        out.push_str(&format!(
+            "_continues from `{}` (commit `{}`)._\n",
+            c.from_tag,
+            short_commit(&c.from_commit)
+        ));
+    }
+    out.push('\n');
 
     // --- Best result ---
     out.push_str("## Best result\n");
