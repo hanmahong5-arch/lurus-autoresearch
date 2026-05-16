@@ -193,7 +193,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_list_recent",
-            "description": "Return the most recent N experiments across all runs, in timestamp order. Useful at session start to recall what was tried last.",
+            "description": "Return the most recent N experiments across all runs in timestamp order, plus the total count and unique tags. Returns a JSON string with shape {total, tags, experiments}. Use at session start to recall what was tried last; total=0 signals a fresh resman store.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -204,7 +204,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_add_experiment",
-            "description": "Record an experiment. Call after every training run — even crashes. Status must be one of: keep, discard, crash, best.",
+            "description": "Record an experiment. Call after every training run — even crashes. Status must be one of: keep, discard, crash, best. If this tag already has prior experiments and parent_commit is omitted, the response will include a lineage warning.",
             "inputSchema": {
                 "type": "object",
                 "required": ["tag", "commit", "val_bpb", "status", "description"],
@@ -547,21 +547,39 @@ fn tool_list_recent(data_dir: &Path, args: &Value) -> std::result::Result<String
         .collect();
     // Sort by timestamp descending; fall back to array order when timestamp is empty.
     all.sort_by(|a, b| b.1.timestamp.cmp(&a.1.timestamp));
+    let total = all.len();
     all.truncate(n);
-    if all.is_empty() {
-        return Ok("no experiments recorded yet.".into());
+
+    // Build unique ordered tags from the truncated list.
+    let mut seen_tags: Vec<String> = Vec::new();
+    for (run, _) in &all {
+        if !seen_tags.contains(&run.run_tag) {
+            seen_tags.push(run.run_tag.clone());
+        }
     }
-    let lines: Vec<_> = all
+
+    let experiments: Vec<Value> = all
         .iter()
         .map(|(run, e)| {
             let metric = e.effective_metric_name(run);
-            format!(
-                "[{}] {} {} {metric}={:.6} — {}",
-                run.run_tag, e.timestamp, e.status, e.val_bpb, e.description
-            )
+            json!({
+                "tag": run.run_tag,
+                "commit": e.commit,
+                "timestamp": e.timestamp,
+                "status": e.status.to_string(),
+                "val_bpb": e.val_bpb,
+                "metric_name": metric,
+                "description": e.description,
+            })
         })
         .collect();
-    Ok(lines.join("\n"))
+
+    let result = json!({
+        "total": total,
+        "tags": seen_tags,
+        "experiments": experiments,
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 fn tool_add(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -596,6 +614,12 @@ fn tool_add(data_dir: &Path, args: &Value) -> std::result::Result<String, String
 
     let _status = Status::from_str(status_s).map_err(|e| e.to_string())?;
 
+    // Capture prior count before cmd_add mutates the store.
+    let prior_count = crate::store::load_run(data_dir, tag)
+        .map_err(|e| e.to_string())?
+        .map_or(0, |r| r.experiments.len());
+    let warn_missing_parent = parent.is_none() && prior_count >= 1;
+
     // Classify log_tail server-side if provided; bypass file I/O path.
     let preclassified = log_tail.map(crate::signals::classify);
 
@@ -619,9 +643,14 @@ fn tool_add(data_dir: &Path, args: &Value) -> std::result::Result<String, String
     )
     .map_err(|e| e.to_string())?;
 
-    Ok(format!(
-        "recorded: [{tag}] {commit} val_bpb={val_bpb:.6} {status_s}"
-    ))
+    let mut msg = format!("recorded: [{tag}] {commit} val_bpb={val_bpb:.6} {status_s}");
+    if warn_missing_parent {
+        msg.push('\n');
+        msg.push_str(&format!(
+            "  warning: no `parent_commit` set, but tag `{tag}` already has {prior_count} prior experiment(s) — lineage chain broken at this commit. Pass `parent_commit` next time to keep lineage intact."
+        ));
+    }
+    Ok(msg)
 }
 
 fn tool_diff_tags(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -748,5 +777,159 @@ fn signal_context(s: &crate::signals::Signal) -> String {
         AssertFail { location } if !location.is_empty() => format!("  [at {location}]"),
         Unknown { pattern } if !pattern.is_empty() => format!("  [pattern: {pattern}]"),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    fn tmp() -> (TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        crate::store::ensure_initialized(&path).unwrap();
+        (dir, path)
+    }
+
+    fn add_args(tag: &str, commit: &str, val_bpb: f64, parent: Option<&str>) -> Value {
+        let mut m = serde_json::Map::new();
+        m.insert("tag".into(), json!(tag));
+        m.insert("commit".into(), json!(commit));
+        m.insert("val_bpb".into(), json!(val_bpb));
+        m.insert("status".into(), json!("keep"));
+        m.insert("description".into(), json!("test experiment"));
+        if let Some(p) = parent {
+            m.insert("parent_commit".into(), json!(p));
+        }
+        Value::Object(m)
+    }
+
+    fn list_args(n: Option<u64>, tag: Option<&str>) -> Value {
+        let mut m = serde_json::Map::new();
+        if let Some(n) = n {
+            m.insert("n".into(), json!(n));
+        }
+        if let Some(t) = tag {
+            m.insert("tag".into(), json!(t));
+        }
+        Value::Object(m)
+    }
+
+    // --- list_recent JSON tests ---
+
+    #[test]
+    fn list_recent_empty_store_returns_zero_total() {
+        let (_dir, path) = tmp();
+        let args = list_args(None, None);
+        let result = tool_list_recent(&path, &args).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["total"], 0);
+        assert!(v["tags"].as_array().unwrap().is_empty());
+        assert!(v["experiments"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_recent_single_tag_two_experiments() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("foo", "aaa111", 0.9, None)).unwrap();
+        tool_add(&path, &add_args("foo", "bbb222", 0.8, Some("aaa111"))).unwrap();
+        let args = list_args(None, None);
+        let result = tool_list_recent(&path, &args).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["total"], 2);
+        let tags = v["tags"].as_array().unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0], "foo");
+        assert_eq!(v["experiments"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_recent_multi_tag_unique_ordered_tags() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("alpha", "aaa111", 0.9, None)).unwrap();
+        tool_add(&path, &add_args("beta", "bbb222", 0.8, None)).unwrap();
+        tool_add(&path, &add_args("alpha", "ccc333", 0.7, Some("aaa111"))).unwrap();
+        let args = list_args(None, None);
+        let result = tool_list_recent(&path, &args).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        let tags = v["tags"].as_array().unwrap();
+        assert_eq!(tags.len(), 2);
+        // No duplicates
+        let tag_strs: Vec<&str> = tags.iter().map(|t| t.as_str().unwrap()).collect();
+        let mut deduped = tag_strs.clone();
+        deduped.dedup();
+        assert_eq!(tag_strs, deduped);
+    }
+
+    #[test]
+    fn list_recent_respects_n_truncation() {
+        let (_dir, path) = tmp();
+        for i in 0..5 {
+            tool_add(
+                &path,
+                &add_args("bar", &format!("commit{i:03}"), 0.9 - i as f64 * 0.01, None),
+            )
+            .unwrap();
+        }
+        let args = list_args(Some(2), None);
+        let result = tool_list_recent(&path, &args).unwrap();
+        let v: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["total"], 5);
+        assert_eq!(v["experiments"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_recent_valid_json_in_all_cases() {
+        let (_dir, path) = tmp();
+        // Empty store
+        let r1 = tool_list_recent(&path, &list_args(None, None)).unwrap();
+        assert!(serde_json::from_str::<Value>(&r1).is_ok());
+        // After one add
+        tool_add(&path, &add_args("x", "abc123", 1.0, None)).unwrap();
+        let r2 = tool_list_recent(&path, &list_args(None, None)).unwrap();
+        assert!(serde_json::from_str::<Value>(&r2).is_ok());
+        // With truncation
+        let r3 = tool_list_recent(&path, &list_args(Some(1), None)).unwrap();
+        assert!(serde_json::from_str::<Value>(&r3).is_ok());
+    }
+
+    // --- parent_commit warning tests ---
+
+    #[test]
+    fn add_first_experiment_no_warning() {
+        let (_dir, path) = tmp();
+        let msg = tool_add(&path, &add_args("newtag", "abc123", 0.95, None)).unwrap();
+        assert!(!msg.contains("warning"), "unexpected warning: {msg}");
+    }
+
+    #[test]
+    fn add_second_experiment_without_parent_warns() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("mytag", "abc123", 0.95, None)).unwrap();
+        let msg = tool_add(&path, &add_args("mytag", "def456", 0.90, None)).unwrap();
+        assert!(
+            msg.contains("lineage chain broken"),
+            "expected lineage warning, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn add_second_experiment_with_parent_no_warning() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("mytag", "abc123", 0.95, None)).unwrap();
+        let msg = tool_add(&path, &add_args("mytag", "def456", 0.90, Some("abc123"))).unwrap();
+        assert!(!msg.contains("warning"), "unexpected warning: {msg}");
+    }
+
+    #[test]
+    fn add_different_tags_independent() {
+        let (_dir, path) = tmp();
+        // tag A has prior experiment
+        tool_add(&path, &add_args("tagA", "aaa111", 0.95, None)).unwrap();
+        // tag B first experiment — no prior, no warning expected
+        let msg = tool_add(&path, &add_args("tagB", "bbb222", 0.90, None)).unwrap();
+        assert!(!msg.contains("warning"), "unexpected warning: {msg}");
     }
 }

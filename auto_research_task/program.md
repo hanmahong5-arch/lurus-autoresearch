@@ -42,9 +42,9 @@ To set up a new experiment, work with the user to:
 4. **Verify data exists**: Check that `~/.cache/autoresearch/` contains data shards and a tokenizer. If not, tell the human to run `uv run prepare.py`.
 5. **Initialize resman + load prior memory** — this is the step new sessions skip and regret. Call in this order:
    - `resman init` (idempotent; creates `$RESMAN_HOME` or `~/.resman` if missing).
-   - **First**, `resman_list_recent { n: 20 }` — this is your discovery probe. The result tells you (a) whether any prior session exists at all and (b) what the most recent tag(s) are.
-   - **If `list_recent` returned `no experiments found`** — you are the first session on this store. Skip distill. Note this to the user ("fresh resman store — this run will establish baselines"). Move to step 6.
-   - **Otherwise**, identify the most recent tag from the list, then call `resman_distill { tag: <that-tag> }` and **read every section** — best, lineage, signal clusters, suggestions. These are your starting heuristics.
+   - **First**, `resman_list_recent { n: 20 }` — this is your discovery probe. Returns a JSON string with shape `{"total": N, "tags": [...], "experiments": [...]}`. Parse it.
+   - **If `total === 0`** — you are the first session on this store. Skip distill. Note this to the user ("fresh resman store — this run will establish baselines"). Move to step 6.
+   - **Otherwise**, identify the most recent tag from `tags[0]` (`tags` is ordered by most recent experiment first), then call `resman_distill { tag: <that-tag> }` and **read every section** — best, lineage, signal clusters, suggestions. These are your starting heuristics.
    - `resman_find_by_signal { signal_type: "oom" }` — know which configs have crashed historically. **Do not waste a 5-minute slot reproducing a known OOM.** (Repeat for `cuda_error`, `nan_loss` if useful.)
    - Briefly summarize to the user what you learned (2-3 bullets max), so they can correct any misread.
 6. **Initialize results.tsv mirror** (optional): Create `results.tsv` with the header row. This is a grep-friendly mirror of resman, not the source of truth.
@@ -178,12 +178,13 @@ LOOP FOREVER:
 5. Run the experiment: `uv run train.py > run.log 2>&1`
 6. Read out the results: `grep "^val_bpb:\|^peak_vram_mb:" run.log`. If empty, the run crashed — `tail -n 50 run.log` for the stack trace. Easy bug? Fix and re-run. Fundamental? Mark crash and move on.
 7. **Log to resman first, TSV second.** Call `resman_add_experiment` with `{tag, commit, val_bpb, memory_gb, status, description, parent_commit, log_tail}` (see [Logging results](#logging-results)). Then mirror to `results.tsv`. `log_tail` enables auto signal-classification — pass it even on success runs so future `resman_find_by_signal` queries see the full picture.
+   - **Watch the response message for `lineage chain broken`** —— 当 tag 内已有实验、但你这次 `parent_commit` 没传时，resman 会在 message 里附一行 `warning: ... lineage chain broken at this commit`。看到这行立刻补救：**下一次** add 必须带 `parent_commit`（就是你刚刚 commit 的 SHA），否则整段 lineage 静默断链，未来 distill 看不到这条分支。每次 `git commit` 后立刻记下 parent SHA，是避免这个 warning 的唯一方法。
 8. **If your val_bpb is at or near a prior commit's value**, call `resman_verify { commit: <prior-commit>, value: <your-bpb> }` to promote it to `status=verified`.
    - "At or near" 的精确含义（`val_bpb` 是 minimize 方向）：当 `your_bpb <= prior_bpb + 0.01`（默认 tolerance）时通过。换言之，新值不比旧值差超过 `0.01` 就算通过；新值比旧值好任意多都算通过。
    - 如果你换了 metric（如 accuracy、rouge，量级不在 ~1 附近），传 `tolerance` 显式覆盖默认 `0.01`。例如 accuracy: `{commit, value: 0.823, tolerance: 0.005}`。
    - 完整 pass condition 表见「Verify tolerance — 精确语义」节。
    - Verified runs feed the composite score and tell future sessions "this is real, not a fluke."
-9. If val_bpb improved (lower), advance — keep the git commit. If equal or worse, `git reset --hard HEAD~1` back to where you started.
+9. **`git reset` only AFTER step 7 has logged the run to resman.** If val_bpb improved (lower), advance — keep the git commit. If equal or worse, `git reset --hard HEAD~1` back to where you started. The reset destroys the commit's existence from `git log`, so resman is the only place that remembers this attempt happened — **never reset before logging, or the failure is lost from agent memory and future sessions will keep re-trying the same dead idea.**
 10. **At the end of every ~10 runs, call `resman_distill { tag: <current-tag> }` and re-read it.** Treat this as your refresh-the-mental-model checkpoint. The distill output is what next session inherits — make sure it tells the story you'd want to inherit.
 
 The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate. **Resman is your long-term memory — feed it every run, query it before every idea.**
