@@ -23,6 +23,121 @@ pub fn cmd_verify(data_dir: &Path, opts: VerifyOpts<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Core logic returning structured JSON string — used by the MCP tool.
+pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
+    use serde_json::json;
+
+    if opts.tolerance < 0.0 {
+        return Err(Error::Custom("tolerance must be non-negative".to_string()));
+    }
+
+    let runs = match opts.tag {
+        Some(t) => vec![load_run_or_suggest(data_dir, t)?],
+        None => load_all_runs(data_dir)?,
+    };
+
+    let mut matches: Vec<(String, usize)> = Vec::new();
+    for run in &runs {
+        for (idx, exp) in run.experiments.iter().enumerate() {
+            if exp.commit.starts_with(opts.commit) || opts.commit.starts_with(&*exp.commit) {
+                matches.push((run.run_tag.clone(), idx));
+            }
+        }
+    }
+
+    if matches.is_empty() {
+        return Err(Error::Custom(format!(
+            "no experiment found with commit starting with `{}`",
+            opts.commit
+        )));
+    }
+
+    if matches.len() > 1 {
+        let candidates: Vec<String> = matches
+            .iter()
+            .map(|(tag, idx)| {
+                let run = runs.iter().find(|r| r.run_tag == *tag).unwrap();
+                let exp = &run.experiments[*idx];
+                format!("  [{tag}] {}", exp.commit)
+            })
+            .collect();
+        return Err(Error::Custom(format!(
+            "ambiguous commit `{}` — matches:\n{}",
+            opts.commit,
+            candidates.join("\n")
+        )));
+    }
+
+    let (ref_tag, ref_idx) = matches.into_iter().next().unwrap();
+
+    let mut run = load_run(data_dir, &ref_tag)?
+        .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
+
+    let exp = &run.experiments[ref_idx];
+
+    if exp.status == Status::Crash {
+        return Err(Error::Custom(format!(
+            "cannot verify a crash experiment (commit {}, tag {ref_tag})",
+            exp.commit
+        )));
+    }
+
+    let original = exp.val_bpb;
+    let direction = exp.effective_direction(&run);
+    let metric = exp.effective_metric_name(&run).to_string();
+    let commit_short = exp.commit.clone();
+    let old_status = exp.status;
+
+    let delta = opts.new_value - original;
+    let passes = match direction {
+        Direction::Minimize => opts.new_value <= original + opts.tolerance,
+        Direction::Maximize => opts.new_value >= original - opts.tolerance,
+    };
+
+    if passes {
+        let re_verify = old_status == Status::Verified;
+        run.experiments[ref_idx].status = Status::Verified;
+        run.experiments[ref_idx].val_bpb = opts.new_value;
+        save_run(data_dir, &run)?;
+
+        let action = if re_verify { "re-verified" } else { "verified" };
+        let result = json!({
+            "verified": true,
+            "action": action,
+            "tag": ref_tag,
+            "commit": commit_short,
+            "metric": metric,
+            "direction": direction.as_str(),
+            "original": original,
+            "new": opts.new_value,
+            "delta": delta,
+            "tolerance": opts.tolerance,
+            "previous_status": old_status.to_string(),
+            "new_status": "verified"
+        });
+        serde_json::to_string(&result).map_err(|e| Error::Custom(e.to_string()))
+    } else {
+        let exceeded = match direction {
+            Direction::Minimize => opts.new_value - (original + opts.tolerance),
+            Direction::Maximize => (original - opts.tolerance) - opts.new_value,
+        };
+        let result = json!({
+            "verified": false,
+            "tag": ref_tag,
+            "commit": commit_short,
+            "metric": metric,
+            "direction": direction.as_str(),
+            "original": original,
+            "new": opts.new_value,
+            "delta": delta,
+            "tolerance": opts.tolerance,
+            "exceeded_by": exceeded,
+            "current_status": old_status.to_string()
+        });
+        serde_json::to_string(&result).map_err(|e| Error::Custom(e.to_string()))
+    }
+}
+
 /// Core logic, also called from the MCP tool.
 pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
     if opts.tolerance < 0.0 {

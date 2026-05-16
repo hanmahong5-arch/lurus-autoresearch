@@ -186,6 +186,93 @@ pub fn diff_summary_text(
 }
 
 // ---------------------------------------------------------------------------
+// JSON summary helper (for MCP tool)
+// ---------------------------------------------------------------------------
+
+pub fn diff_summary_json(
+    data_dir: &Path,
+    tag_a: &str,
+    tag_b: &str,
+    against: &str,
+) -> Result<String> {
+    if against != "best" && against != "latest" {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("unknown --against value: {against} (expected 'best' or 'latest')"),
+        )));
+    }
+
+    let run_a = load_run_or_suggest(data_dir, tag_a)?;
+    let run_b = load_run_or_suggest(data_dir, tag_b)?;
+
+    if run_a.experiments.is_empty() || run_b.experiments.is_empty() {
+        return Err(Error::Empty);
+    }
+
+    let exp_a = pick_experiment(&run_a, against).ok_or(Error::Empty)?;
+    let exp_b = pick_experiment(&run_b, against).ok_or(Error::Empty)?;
+
+    let diffs = compute_param_diff(&exp_a.params, &exp_b.params);
+    let delta_val = exp_b.val_bpb - exp_a.val_bpb;
+    let delta_mem = exp_b.memory_gb - exp_a.memory_gb;
+
+    let metric_a = exp_a.effective_metric_name(&run_a).to_string();
+    let metric_b = exp_b.effective_metric_name(&run_b).to_string();
+
+    let mut a_only: Vec<serde_json::Value> = Vec::new();
+    let mut b_only: Vec<serde_json::Value> = Vec::new();
+    let mut changed: Vec<serde_json::Value> = Vec::new();
+
+    for d in &diffs {
+        match d.kind {
+            ParamKind::Removed => {
+                a_only.push(json!({ "key": d.key, "value": d.from }));
+            }
+            ParamKind::Added => {
+                b_only.push(json!({ "key": d.key, "value": d.to }));
+            }
+            ParamKind::Changed => {
+                changed.push(json!({ "key": d.key, "a": d.from, "b": d.to }));
+            }
+            ParamKind::Same => {}
+        }
+    }
+
+    let out = json!({
+        "tag_a": tag_a,
+        "tag_b": tag_b,
+        "against": against,
+        "a": {
+            "commit": exp_a.commit,
+            "val_bpb": exp_a.val_bpb,
+            "memory_gb": exp_a.memory_gb,
+            "status": exp_a.status.to_string(),
+            "description": exp_a.description,
+            "metric_name": metric_a,
+        },
+        "b": {
+            "commit": exp_b.commit,
+            "val_bpb": exp_b.val_bpb,
+            "memory_gb": exp_b.memory_gb,
+            "status": exp_b.status.to_string(),
+            "description": exp_b.description,
+            "metric_name": metric_b,
+        },
+        "delta": {
+            "val_bpb": delta_val,
+            "memory_gb": delta_mem,
+        },
+        "params": {
+            "a_only": a_only,
+            "b_only": b_only,
+            "changed": changed,
+        }
+    });
+
+    serde_json::to_string(&out).map_err(|e| Error::Io(std::io::Error::other(e.to_string())))
+}
+
+// ---------------------------------------------------------------------------
 // Public command entry point
 // ---------------------------------------------------------------------------
 

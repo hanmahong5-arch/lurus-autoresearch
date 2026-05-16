@@ -158,7 +158,7 @@ fn tool_manifest() -> Value {
     json!([
         {
             "name": "resman_best",
-            "description": "Return the best experiment recorded so far (lowest val_bpb among kept runs). Call this before starting a new experiment to know what to beat.",
+            "description": "Return the best experiment recorded so far (lowest val_bpb among kept runs). Call this before starting a new experiment to know what to beat. Returns JSON: {tag, commit, metric, value, memory_gb, status, description, composite}. composite is null unless composite=true, then {score, metric, verified, lineage_depth, lineage, desc, *_weighted}.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -169,7 +169,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_search",
-            "description": "Case-insensitive regex search across all experiment descriptions, commits, and params. Use this to check if an idea has already been tried before wasting a 5-minute training run on it. Returns 'no matches' if the idea is unexplored.",
+            "description": "Case-insensitive regex search across all experiment descriptions, commits, and params. Use this to check if an idea has already been tried before wasting a 5-minute training run on it. Returns JSON: {pattern, count, matches[]}.",
             "inputSchema": {
                 "type": "object",
                 "required": ["pattern"],
@@ -181,7 +181,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_near",
-            "description": "Return the N experiments whose val_bpb is closest to a target value. Useful for grounding a new result ('other runs near 0.985 were mostly crashes from OOM').",
+            "description": "Return the N experiments whose val_bpb is closest to a target value. Useful for grounding a new result ('other runs near 0.985 were mostly crashes from OOM'). Returns JSON: {target, count, neighbors[]}.",
             "inputSchema": {
                 "type": "object",
                 "required": ["val_bpb"],
@@ -224,7 +224,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_find_by_signal",
-            "description": "Find all experiments whose signals include a given type. Use when triaging why runs failed — 'how many OOMs did we get overnight?'. Returns a compact list with tag, commit, and brief signal context.",
+            "description": "Find all experiments whose signals include a given type. Use when triaging why runs failed — 'how many OOMs did we get overnight?'. Returns JSON: {signal_type, count, matches[]}.",
             "inputSchema": {
                 "type": "object",
                 "required": ["signal_type"],
@@ -239,7 +239,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_diff_tags",
-            "description": "Show the config/metric diff between the best (or latest) experiment of two tagged runs. Useful for 'why did branch A beat branch B?' analysis. Returns a compact text summary.",
+            "description": "Show the config/metric diff between the best (or latest) experiment of two tagged runs. Useful for 'why did branch A beat branch B?' analysis. Returns JSON: {tag_a, tag_b, against, a, b, delta, params}.",
             "inputSchema": {
                 "type": "object",
                 "required": ["tag_a", "tag_b"],
@@ -252,7 +252,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_lineage",
-            "description": "Return the lineage tree of a run's experiments, showing which experiment was branched from which via parent_commit links. Agents use this to understand which chains converged vs dead-ended. Marks nodes on the best-lineage with a star.",
+            "description": "Return the lineage tree of a run's experiments, showing which experiment was branched from which via parent_commit links. Agents use this to understand which chains converged vs dead-ended. Returns JSON: {tag, highlight_best, best_commit, trees[]}; trees recursive.",
             "inputSchema": {
                 "type": "object",
                 "required": ["tag"],
@@ -264,7 +264,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_distill",
-            "description": "Generate a structured summary of a run: best, lineage, failure signals, unexplored neighbors, and heuristic suggestions. The primary 'what did we learn last night?' artifact for agent long-term memory. Call this at the end of an overnight session to get a concise structured memory of what happened without reading every experiment.",
+            "description": "Generate a structured summary of a run: best, lineage, failure signals, unexplored neighbors, and heuristic suggestions. The primary 'what did we learn last night?' artifact for agent long-term memory. Call this at the end of an overnight session to get a concise structured memory of what happened without reading every experiment. Returns JSON via format=json.",
             "inputSchema": {
                 "type": "object",
                 "required": ["tag"],
@@ -276,7 +276,7 @@ fn tool_manifest() -> Value {
         },
         {
             "name": "resman_verify",
-            "description": "Re-verify an experiment by providing a re-run's metric value. If within tolerance in the expected direction, promotes the experiment's status to 'verified' and updates val_bpb. Does not orchestrate training — caller provides the new value.",
+            "description": "Re-verify an experiment by providing a re-run's metric value. If within tolerance in the expected direction, promotes the experiment's status to 'verified' and updates val_bpb. Does not orchestrate training — caller provides the new value. Returns JSON: {verified: bool, ...details}; verified=false includes exceeded_by.",
             "inputSchema": {
                 "type": "object",
                 "required": ["commit", "value"],
@@ -334,13 +334,21 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
         None => load_all_runs(data_dir).map_err(|e| e.to_string())?,
     };
     if runs.is_empty() {
-        return Ok("no experiments recorded yet.".into());
+        return serde_json::to_string(&json!({
+            "empty": true,
+            "reason": "no experiments recorded yet."
+        }))
+        .map_err(|e| e.to_string());
     }
 
     if composite {
         let candidates = composite_candidates(&runs);
         if candidates.is_empty() {
-            return Ok("no kept experiments yet; start with a baseline.".into());
+            return serde_json::to_string(&json!({
+                "empty": true,
+                "reason": "no kept experiments yet; start with a baseline."
+            }))
+            .map_err(|e| e.to_string());
         }
         let first_dir = {
             let (r, e) = candidates[0];
@@ -382,29 +390,38 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
             Some((scores, run, e)) => {
                 let metric = e.effective_metric_name(run);
                 let depth = lineage_depth(e, run);
-                Ok(format!(
-                    "best (composite {:.3}): {metric}={:.6} (commit {}, memory_gb={:.1}) — {}\n  metric: {:.3}×0.5={:.3}  verified: {:.3}×0.2={:.3}  lineage: depth={} score={:.3}×0.2={:.3}  desc: {:.3}×0.1={:.3}",
-                    scores.score,
-                    e.val_bpb,
-                    e.commit,
-                    e.memory_gb,
-                    e.description,
-                    scores.metric,
-                    0.5 * scores.metric,
-                    scores.verified,
-                    0.2 * scores.verified,
-                    depth,
-                    scores.lineage,
-                    0.2 * scores.lineage,
-                    scores.desc,
-                    0.1 * scores.desc,
-                ))
+                let result = json!({
+                    "tag": run.run_tag,
+                    "commit": e.commit,
+                    "metric": metric,
+                    "value": e.val_bpb,
+                    "memory_gb": e.memory_gb,
+                    "status": e.status.to_string(),
+                    "description": e.description,
+                    "composite": {
+                        "score": scores.score,
+                        "metric": scores.metric,
+                        "metric_weighted": 0.5 * scores.metric,
+                        "verified": scores.verified,
+                        "verified_weighted": 0.2 * scores.verified,
+                        "lineage_depth": depth,
+                        "lineage": scores.lineage,
+                        "lineage_weighted": 0.2 * scores.lineage,
+                        "desc": scores.desc,
+                        "desc_weighted": 0.1 * scores.desc,
+                    }
+                });
+                serde_json::to_string(&result).map_err(|e| e.to_string())
             }
-            None => Ok("no kept experiments yet; start with a baseline.".into()),
+            None => serde_json::to_string(&json!({
+                "empty": true,
+                "reason": "no kept experiments yet; start with a baseline."
+            }))
+            .map_err(|e| e.to_string()),
         };
     }
 
-    // Non-composite: original path.
+    // Non-composite: structured JSON path.
     let mut global_best: Option<(&crate::model::RunLog, &crate::model::Experiment)> = None;
     for r in &runs {
         if let Some(b) = r.best() {
@@ -432,12 +449,23 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
     match global_best {
         Some((run, e)) => {
             let metric = e.effective_metric_name(run);
-            Ok(format!(
-                "best so far: {metric}={:.6} (commit {}, memory_gb={:.1}) — {}",
-                e.val_bpb, e.commit, e.memory_gb, e.description
-            ))
+            let result = json!({
+                "tag": run.run_tag,
+                "commit": e.commit,
+                "metric": metric,
+                "value": e.val_bpb,
+                "memory_gb": e.memory_gb,
+                "status": e.status.to_string(),
+                "description": e.description,
+                "composite": null
+            });
+            serde_json::to_string(&result).map_err(|e| e.to_string())
         }
-        None => Ok("no kept experiments yet; start with a baseline.".into()),
+        None => serde_json::to_string(&json!({
+            "empty": true,
+            "reason": "no kept experiments yet; start with a baseline."
+        }))
+        .map_err(|e| e.to_string()),
     }
 }
 
@@ -456,7 +484,7 @@ fn tool_search(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
         .map_err(|e| e.to_string())?;
 
     let runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
-    let mut hits: Vec<String> = Vec::new();
+    let mut matches: Vec<Value> = Vec::new();
     for r in &runs {
         for e in &r.experiments {
             if !include_discarded && e.status == Status::Discard {
@@ -473,24 +501,24 @@ fn tool_search(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
                     .join(" ")
             );
             if re.is_match(&hay) {
-                hits.push(format!(
-                    "[{}] {} val_bpb={:.6} — {}",
-                    r.run_tag, e.status, e.val_bpb, e.description
-                ));
+                let metric = e.effective_metric_name(r);
+                matches.push(json!({
+                    "tag": r.run_tag,
+                    "commit": e.commit,
+                    "val_bpb": e.val_bpb,
+                    "metric_name": metric,
+                    "status": e.status.to_string(),
+                    "description": e.description,
+                }));
             }
         }
     }
-    if hits.is_empty() {
-        Ok(format!(
-            "no matches for `{pattern}`. idea is unexplored — safe to try."
-        ))
-    } else {
-        Ok(format!(
-            "{} prior match(es):\n{}",
-            hits.len(),
-            hits.join("\n")
-        ))
-    }
+    let result = json!({
+        "pattern": pattern,
+        "count": matches.len(),
+        "matches": matches,
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 fn tool_near(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -512,22 +540,25 @@ fn tool_near(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     all.truncate(n);
-    if all.is_empty() {
-        return Ok("no prior experiments to compare against.".into());
-    }
-    let lines: Vec<_> = all
+    let neighbors: Vec<Value> = all
         .iter()
         .map(|(tag, e)| {
-            format!(
-                "[{tag}] {:.6} (Δ{:+.6}) {} — {}",
-                e.val_bpb,
-                e.val_bpb - target,
-                e.status,
-                e.description
-            )
+            json!({
+                "tag": tag,
+                "commit": e.commit,
+                "val_bpb": e.val_bpb,
+                "delta": e.val_bpb - target,
+                "status": e.status.to_string(),
+                "description": e.description,
+            })
         })
         .collect();
-    Ok(format!("neighbors of {target:.6}:\n{}", lines.join("\n")))
+    let result = json!({
+        "target": target,
+        "count": neighbors.len(),
+        "neighbors": neighbors,
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 fn tool_list_recent(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -667,10 +698,12 @@ fn tool_diff_tags(data_dir: &Path, args: &Value) -> std::result::Result<String, 
         .and_then(|v| v.as_str())
         .unwrap_or("best");
 
-    super::diff::diff_summary_text(data_dir, tag_a, tag_b, against).map_err(|e| e.to_string())
+    super::diff::diff_summary_json(data_dir, tag_a, tag_b, against).map_err(|e| e.to_string())
 }
 
 fn tool_lineage(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    use crate::store::load_run_or_suggest;
+
     let tag = args
         .get("tag")
         .and_then(|v| v.as_str())
@@ -680,7 +713,35 @@ fn tool_lineage(data_dir: &Path, args: &Value) -> std::result::Result<String, St
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    super::tree::tree_text(data_dir, tag, highlight_best).map_err(|e| e.to_string())
+    let run = load_run_or_suggest(data_dir, tag).map_err(|e| e.to_string())?;
+    let forest = super::tree::build_forest(&run);
+
+    fn node_to_json(node: &super::tree::TreeNode<'_>) -> Value {
+        let children: Vec<Value> = node.children.iter().map(node_to_json).collect();
+        json!({
+            "commit": node.exp.commit,
+            "val_bpb": node.exp.val_bpb,
+            "status": node.exp.status.to_string(),
+            "description": node.exp.description,
+            "on_best_path": node.on_best_lineage,
+            "children": children,
+        })
+    }
+
+    let trees: Vec<Value> = forest
+        .roots
+        .iter()
+        .filter(|r| !highlight_best || r.on_best_lineage)
+        .map(|r| node_to_json(r))
+        .collect();
+
+    let result = json!({
+        "tag": tag,
+        "highlight_best": highlight_best,
+        "best_commit": forest.best_commit,
+        "trees": trees,
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 fn tool_find_by_signal(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -702,32 +763,28 @@ fn tool_find_by_signal(data_dir: &Path, args: &Value) -> std::result::Result<Str
         },
         None => load_all_runs(data_dir).map_err(|e| e.to_string())?,
     };
-    let mut hits: Vec<String> = Vec::new();
+    let mut matches: Vec<Value> = Vec::new();
     for r in &runs {
         for e in &r.experiments {
-            if e.signals.iter().any(|s| s.kind() == want) {
-                let ctx = e
-                    .signals
-                    .iter()
-                    .find(|s| s.kind() == want)
-                    .map(signal_context)
-                    .unwrap_or_default();
-                hits.push(format!(
-                    "[{}] {} {} — {}{}",
-                    r.run_tag, e.status, e.commit, e.description, ctx
-                ));
+            if let Some(sig) = e.signals.iter().find(|s| s.kind() == want) {
+                let sig_value = serde_json::to_value(sig).unwrap_or(Value::Null);
+                matches.push(json!({
+                    "tag": r.run_tag,
+                    "commit": e.commit,
+                    "status": e.status.to_string(),
+                    "description": e.description,
+                    "signal": sig_value,
+                    "crash_excerpt": e.crash_excerpt,
+                }));
             }
         }
     }
-    if hits.is_empty() {
-        Ok(format!("no experiments with signal `{want}` found."))
-    } else {
-        Ok(format!(
-            "{} experiment(s) with signal `{want}`:\n{}",
-            hits.len(),
-            hits.join("\n")
-        ))
-    }
+    let result = json!({
+        "signal_type": want,
+        "count": matches.len(),
+        "matches": matches,
+    });
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 fn tool_distill(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
@@ -758,7 +815,7 @@ fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
         .unwrap_or(0.01);
     let tag = args.get("tag").and_then(|v| v.as_str());
 
-    super::verify::verify_inner(
+    super::verify::verify_inner_json(
         data_dir,
         &super::verify::VerifyOpts {
             commit,
@@ -768,16 +825,6 @@ fn tool_verify(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
         },
     )
     .map_err(|e| e.to_string())
-}
-
-fn signal_context(s: &crate::signals::Signal) -> String {
-    use crate::signals::Signal::*;
-    match s {
-        CudaError { hint } if !hint.is_empty() => format!("  [{hint}]"),
-        AssertFail { location } if !location.is_empty() => format!("  [at {location}]"),
-        Unknown { pattern } if !pattern.is_empty() => format!("  [pattern: {pattern}]"),
-        _ => String::new(),
-    }
 }
 
 #[cfg(test)]
@@ -931,5 +978,197 @@ mod tests {
         // tag B first experiment — no prior, no warning expected
         let msg = tool_add(&path, &add_args("tagB", "bbb222", 0.90, None)).unwrap();
         assert!(!msg.contains("warning"), "unexpected warning: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // New JSON-shape tests for converted tool functions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_best_plain_returns_valid_json() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("t1", "abc0001", 0.985, None)).unwrap();
+        let out = tool_best(&path, &json!({})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert!(v["tag"].is_string(), "tag missing");
+        assert!(v["commit"].is_string(), "commit missing");
+        assert!(v["value"].is_number(), "value missing");
+        assert_eq!(
+            v["composite"],
+            Value::Null,
+            "composite must be null for plain"
+        );
+    }
+
+    #[test]
+    fn tool_best_composite_returns_breakdown() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("t2", "abc0002", 0.985, None)).unwrap();
+        let out = tool_best(&path, &json!({"composite": true})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        let comp = &v["composite"];
+        assert!(comp.is_object(), "composite must be object");
+        assert!(comp["score"].is_number(), "composite.score missing");
+        assert!(comp["metric"].is_number(), "composite.metric missing");
+        assert!(
+            comp["metric_weighted"].is_number(),
+            "composite.metric_weighted missing"
+        );
+        assert!(
+            comp["lineage_depth"].is_number(),
+            "composite.lineage_depth missing"
+        );
+    }
+
+    #[test]
+    fn tool_best_empty_store_returns_empty_marker() {
+        let (_dir, path) = tmp();
+        let out = tool_best(&path, &json!({})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["empty"], true, "expected empty=true, got: {out}");
+    }
+
+    #[test]
+    fn tool_search_returns_matches_array() {
+        let (_dir, path) = tmp();
+        // add two experiments; only one description matches "gelu"
+        let mut m1 = serde_json::Map::new();
+        m1.insert("tag".into(), json!("s1"));
+        m1.insert("commit".into(), json!("ccc0001"));
+        m1.insert("val_bpb".into(), json!(0.98));
+        m1.insert("status".into(), json!("keep"));
+        m1.insert("description".into(), json!("tried GeLU activation"));
+        tool_add(&path, &Value::Object(m1)).unwrap();
+
+        let mut m2 = serde_json::Map::new();
+        m2.insert("tag".into(), json!("s1"));
+        m2.insert("commit".into(), json!("ccc0002"));
+        m2.insert("val_bpb".into(), json!(0.97));
+        m2.insert("status".into(), json!("keep"));
+        m2.insert("description".into(), json!("baseline relu"));
+        tool_add(&path, &Value::Object(m2)).unwrap();
+
+        let out = tool_search(&path, &json!({"pattern": "gelu"})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["count"], 1, "expected 1 match");
+        assert_eq!(v["matches"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn tool_search_empty_returns_empty_array() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("s2", "ddd0001", 0.99, None)).unwrap();
+        let out =
+            tool_search(&path, &json!({"pattern": "this_pattern_never_appears_xyz"})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["count"], 0);
+        assert!(v["matches"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tool_near_returns_neighbors_with_delta() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("n1", "eee0001", 0.97, None)).unwrap();
+        tool_add(&path, &add_args("n1", "eee0002", 0.98, Some("eee0001"))).unwrap();
+        tool_add(&path, &add_args("n1", "eee0003", 0.99, Some("eee0002"))).unwrap();
+        let out = tool_near(&path, &json!({"val_bpb": 0.98})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert!(v["count"].as_u64().unwrap() > 0, "count must be > 0");
+        let neighbors = v["neighbors"].as_array().unwrap();
+        assert!(!neighbors.is_empty());
+        // every neighbor has a delta field
+        for nb in neighbors {
+            assert!(nb["delta"].is_number(), "delta missing in neighbor");
+        }
+    }
+
+    #[test]
+    fn tool_find_by_signal_oom() {
+        let (_dir, path) = tmp();
+        // add a crash experiment with OOM log tail
+        let mut m = serde_json::Map::new();
+        m.insert("tag".into(), json!("sig1"));
+        m.insert("commit".into(), json!("fff0001"));
+        m.insert("val_bpb".into(), json!(0.0));
+        m.insert("status".into(), json!("crash"));
+        m.insert("description".into(), json!("OOM crash run"));
+        m.insert(
+            "log_tail".into(),
+            json!("RuntimeError: CUDA out of memory. Tried to allocate 4.00 GiB"),
+        );
+        tool_add(&path, &Value::Object(m)).unwrap();
+
+        let out = tool_find_by_signal(&path, &json!({"signal_type": "oom"})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["signal_type"], "oom");
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["matches"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn tool_diff_tags_returns_delta() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("da", "ggg0001", 0.990, None)).unwrap();
+        tool_add(&path, &add_args("db", "hhh0001", 0.980, None)).unwrap();
+        let out = tool_diff_tags(&path, &json!({"tag_a": "da", "tag_b": "db"})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["tag_a"], "da");
+        assert_eq!(v["tag_b"], "db");
+        let delta = v["delta"]["val_bpb"].as_f64().unwrap();
+        assert!(
+            (delta - (0.980 - 0.990)).abs() < 1e-9,
+            "delta mismatch: {delta}"
+        );
+    }
+
+    #[test]
+    fn tool_lineage_returns_trees_recursive() {
+        let (_dir, path) = tmp();
+        // parent -> child lineage
+        tool_add(&path, &add_args("lin1", "iii0001", 0.99, None)).unwrap();
+        tool_add(&path, &add_args("lin1", "iii0002", 0.98, Some("iii0001"))).unwrap();
+        let out = tool_lineage(&path, &json!({"tag": "lin1"})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["tag"], "lin1");
+        let trees = v["trees"].as_array().unwrap();
+        assert!(!trees.is_empty(), "trees must not be empty");
+        // root should have a child
+        let root = &trees[0];
+        let children = root["children"].as_array().unwrap();
+        assert_eq!(children.len(), 1, "root should have 1 child");
+        assert_eq!(children[0]["commit"], "iii0002");
+    }
+
+    #[test]
+    fn tool_verify_pass_returns_verified_true() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("v1", "jjj0001", 0.985, None)).unwrap();
+        let out = tool_verify(
+            &path,
+            &json!({"commit": "jjj0001", "value": 0.984, "tolerance": 0.01}),
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["verified"], true);
+        assert_eq!(v["action"], "verified");
+        assert!(v["delta"].is_number());
+    }
+
+    #[test]
+    fn tool_verify_fail_returns_exceeded_by() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("v2", "kkk0001", 0.985, None)).unwrap();
+        let out = tool_verify(
+            &path,
+            &json!({"commit": "kkk0001", "value": 1.02, "tolerance": 0.01}),
+        )
+        .unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        assert_eq!(v["verified"], false);
+        let exceeded = v["exceeded_by"].as_f64().unwrap();
+        assert!(
+            exceeded > 0.0,
+            "exceeded_by must be positive, got {exceeded}"
+        );
     }
 }
