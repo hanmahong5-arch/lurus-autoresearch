@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::{Experiment, RunLog, Status};
+use crate::model::{Direction, Experiment, RunLog, Status};
 
 use super::{FailureSignalEntry, short_commit};
 
@@ -121,6 +121,119 @@ pub(super) fn build_suggestions(
             suggestions.push(
                 "Many duplicate descriptions — use `resman search` before adding to avoid repeating ideas.".to_string(),
             );
+        }
+    }
+
+    // Suggestion 7: stagnation — N consecutive runs since the last metric improvement.
+    // Fires when there are >= 10 total experiments and >= 8 of the most-recent kept ones
+    // have not advanced the rolling best.
+    if total >= 10 {
+        let direction = run
+            .experiments
+            .first()
+            .map(|e| e.effective_direction(run))
+            .unwrap_or(Direction::Minimize);
+
+        let mut sorted: Vec<&Experiment> = run.experiments.iter().collect();
+        sorted.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+        let mut running_best: Option<f64> = None;
+        let mut last_improvement_idx: Option<usize> = None;
+        for (i, e) in sorted.iter().enumerate() {
+            if !e.status.is_kept() {
+                continue;
+            }
+            let v = e.val_bpb;
+            let is_better = match (running_best, direction) {
+                (None, _) => true,
+                (Some(b), Direction::Minimize) => v < b,
+                (Some(b), Direction::Maximize) => v > b,
+            };
+            if is_better {
+                running_best = Some(v);
+                last_improvement_idx = Some(i);
+            }
+        }
+
+        if let Some(last_imp) = last_improvement_idx {
+            let runs_since = sorted.len().saturating_sub(1).saturating_sub(last_imp);
+            if runs_since >= 8 {
+                let anchor = sorted[last_imp];
+                suggestions.push(format!(
+                    "Tag is stagnant — {runs_since} consecutive experiments since the last improvement \
+                     (commit {sc}, val_bpb={val:.4}). Try a radically different direction or \
+                     revisit a non-best lineage branch via `resman_lineage`.",
+                    sc = short_commit(&anchor.commit),
+                    val = anchor.val_bpb,
+                ));
+            }
+        }
+    }
+
+    // Suggestion 8: keep-but-reverted — a `keep` ancestor of a strictly-better
+    // verified descendant is an under-explored direction that was abandoned
+    // before being combined with the verified insight.
+    if total >= 2 {
+        let direction = run
+            .experiments
+            .first()
+            .map(|e| e.effective_direction(run))
+            .unwrap_or(Direction::Minimize);
+
+        let by_commit: HashMap<&str, &Experiment> = run
+            .experiments
+            .iter()
+            .map(|e| (e.commit.as_str(), e))
+            .collect();
+
+        let mut under_explored: Vec<(&Experiment, &Experiment)> = Vec::new();
+        for verified in run
+            .experiments
+            .iter()
+            .filter(|e| e.status == Status::Verified)
+        {
+            let mut current = verified.parent_commit.as_deref();
+            let mut hops = 0usize;
+            while let Some(parent_commit) = current {
+                hops += 1;
+                if hops > 50 {
+                    break; // Defensive: parent_commit cycle / runaway chain
+                }
+                let parent = match by_commit.get(parent_commit) {
+                    Some(p) => *p,
+                    None => break, // crosses tags or commit missing — stop
+                };
+                if matches!(parent.status, Status::Keep) {
+                    let strictly_better = match direction {
+                        Direction::Minimize => verified.val_bpb < parent.val_bpb,
+                        Direction::Maximize => verified.val_bpb > parent.val_bpb,
+                    };
+                    if strictly_better {
+                        under_explored.push((parent, verified));
+                        break;
+                    }
+                }
+                current = parent.parent_commit.as_deref();
+            }
+        }
+
+        if let Some((keep, ver)) = under_explored.first() {
+            suggestions.push(format!(
+                "Under-explored: `keep` experiment {kc} ({kv:.4}) was surpassed on its lineage \
+                 by verified {vc} ({vv:.4}). The kept direction was abandoned but never recombined \
+                 with verified-tier insights — re-run combining both.",
+                kc = short_commit(&keep.commit),
+                kv = keep.val_bpb,
+                vc = short_commit(&ver.commit),
+                vv = ver.val_bpb,
+            ));
+
+            if under_explored.len() > 1 {
+                let more = under_explored.len() - 1;
+                suggestions.push(format!(
+                    "{more} additional under-explored keep experiment(s) on verified lineages — see `resman_lineage` for the chains."
+                ));
+            }
         }
     }
 

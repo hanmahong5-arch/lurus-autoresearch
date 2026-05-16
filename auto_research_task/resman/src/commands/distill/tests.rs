@@ -426,3 +426,127 @@ fn render_html_no_external_refs() {
         assert!(html.contains(cls), "CSS must define {cls}");
     }
 }
+
+/// Stagnation suggestion: 10+ experiments, last >=8 kept ones without improvement.
+#[test]
+fn suggestions_include_stagnation_when_no_improvement_in_8_runs() {
+    // Build 11 keep experiments: improvement at t=0 (0.99), then 10 stalled at 0.99..
+    // (each strictly equal-or-worse so rolling best does not advance).
+    let mut exps = Vec::new();
+    // Anchor improvement.
+    let mut e0 = make_exp("anchor0", 0.99, Status::Keep, "baseline", None, vec![]);
+    e0.timestamp = "2026-05-01T00:00:00Z".to_string();
+    exps.push(e0);
+    // 10 stale follow-ups, val_bpb >= 0.99 so they never beat the anchor.
+    for i in 1..=10 {
+        let mut e = make_exp(
+            &format!("stale{i:03}"),
+            0.99 + (i as f64) * 0.0001,
+            Status::Keep,
+            &format!("tweak {i}"),
+            Some("anchor0"),
+            vec![],
+        );
+        e.timestamp = format!("2026-05-{:02}T00:00:00Z", i + 1);
+        exps.push(e);
+    }
+    let run = make_run("stalemate", exps);
+    let report = build_distill(&run);
+
+    let has_stagnation = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("stagnant") && s.contains("anchor0"));
+    assert!(
+        has_stagnation,
+        "expected stagnation suggestion pointing at the last improvement; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Stagnation does NOT fire when there are fewer than 10 experiments.
+#[test]
+fn suggestions_no_stagnation_under_threshold() {
+    let exps: Vec<Experiment> = (0..5)
+        .map(|i| {
+            let mut e = make_exp(
+                &format!("c{i}"),
+                0.99 + (i as f64) * 0.001,
+                Status::Keep,
+                "tweak",
+                None,
+                vec![],
+            );
+            e.timestamp = format!("2026-05-{:02}T00:00:00Z", i + 1);
+            e
+        })
+        .collect();
+    let run = make_run("small", exps);
+    let report = build_distill(&run);
+    assert!(
+        !report.suggestions.iter().any(|s| s.contains("stagnant")),
+        "should not fire stagnation under threshold; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Keep-but-reverted: a `keep` experiment is the lineage ancestor of a strictly-
+/// better `verified` descendant on the same chain.
+#[test]
+fn suggestions_include_keep_but_reverted_when_verified_surpasses_keep_ancestor() {
+    // Chain: keep_root (0.99) → keep_mid (0.98) → verified_top (0.96).
+    // verified_top is strictly better (minimize) than keep_mid AND keep_root.
+    // Expect one keep-but-reverted suggestion mentioning the kept commit.
+    let exps = vec![
+        make_exp("keepRoot", 0.99, Status::Keep, "baseline", None, vec![]),
+        make_exp(
+            "keepMid",
+            0.98,
+            Status::Keep,
+            "tried novel idea",
+            Some("keepRoot"),
+            vec![],
+        ),
+        make_exp(
+            "veriTop",
+            0.96,
+            Status::Verified,
+            "verified breakthrough",
+            Some("keepMid"),
+            vec![],
+        ),
+    ];
+    let run = make_run("ladder", exps);
+    let report = build_distill(&run);
+
+    let has_under_explored = report.suggestions.iter().any(|s| {
+        s.contains("Under-explored")
+            && s.contains("keepMid")
+            && (s.contains("veriTop") || s.contains("verified"))
+    });
+    assert!(
+        has_under_explored,
+        "expected keep-but-reverted suggestion linking keepMid to veriTop; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Keep-but-reverted does NOT fire when no verified ancestor chain exists.
+#[test]
+fn suggestions_no_keep_reverted_without_verified() {
+    let exps = vec![
+        make_exp("a", 0.99, Status::Keep, "baseline", None, vec![]),
+        make_exp("b", 0.98, Status::Keep, "tweak", Some("a"), vec![]),
+        make_exp("c", 0.97, Status::Keep, "tweak", Some("b"), vec![]),
+    ];
+    let run = make_run("nover", exps);
+    let report = build_distill(&run);
+    assert!(
+        !report
+            .suggestions
+            .iter()
+            .any(|s| s.contains("Under-explored")),
+        "should not fire keep-but-reverted without any verified node; got: {:?}",
+        report.suggestions
+    );
+}
