@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "resman": {
+      "command": "C:/Users/Administrator/Desktop/autoresearch/auto_research_task/resman/target/release/resman.exe",
+      "args": ["mcp"]
+    }
+  }
+}
