@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.11.0] — Agent narrative + onboarding (2026-05-16)
+
+v0.10 closed the verify ↔ unverify cycle. v0.11 makes the distill output
+read like a narrative an agent can act on, brings the MCP entrypoint
+prompt up to date with the full tool surface, and provides a single
+agent-facing onboarding doc.
+
+### Added — distill narrative
+
+- **"Other branches" section** with verdict labels. Every non-best
+  branch root gets one line: `<root> → … → <terminal> [status]
+  depth=N verdict={converged|broke|abandoned}` plus a signal-kind note
+  for broke verdicts. The agent reads which alternate directions were
+  tried and how each ended without re-walking every experiment.
+- **HTML parity** — `distill --html <out>` now renders the same
+  Other-branches section using the existing badge palette
+  (converged=green, broke=red, abandoned=gray).
+- `DistillReport.branch_verdicts: Vec<BranchVerdict>` is `serde(default)`
+  so v0.6–v0.10 JSON consumers ignore the new field safely.
+
+### Added — onboarding
+
+- **`docs/AGENT_QUICKSTART.md`** — single-page agent-facing doc. Section 0
+  is `resman_doctor` first call; sections 1-6 walk the session lifecycle
+  with per-tool guidance and the lineage-warning + tolerance precision;
+  section 7 states the one-sentence contract ("log first, reset last").
+- **`initialize_result.instructions` (MCP)** rewritten to walk the full
+  twelve-tool lifecycle and cross-reference `docs/AGENT_QUICKSTART.md`.
+  This is the prompt the LLM sees before any tool call.
+
+### Added — industrial reliability
+
+- **`bench_load_all_runs_1000_experiments_50_tags`** — `#[ignore]`'d test
+  measuring load time on 50 tags × 20 experiments. Validates the
+  README's "loads in milliseconds" claim (~5ms on a recent NVMe).
+  Invoke with `cargo test --release -- --ignored --nocapture`.
+
+### Test counts
+
+133 → **138 tests** (132 unit + 6 CLI). Plus the new ignored perf bench
+(opt-in). Clippy 0 warnings.
+
+### Invariants preserved
+
+- `branch_verdicts` is additive — existing distill JSON consumers see a
+  new optional array; nothing else changes.
+- Tag-prefix convention `resman-v*` reaffirmed in tags. The existing
+  `.github/workflows/resman.yml` triggers release artifact builds on
+  these tags across linux/macos/windows.
+
+### Explicitly deferred (still not in v0.11)
+
+- **`val_bpb` / `memory_gb` rename** — SCHEMA.md decision unchanged.
+- **Composite-weight tuning** — gated on real `usage.jsonl` corpus.
+- **Cross-tag continuation links in distill** — wait for a dogfood
+  session to confirm the pattern matters.
+- **Stagnation suggestion in HTML** — currently markdown only; HTML
+  has been a "look at this in the morning" surface, so the markdown
+  read-on-MCP path covers the agent.
+
 ## [0.10.0] — Agent UX symmetry + reliability validation (2026-05-16)
 
 v0.9 hardened the storage and protocol layer. v0.10 closes the symmetry
