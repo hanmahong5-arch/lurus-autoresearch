@@ -440,9 +440,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
                   </div>
 
                   <div class="text-right shrink-0 space-y-1">
-                    <span class={["badge badge-sm", status_badge_class(report.status)]}>
-                      {status_label(report.status)}
-                    </span>
+                    <.report_status status={report.status} />
                     <p class="text-xs text-base-content/50">{report.source_count || 0} sources</p>
                   </div>
                 </div>
@@ -553,20 +551,6 @@ defmodule ExAutoresearchWeb.DashboardLive do
     |> Map.put(:source_count, report.total_sources)
     |> Map.take([:id, :title, :query, :status, :source_count, :inserted_at])
   end
-
-  defp status_badge_class(:completed), do: "badge-success"
-  defp status_badge_class(:researching), do: "badge-info"
-  defp status_badge_class(:failed), do: "badge-error"
-  defp status_badge_class(:analyzing), do: "badge-warning"
-  defp status_badge_class(:writing), do: "badge-secondary"
-  defp status_badge_class(_), do: "badge-ghost"
-
-  defp status_label(:completed), do: "Completed"
-  defp status_label(:researching), do: "Researching"
-  defp status_label(:failed), do: "Failed"
-  defp status_label(:analyzing), do: "Analyzing"
-  defp status_label(:writing), do: "Writing"
-  defp status_label(_), do: "Pending"
 
   defp format_markdown(text) do
     {:safe,

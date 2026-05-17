@@ -157,16 +157,14 @@ defmodule ExAutoresearchWeb.AuditLive do
                       </td>
 
                       <td>
-                        <span class={["badge badge-sm", event_badge_class(ev.event_type)]}>
-                          {humanize_event_type(ev.event_type)}
-                        </span>
+                        <.audit_event event={ev.event_type} />
                       </td>
 
                       <td class="text-xs">
                         <%= if ev.target_type do %>
-                          <span class="text-base-content/60">{ev.target_type}</span>
+                          <.audit_target target={ev.target_type} />
                           <%= if ev.target_id do %>
-                            <span class="font-mono text-base-content/50">
+                            <span class="font-mono text-base-content/50 ml-1">
                               {String.slice(ev.target_id || "", 0, 8)}
                             </span>
                           <% end %>
@@ -261,16 +259,6 @@ defmodule ExAutoresearchWeb.AuditLive do
     |> String.split()
     |> Enum.map_join(" ", &String.capitalize/1)
   end
-
-  defp event_badge_class(:research_started), do: "badge-info"
-  defp event_badge_class(:report_completed), do: "badge-success"
-  defp event_badge_class(:report_failed), do: "badge-error"
-  defp event_badge_class(:report_exported), do: "badge-primary"
-  defp event_badge_class(:template_created), do: "badge-accent"
-  defp event_badge_class(:template_updated), do: "badge-accent badge-outline"
-  defp event_badge_class(:template_deleted), do: "badge-warning"
-  defp event_badge_class(:user_logged_in), do: "badge-ghost"
-  defp event_badge_class(_), do: "badge-ghost"
 
   defp format_relative(%DateTime{} = dt) do
     diff = DateTime.diff(DateTime.utc_now(), dt, :second)

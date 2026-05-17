@@ -80,9 +80,7 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
                 <p class="text-sm text-base-content/70 mt-1">{@report.query}</p>
               </div>
               <div class="flex flex-wrap gap-2 items-center text-xs">
-                <span class={["badge badge-sm", status_badge_class(@report.status)]}>
-                  {@report.status |> to_string() |> String.capitalize()}
-                </span>
+                <.report_status status={@report.status} />
                 <span class="badge badge-sm badge-ghost">
                   {@report.category}
                 </span>
@@ -117,11 +115,7 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
                 <ul class="space-y-2">
                   <%= for inv <- @investigations do %>
                     <li class="flex items-start gap-3 text-sm">
-                      <span
-                        class={["mt-1.5 h-2 w-2 rounded-full shrink-0", inv_status_class(inv.status)]}
-                        aria-hidden="true"
-                      >
-                      </span>
+                      <.investigation_status status={inv.status} as={:dot} class="mt-1.5" />
                       <div class="min-w-0 flex-1">
                         <p class="font-medium truncate">{inv.query}</p>
                         <p class="text-xs text-base-content/60 mt-0.5">{inv.status}</p>
@@ -164,18 +158,6 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
     report
     |> Map.put(:summary_text, report.summary || "No summary available")
   end
-
-  defp status_badge_class(:completed), do: "badge-success"
-  defp status_badge_class(:researching), do: "badge-info"
-  defp status_badge_class(:failed), do: "badge-error"
-  defp status_badge_class(:analyzing), do: "badge-warning"
-  defp status_badge_class(:writing), do: "badge-secondary"
-  defp status_badge_class(_), do: "badge-ghost"
-
-  defp inv_status_class(:completed), do: "bg-success"
-  defp inv_status_class(:failed), do: "bg-error"
-  defp inv_status_class(:running), do: "bg-info animate-pulse"
-  defp inv_status_class(_), do: "bg-base-content/30"
 
   defp status_text(:researching, pct),
     do: "Researching... (#{Float.round((pct || 0) * 100 / 1, 1)}%)"

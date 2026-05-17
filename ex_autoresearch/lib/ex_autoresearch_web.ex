@@ -86,6 +86,8 @@ defmodule ExAutoresearchWeb do
       import Phoenix.HTML
       # Core UI components
       import ExAutoresearchWeb.CoreComponents
+      # Shared color-coded badges for finite-enum fields
+      import ExAutoresearchWeb.Badges
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
