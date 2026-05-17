@@ -25,6 +25,7 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/ex_autoresearch"
 import topbar from "../vendor/topbar"
 import * as echarts from "../vendor/echarts.min"
+import MissionControl from "./hooks/mission_control"
 
 // ECharts hook for LiveView
 const Chart = {
@@ -123,7 +124,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone},
-  hooks: {...colocatedHooks, Chart, Mermaid},
+  hooks: {...colocatedHooks, Chart, Mermaid, MissionControl},
 })
 
 // Show progress bar on live navigation and form submits

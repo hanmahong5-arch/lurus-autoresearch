@@ -55,7 +55,7 @@ These were chosen after explicit research and trade-off analysis. Each has a rea
 - **No closed-source dependencies on the canonical path.** AGPL is a flag-yellow; non-OSI is a flag-red.
 - **No "let's add LangChain too."** We have `jido`. That is sufficient.
 
-## Delivered (as of 2026-05-03)
+## Delivered (as of 2026-05-16)
 
 The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 
@@ -69,6 +69,8 @@ The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 **Real-time UI (Week 4 pulled in early):**
 - `TelemetryBridge` re-emits scraper stop events as `{:scraper_progress, ...}` on the `"research:events"` PubSub topic.
 - DashboardLive renders per-URL progress with a daisyUI alert that turns amber when fallback was used and surfaces the underlying reason ("Crawl4AI failed (HTTP 503), fell back to native scraper").
+- `MissionControlLive` at `/mission` — Three.js 3D control room subscribing to the same `"research:events"` topic. Orchestrator sphere recolors on agent status, token reactor cylinder fills by usage, scraper outcomes spawn orbiting satellites (green/amber/red by outcome), `quality_alert` events surface as a speech bubble. Clicking a satellite opens a right-side drawer with the persisted `Investigation` (query, reasoning, quality_score, fetched_at, findings excerpt).
+- JS hook (`assets/js/hooks/mission_control.js`) lazy-loads three.js + addons from `esm.sh` on first mount — keeps the app.js bundle slim. Local `.glb` models in `priv/static/3d/` (`3d/` added to `static_paths/0`).
 
 **Citation-grade provenance (the legal/compliance differentiator):**
 - Every `Investigation` persists `fetched_at`, `content_hash` (SHA-256 hex), `scraper_source`, `fallback_used`.
