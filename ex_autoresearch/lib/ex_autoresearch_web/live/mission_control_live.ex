@@ -386,6 +386,18 @@ defmodule ExAutoresearchWeb.MissionControlLive do
 
   defp outcome_badge_class(_), do: "bg-white/5 border border-white/15 text-white/70"
 
+  defp scraper_source_chip_class(:crawl4ai),
+    do: "bg-cyan-500/15 border border-cyan-400/30 text-cyan-200"
+
+  defp scraper_source_chip_class(:native),
+    do: "bg-emerald-500/15 border border-emerald-400/30 text-emerald-200"
+
+  defp scraper_source_chip_class(:unknown),
+    do: "bg-white/5 border border-white/15 text-white/70"
+
+  defp scraper_source_chip_class(_),
+    do: "bg-white/5 border border-white/15 text-white/70"
+
   defp push_narrative(socket, entry) do
     entry = Map.put_new(entry, :ts, System.system_time(:second))
     narrative = [entry | socket.assigns.narrative] |> Enum.take(@narrative_max)
@@ -557,7 +569,10 @@ defmodule ExAutoresearchWeb.MissionControlLive do
                     {@focused.outcome}
                   </span>
                   <%= if inv = @focused.investigation do %>
-                    <span class="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70">
+                    <span class={[
+                      "rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider",
+                      scraper_source_chip_class(inv.scraper_source)
+                    ]}>
                       {inv.scraper_source}
                     </span>
                     <%= if inv.fallback_used do %>

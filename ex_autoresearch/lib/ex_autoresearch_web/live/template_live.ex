@@ -197,9 +197,7 @@ defmodule ExAutoresearchWeb.TemplateLive do
                       {String.slice(t.query_template, 0, 200)}
                     </p>
                     <div class="flex flex-wrap gap-2 items-center text-xs">
-                      <span class={["badge badge-sm", category_badge_class(t.category)]}>
-                        {t.category}
-                      </span>
+                      <.category category={t.category} />
                       <span :if={t.enabled} class="badge badge-sm badge-success badge-soft">
                         Scheduled
                       </span>
@@ -353,10 +351,4 @@ defmodule ExAutoresearchWeb.TemplateLive do
     </section>
     """
   end
-
-  defp category_badge_class(:competitor), do: "badge-info badge-soft"
-  defp category_badge_class(:market), do: "badge-success badge-soft"
-  defp category_badge_class(:policy), do: "badge-warning badge-soft"
-  defp category_badge_class(:trend), do: "badge-secondary badge-soft"
-  defp category_badge_class(_), do: "badge-ghost"
 end

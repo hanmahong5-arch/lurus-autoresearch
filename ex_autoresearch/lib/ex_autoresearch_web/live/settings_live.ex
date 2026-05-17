@@ -101,12 +101,12 @@ defmodule ExAutoresearchWeb.SettingsLive do
       <div class="space-y-6">
         <div>
           <h1 class="text-2xl font-bold tracking-tight">Settings</h1>
-          
+
           <p class="text-sm text-base-content/60 mt-1">
             Configure your organization, integrations, and notifications.
           </p>
         </div>
-        
+
         <div role="tablist" class="tabs tabs-bordered">
           <a
             role="tab"
@@ -133,11 +133,11 @@ defmodule ExAutoresearchWeb.SettingsLive do
             Notifications
           </a>
         </div>
-        
+
         <%= if @tab == :general do %>
           <.general_tab org={@org} />
         <% end %>
-        
+
         <%= if @tab == :integrations do %>
           <.integrations_tab
             openai_compat_base_url={@openai_compat_base_url}
@@ -147,11 +147,11 @@ defmodule ExAutoresearchWeb.SettingsLive do
             searxng_base_url={@searxng_base_url}
           />
         <% end %>
-        
+
         <%= if @tab == :notifications do %>
           <.notifications_tab notifications_email={@notifications_email} />
         <% end %>
-         <ExAutoresearchWeb.Components.VersionBadge.section id="settings-version-section" />
+        <ExAutoresearchWeb.Components.VersionBadge.section id="settings-version-section" />
       </div>
     </Layouts.app>
     """
@@ -163,12 +163,12 @@ defmodule ExAutoresearchWeb.SettingsLive do
       <div class="card-body space-y-5">
         <div>
           <h2 class="card-title text-lg">Organization</h2>
-          
+
           <p class="text-xs text-base-content/60 mt-0.5">
             Identity used in reports and webhook notifications.
           </p>
         </div>
-        
+
         <div class="form-control">
           <label class="label" for="org-name-input">
             <span class="label-text font-medium">Organization Name</span>
@@ -187,12 +187,12 @@ defmodule ExAutoresearchWeb.SettingsLive do
             <span class="label-text-alt text-base-content/50">Auto-saved as you type.</span>
           </label>
         </div>
-        
+
         <div class="form-control">
           <label class="label"><span class="label-text font-medium">Plan</span></label>
           <div class="flex items-center gap-2">
-            <span class="font-mono text-sm">{(@org && @org.plan) || "—"}</span>
-            <span class="badge badge-ghost badge-sm">Free — upgrade coming soon</span>
+            <.org_plan plan={@org && @org.plan} />
+            <span class="text-xs text-base-content/50">— upgrade coming soon</span>
           </div>
         </div>
       </div>
@@ -206,20 +206,20 @@ defmodule ExAutoresearchWeb.SettingsLive do
       <div class="card-body space-y-5">
         <div>
           <h2 class="card-title text-lg">API Keys & Integrations</h2>
-          
+
           <p class="text-xs text-base-content/60 mt-0.5">
             Stored locally on this server only. Never transmitted to third parties.
           </p>
         </div>
-        
+
         <div class="rounded-box border border-primary/30 bg-primary/5 p-4 space-y-4">
           <div class="flex items-baseline justify-between">
             <h3 class="font-semibold text-sm flex items-center gap-2">
               OpenAI-Compatible Gateway <span class="badge badge-primary badge-sm">Recommended</span>
             </h3>
-             <span class="text-xs text-base-content/60">中转站 / vLLM / LM Studio</span>
+            <span class="text-xs text-base-content/60">中转站 / vLLM / LM Studio</span>
           </div>
-          
+
           <p class="text-xs text-base-content/70">
             Two model tiers: <strong>Main</strong>
             handles planning, deep evaluation, and final
@@ -228,7 +228,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
             Pair e.g. <code class="text-xs">deepseek-v4-pro</code>
             / <code class="text-xs">deepseek-v4-flash</code>.
           </p>
-          
+
           <form
             phx-change="set_field"
             phx-value-field="openai_compat_base_url"
@@ -253,7 +253,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
               </span>
             </label>
           </form>
-          
+
           <form
             phx-change="set_field"
             phx-value-field="openai_compat_api_key"
@@ -272,7 +272,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
               class="input input-bordered w-full font-mono text-sm"
             />
           </form>
-          
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <form
               phx-change="set_field"
@@ -294,7 +294,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
                 class="input input-bordered w-full font-mono text-sm"
               />
             </form>
-            
+
             <form
               phx-change="set_field"
               phx-value-field="openai_compat_model_fast"
@@ -317,9 +317,9 @@ defmodule ExAutoresearchWeb.SettingsLive do
             </form>
           </div>
         </div>
-        
+
         <div class="divider my-1"></div>
-        
+
         <form phx-change="set_search_backend" class="form-control">
           <label class="label" for="search-backend-select">
             <span class="label-text font-medium">Web Search Backend</span>
@@ -332,11 +332,11 @@ defmodule ExAutoresearchWeb.SettingsLive do
             <option value="searxng" selected={@search_backend == "searxng"}>
               SearXNG · self-hosted metasearch (recommended)
             </option>
-            
+
             <option value="duckduckgo" selected={@search_backend == "duckduckgo"}>
               DuckDuckGo · zero-config (may be rate-limited)
             </option>
-            
+
             <option value="serper" selected={@search_backend == "serper"}>
               Serper · Google results (requires API key below)
             </option>
@@ -347,7 +347,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
             </span>
           </label>
         </form>
-        
+
         <%= if @search_backend == "searxng" do %>
           <form
             phx-change="set_field"
@@ -376,7 +376,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
             </label>
           </form>
         <% end %>
-        
+
         <form
           phx-change="set_field"
           phx-value-field="serper_api_key"
@@ -404,7 +404,7 @@ defmodule ExAutoresearchWeb.SettingsLive do
             </span>
           </label>
         </form>
-        
+
         <form
           phx-change="set_field"
           phx-value-field="anthropic_api_key"
@@ -437,9 +437,9 @@ defmodule ExAutoresearchWeb.SettingsLive do
             </span>
           </label>
         </form>
-        
+
         <div class="divider my-1"></div>
-        
+
         <div class="form-control">
           <label class="label" for="webhook-url-input">
             <span class="label-text font-medium">Webhook URL</span>
@@ -470,12 +470,12 @@ defmodule ExAutoresearchWeb.SettingsLive do
       <div class="card-body space-y-5">
         <div>
           <h2 class="card-title text-lg">Notifications</h2>
-          
+
           <p class="text-xs text-base-content/60 mt-0.5">
             Where to send a ping when a report completes.
           </p>
         </div>
-        
+
         <form phx-submit="save_email_notify" class="form-control space-y-3">
           <label class="label" for="notify-email-input">
             <span class="label-text font-medium">Notification Email</span>
@@ -490,12 +490,12 @@ defmodule ExAutoresearchWeb.SettingsLive do
           />
           <div><button type="submit" class="btn btn-primary btn-sm">Save email</button></div>
         </form>
-        
+
         <div class="divider my-1"></div>
-        
+
         <div>
           <h3 class="font-medium mb-1">Webhook Notifications</h3>
-          
+
           <p class="text-sm text-base-content/70">
             When a webhook URL is configured in <strong>Integrations</strong>,
             a POST notification is sent on each report completion. Supports <span class="font-medium">企业微信</span>, <span class="font-medium">飞书 / Lark</span>, <span class="font-medium">钉钉</span>, and <span class="font-medium">Slack</span>.

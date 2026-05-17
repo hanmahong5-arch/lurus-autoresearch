@@ -134,7 +134,9 @@ defmodule ExAutoresearchWeb.ScheduleLive do
                   <div class="card-body py-4 px-5 flex flex-row items-center justify-between gap-4">
                     <div class="min-w-0">
                       <h3 class="font-medium truncate">{t.name}</h3>
-                      <p class="text-xs text-base-content/60 mt-1">{t.category}</p>
+                      <div class="mt-1">
+                        <.category category={t.category} />
+                      </div>
                     </div>
                     <button
                       phx-click="toggle"

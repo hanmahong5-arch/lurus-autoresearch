@@ -81,9 +81,7 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
               </div>
               <div class="flex flex-wrap gap-2 items-center text-xs">
                 <.report_status status={@report.status} />
-                <span class="badge badge-sm badge-ghost">
-                  {@report.category}
-                </span>
+                <.category category={@report.category} />
                 <span class="text-base-content/50 ml-1">
                   {@report.total_sources} sources · {@report.total_investigations} investigations
                 </span>

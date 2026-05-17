@@ -178,4 +178,74 @@ defmodule ExAutoresearchWeb.Badges do
     do: target |> Atom.to_string() |> String.capitalize()
 
   defp audit_target_label(other), do: to_string(other)
+
+  # ── Report/Template.category ──────────────────────────────────────────
+
+  @doc """
+  Renders a Report/Template category badge.
+
+  Known values: `:competitor`, `:market`, `:policy`, `:trend`, `:custom`.
+  Uses the `badge-soft` variant for visual subtlety so it doesn't compete
+  with status badges when shown side by side.
+  """
+  attr :category, :atom, required: true
+  attr :class, :string, default: nil
+
+  def category(assigns) do
+    ~H"""
+    <span class={["badge badge-sm", category_class(@category), @class]}>
+      {category_label(@category)}
+    </span>
+    """
+  end
+
+  defp category_class(:competitor), do: "badge-info badge-soft"
+  defp category_class(:market), do: "badge-success badge-soft"
+  defp category_class(:policy), do: "badge-warning badge-soft"
+  defp category_class(:trend), do: "badge-secondary badge-soft"
+  defp category_class(:custom), do: "badge-accent badge-soft"
+  defp category_class(_), do: "badge-ghost"
+
+  defp category_label(c) when is_atom(c),
+    do: c |> Atom.to_string() |> String.capitalize()
+
+  defp category_label(other), do: to_string(other)
+
+  # ── Organization.plan ─────────────────────────────────────────────────
+
+  @doc """
+  Renders an Organization plan badge.
+
+  Known values: `:free`, `:pro`, `:enterprise`. Nil renders an em-dash
+  placeholder rather than crashing — useful for half-hydrated socket
+  assigns during onboarding.
+  """
+  attr :plan, :any, required: true
+  attr :class, :string, default: nil
+
+  def org_plan(assigns) do
+    ~H"""
+    <%= if @plan do %>
+      <span class={["badge badge-sm", plan_class(@plan), @class]}>
+        {plan_label(@plan)}
+      </span>
+    <% else %>
+      <span class={["text-base-content/40 text-sm", @class]}>—</span>
+    <% end %>
+    """
+  end
+
+  defp plan_class(:free), do: "badge-ghost"
+  defp plan_class(:pro), do: "badge-primary"
+  defp plan_class(:enterprise), do: "badge-secondary"
+  defp plan_class(_), do: "badge-ghost"
+
+  defp plan_label(:free), do: "Free"
+  defp plan_label(:pro), do: "Pro"
+  defp plan_label(:enterprise), do: "Enterprise"
+
+  defp plan_label(other) when is_atom(other),
+    do: other |> Atom.to_string() |> String.capitalize()
+
+  defp plan_label(other), do: to_string(other)
 end
