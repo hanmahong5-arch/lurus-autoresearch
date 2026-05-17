@@ -66,5 +66,64 @@ defmodule ExAutoresearchWeb.MissionControlLiveTest do
 
       assert html =~ "Searching: 3 queries"
     end
+
+    test ":plan_generated appends a Plan entry to the narrative panel", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/mission")
+
+      send(
+        view.pid,
+        {:plan_generated,
+         %{
+           report_id: "rid-test",
+           queries: ["what is foo", "how does bar work"]
+         }}
+      )
+
+      html = render(view)
+
+      assert html =~ ~s(id="narrative-panel")
+      assert html =~ ~s(data-narrative-kind="plan")
+      assert html =~ "what is foo"
+      assert html =~ "how does bar work"
+    end
+
+    test ":investigation_started appends a Search sub-query entry", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/mission")
+
+      send(
+        view.pid,
+        {:investigation_started,
+         %{investigation_id: "i1", query: "compare jido vs phoenix presence", tool: :search}}
+      )
+
+      html = render(view)
+
+      assert html =~ ~s(data-narrative-kind="subquery")
+      assert html =~ "compare jido vs phoenix presence"
+    end
+
+    test ":learning_added appends a Learn entry with quality score", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/mission")
+
+      send(
+        view.pid,
+        {:learning_added,
+         %{
+           report_id: "rid-test",
+           investigation_id: "i1",
+           query: "what is x",
+           quality_score: 0.72,
+           reasoning: "primary source",
+           findings_excerpt: "X is defined as a synthetic monoid in category theory."
+         }}
+      )
+
+      html = render(view)
+
+      assert html =~ ~s(data-narrative-kind="learning")
+      assert html =~ "X is defined as a synthetic monoid"
+      assert html =~ "quality"
+      assert html =~ "0.72"
+    end
   end
 end

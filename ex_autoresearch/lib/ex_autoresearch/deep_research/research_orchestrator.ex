@@ -256,6 +256,8 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
   # ── Phase completion handlers ──────────────────────────────────────────────
 
   defp on_phase_done(:planning, {:ok, queries}, state) do
+    broadcast({:plan_generated, %{report_id: state.report && state.report.id, queries: queries}})
+
     transition(state, :searching, %{queries: queries})
   end
 
@@ -481,6 +483,8 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
       action: :update_result
     )
 
+    maybe_broadcast_learning(report, inv, findings, query, first_source)
+
     %{
       id: inv.id,
       query: query,
@@ -488,6 +492,32 @@ defmodule ExAutoresearch.DeepResearch.ResearchOrchestrator do
       quality_score: findings.quality_score,
       status: :completed
     }
+  end
+
+  defp maybe_broadcast_learning(report, inv, findings, query, first_source) do
+    score = findings.quality_score
+
+    if is_number(score) and score >= 0.3 do
+      excerpt =
+        findings.content
+        |> to_string()
+        |> String.slice(0, 200)
+
+      broadcast(
+        {:learning_added,
+         %{
+           report_id: report.id,
+           investigation_id: inv.id,
+           query: query,
+           quality_score: score,
+           reasoning: inv.reasoning,
+           findings_excerpt: excerpt,
+           url: Map.get(first_source, :url)
+         }}
+      )
+    end
+
+    :ok
   end
 
   defp analyze(question, investigations, max_depth, llm_opts) do
