@@ -13,6 +13,8 @@ pub(super) fn signal_detail(sig: &crate::signals::Signal) -> String {
         CudaError { hint } if !hint.is_empty() => format!("hint: {hint}"),
         AssertFail { location } if !location.is_empty() => format!("at {location}"),
         Unknown { pattern } if !pattern.is_empty() => format!("matched: {pattern}"),
+        DivergedLoss { detail } if !detail.is_empty() => format!("diverged: {detail}"),
+        SlowMfu { mfu_percent } => format!("{mfu_percent:.1}% MFU"),
         _ => String::new(),
     }
 }
