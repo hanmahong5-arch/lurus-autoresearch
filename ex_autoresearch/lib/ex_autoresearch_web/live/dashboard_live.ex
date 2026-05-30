@@ -99,7 +99,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
           do: Keyword.put(research_params, :organization_id, org_id),
           else: research_params
 
-      DeepResearch.ResearchOrchestrator.start_research(research_params)
+      {:ok, _} = DeepResearch.ResearchEngine.start(research_params)
 
       if org_id do
         Audit.record!(:research_started, %{
@@ -121,7 +121,7 @@ defmodule ExAutoresearchWeb.DashboardLive do
   end
 
   def handle_event("view_report", %{"id" => id}, socket) do
-    case DeepResearch.ResearchOrchestrator.report_detail(id) do
+    case DeepResearch.ResearchEngine.report_detail(id) do
       {:ok, report} ->
         {:noreply, assign(socket, :active_report, report)}
 

@@ -30,7 +30,9 @@ defmodule ExAutoresearch.Research.Report do
         :max_sources,
         :organization_id,
         :category,
-        :tags
+        :tags,
+        :brief_id,
+        :run_version
       ]
 
       primary? true
@@ -103,12 +105,23 @@ defmodule ExAutoresearch.Research.Report do
     attribute :total_output_tokens, :integer, default: 0, public?: true
     attribute :llm_calls_count, :integer, default: 0, public?: true
 
+    # Brief linkage
+    attribute :brief_id, :uuid_v7, public?: true
+    attribute :run_version, :integer, default: 1, public?: true
+
     timestamps()
   end
 
   relationships do
     has_many :investigations, ExAutoresearch.Research.Investigation
+    has_many :claims, ExAutoresearch.Research.Claim
+    has_many :sources, ExAutoresearch.Research.Source
     belongs_to :organization, ExAutoresearch.Accounts.Organization
+
+    belongs_to :brief, ExAutoresearch.Research.Brief do
+      allow_nil? true
+      attribute_writable? true
+    end
   end
 
   identities do

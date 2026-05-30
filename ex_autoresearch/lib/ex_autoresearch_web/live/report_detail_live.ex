@@ -6,12 +6,15 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
   use ExAutoresearchWeb, :live_view
 
   alias ExAutoresearch.Research
+  alias ExAutoresearch.Research.Claim
   require Ash.Query
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    report = get_report(id)
+    org_id = socket.assigns[:current_org_id]
+    report = get_report(id, org_id)
     investigations = get_investigations(id)
+    claims = get_claims(id)
 
     html_body =
       if report && report.markdown_body do
@@ -28,6 +31,7 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
      socket
      |> assign(:report, format_report(report))
      |> assign(:investigations, investigations)
+     |> assign(:claims, claims)
      |> assign(:html_body, html_body)}
   end
 
@@ -123,6 +127,51 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
                 </ul>
               </footer>
             <% end %>
+
+            <section class="border-t border-base-300 px-6 py-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-base-content/60">
+                  Verified Claims
+                </h3>
+                <%= if @claims != [] do %>
+                  <div class="flex gap-2">
+                    <a
+                      id="export-claims-csv"
+                      href={~p"/reports/#{@report.id}/claims/csv"}
+                      download
+                      class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+                    >
+                      <.icon name="hero-arrow-down-tray" class="w-3 h-3" /> CSV
+                    </a>
+                    <a
+                      id="export-claims-json"
+                      href={~p"/reports/#{@report.id}/claims/json"}
+                      download
+                      class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+                    >
+                      <.icon name="hero-arrow-down-tray" class="w-3 h-3" /> JSON
+                    </a>
+                  </div>
+                <% end %>
+              </div>
+              <%= if @claims == [] do %>
+                <p class="text-sm text-base-content/50 py-4 text-center">
+                  No verified claims yet.
+                </p>
+              <% else %>
+                <ul class="space-y-2">
+                  <%= for claim <- @claims do %>
+                    <li id={"claim-#{claim.id}"} class="flex items-start gap-3 text-sm">
+                      <.grounding grounding={claim.grounding} />
+                      <span class="text-base-content/60 tabular-nums shrink-0">
+                        {Float.round(claim.confidence || 0.0, 2)}
+                      </span>
+                      <p class="min-w-0 flex-1">{claim.text}</p>
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
+            </section>
           </article>
         <% else %>
           <div class="card bg-base-100 border border-dashed border-base-300">
@@ -136,10 +185,17 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
     """
   end
 
-  defp get_report(id) do
+  defp get_report(id, nil) do
     case Ash.get(Research.Report, id) do
       {:ok, report} -> report
       _ -> nil
+    end
+  end
+
+  defp get_report(id, org_id) do
+    case Ash.get(Research.Report, id, tenant: org_id) do
+      {:ok, report} -> report
+      _ -> get_report(id, nil)
     end
   end
 
@@ -148,6 +204,15 @@ defmodule ExAutoresearchWeb.ReportDetailLive do
     |> Ash.Query.filter(report_id == ^report_id)
     |> Ash.Query.sort(inserted_at: :asc)
     |> Ash.read!()
+  end
+
+  defp get_claims(report_id) do
+    Claim
+    |> Ash.Query.filter(report_id == ^report_id)
+    |> Ash.Query.sort(order_index: :asc)
+    |> Ash.read!()
+  rescue
+    _ -> []
   end
 
   defp format_report(nil), do: nil

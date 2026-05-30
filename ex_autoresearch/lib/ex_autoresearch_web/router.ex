@@ -49,13 +49,17 @@ defmodule ExAutoresearchWeb.Router do
   scope "/", ExAutoresearchWeb do
     pipe_through [:browser, :require_auth]
 
+    get "/reports/:id/claims/:format", ExportController, :claims
+
     live_session :authenticated,
       on_mount: [{ExAutoresearchWeb.LiveAuth, :default}] do
       live "/", DashboardLive, :index
       live "/dashboard", DashboardLive, :index
       live "/templates", TemplateLive, :index
       live "/templates/:id", TemplateLive, :show
+      live "/briefs", BriefLive, :index
       live "/schedules", ScheduleLive, :index
+      live "/inbox", InboxLive, :index
       live "/audit", AuditLive, :index
       live "/mission", MissionControlLive, :index
       live "/settings", SettingsLive, :index

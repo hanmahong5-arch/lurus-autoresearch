@@ -18,6 +18,24 @@ defmodule ExAutoresearch.DeepResearch.SourcesBlock do
   alias ExAutoresearch.Research
 
   @doc """
+  Returns the ordered, 1-indexed list of completed investigations with non-nil URLs
+  for the given report, sorted by `inserted_at` ascending.
+
+  This is the single source of truth for source numbering — both `build/1` and the
+  synthesis step in the orchestrator use this function so inline citations always
+  match the appended footnote list.
+
+  Returns `[]` when no qualifying investigations exist.
+  """
+  @spec numbered_sources(Ash.Resource.record()) :: [{pos_integer(), Ash.Resource.record()}]
+  def numbered_sources(report) do
+    report.id
+    |> load_investigations()
+    |> Enum.with_index(1)
+    |> Enum.map(fn {inv, idx} -> {idx, inv} end)
+  end
+
+  @doc """
   Builds the sources markdown block for the given report.
 
   Queries all completed Investigations for `report.id` that have a non-nil URL,
@@ -28,18 +46,12 @@ defmodule ExAutoresearch.DeepResearch.SourcesBlock do
   """
   @spec build(Ash.Resource.record()) :: String.t()
   def build(report) do
-    investigations = load_investigations(report.id)
-
-    case investigations do
+    case numbered_sources(report) do
       [] ->
         ""
 
-      invs ->
-        lines =
-          invs
-          |> Enum.with_index(1)
-          |> Enum.map(fn {inv, idx} -> format_line(idx, inv) end)
-
+      pairs ->
+        lines = Enum.map(pairs, fn {idx, inv} -> format_line(idx, inv) end)
         "\n\n## Sources\n\n" <> Enum.join(lines, "\n")
     end
   end

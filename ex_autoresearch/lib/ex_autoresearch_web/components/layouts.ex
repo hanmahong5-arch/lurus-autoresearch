@@ -38,7 +38,7 @@ defmodule ExAutoresearchWeb.Layouts do
   attr :active_nav, :atom,
     default: nil,
     doc:
-      "which top-level nav entry to highlight (:dashboard | :templates | :schedules | :audit | :mission | :settings)"
+      "which top-level nav entry to highlight (:dashboard | :templates | :briefs | :schedules | :inbox | :audit | :mission | :settings)"
 
   attr :container, :string,
     default: "max-w-6xl",
@@ -68,7 +68,15 @@ defmodule ExAutoresearchWeb.Layouts do
             </li>
 
             <li>
+              <.nav_link to={~p"/briefs"} active={@active_nav == :briefs}>Briefs</.nav_link>
+            </li>
+
+            <li>
               <.nav_link to={~p"/schedules"} active={@active_nav == :schedules}>Schedules</.nav_link>
+            </li>
+
+            <li>
+              <.nav_link to={~p"/inbox"} active={@active_nav == :inbox}>Inbox</.nav_link>
             </li>
 
             <li>

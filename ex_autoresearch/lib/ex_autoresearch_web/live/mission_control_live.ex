@@ -31,7 +31,7 @@ defmodule ExAutoresearchWeb.MissionControlLive do
 
     {status, report_id} =
       try do
-        %{status: s, report_id: rid} = DeepResearch.ResearchOrchestrator.status()
+        %{status: s, report_id: rid} = DeepResearch.ResearchEngine.status()
         {s, rid}
       rescue
         _ -> {:idle, nil}
@@ -104,7 +104,7 @@ defmodule ExAutoresearchWeb.MissionControlLive do
           organization_id: org_id
         ]
 
-        :ok = DeepResearch.ResearchOrchestrator.start_research(params)
+        {:ok, _report} = DeepResearch.ResearchEngine.start(params)
 
         Audit.record!(:research_started, %{
           organization_id: org_id,
@@ -126,7 +126,7 @@ defmodule ExAutoresearchWeb.MissionControlLive do
   end
 
   def handle_event("intent:stop_research", _params, socket) do
-    :ok = DeepResearch.ResearchOrchestrator.stop_research()
+    :ok = DeepResearch.ResearchEngine.stop_research()
     socket = push_event(socket, "mc:agent", %{status: "idle", step: "Stopped", progress: 0})
     {:noreply, assign(socket, :status, :idle)}
   end

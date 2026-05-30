@@ -211,6 +211,36 @@ defmodule ExAutoresearchWeb.Badges do
 
   defp category_label(other), do: to_string(other)
 
+  # ── Claim.grounding ───────────────────────────────────────────────────
+
+  @doc """
+  Renders a Claim grounding badge.
+
+  Known values: `:grounded`, `:contradicted`, `:unsupported`, `:complementary`.
+  """
+  attr :grounding, :atom, required: true
+  attr :class, :string, default: nil
+
+  def grounding(assigns) do
+    ~H"""
+    <span class={["badge badge-sm", grounding_class(@grounding), @class]}>
+      {grounding_label(@grounding)}
+    </span>
+    """
+  end
+
+  defp grounding_class(:grounded), do: "badge-success"
+  defp grounding_class(:contradicted), do: "badge-error"
+  defp grounding_class(:unsupported), do: "badge-ghost"
+  defp grounding_class(:complementary), do: "badge-info"
+  defp grounding_class(_), do: "badge-ghost"
+
+  defp grounding_label(:grounded), do: "Grounded"
+  defp grounding_label(:contradicted), do: "Contradicted"
+  defp grounding_label(:unsupported), do: "Unsupported"
+  defp grounding_label(:complementary), do: "Complementary"
+  defp grounding_label(other), do: other |> to_string() |> String.capitalize()
+
   # ── Organization.plan ─────────────────────────────────────────────────
 
   @doc """

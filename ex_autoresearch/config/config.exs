@@ -14,7 +14,9 @@ config :ex_autoresearch, Oban,
   notifier: Oban.Notifiers.PG,
   queues: [default: 10, research: 5],
   repo: ExAutoresearch.Repo,
-  plugins: [{Oban.Plugins.Cron, crontab: []}]
+  plugins: [
+    {Oban.Plugins.Cron, crontab: [{"* * * * *", ExAutoresearch.Workers.BriefScheduleWorker}]}
+  ]
 
 config :ash,
   allow_forbidden_field_for_relationships_by_default?: true,
@@ -111,6 +113,7 @@ config :phoenix, :json_library, Jason
 
 config :ex_autoresearch, :scraper, ExAutoresearch.DeepResearch.Scraper.Native
 config :ex_autoresearch, :crawl4ai, base_url: "http://localhost:11235"
+config :ex_autoresearch, :research, max_threads: 5, max_content_chars: 8000
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

@@ -128,14 +128,15 @@ defmodule ExAutoresearchWeb.TemplateLive do
     case Ash.get(Research.Template, id) do
       {:ok, template} ->
         # Start a research session from the template
-        DeepResearch.ResearchOrchestrator.start_research(
-          query: template.query_template,
-          title: template.name,
-          model: template.model,
-          max_depth: template.max_depth,
-          max_sources: template.max_sources,
-          organization_id: template.organization_id
-        )
+        {:ok, _} =
+          DeepResearch.ResearchEngine.start(
+            query: template.query_template,
+            title: template.name,
+            model: template.model,
+            max_depth: template.max_depth,
+            max_sources: template.max_sources,
+            organization_id: template.organization_id
+          )
 
         {:noreply,
          socket
