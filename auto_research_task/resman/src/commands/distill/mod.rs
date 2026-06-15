@@ -183,7 +183,10 @@ pub use render::{render_cross_markdown, render_html, render_markdown};
 // Builder — single-run
 // ---------------------------------------------------------------------------
 
-pub fn build_distill(run: &RunLog) -> DistillReport {
+pub fn build_distill(
+    run: &RunLog,
+    usage: Option<&crate::commands::usage::TagFunnel>,
+) -> DistillReport {
     let tag = run.run_tag.clone();
     let generated_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
@@ -259,7 +262,7 @@ pub fn build_distill(run: &RunLog) -> DistillReport {
 
     // --- suggestions ---
     let suggestions =
-        suggest::build_suggestions(run, &failure_signals, total, crash, best_exp, &tag);
+        suggest::build_suggestions(run, &failure_signals, total, crash, best_exp, &tag, usage);
 
     // --- branch verdicts (non-best branches) ---
     let best_chain: HashSet<String> = lineage.iter().map(|e| e.commit.clone()).collect();
@@ -624,7 +627,9 @@ pub fn cmd_distill(
     let run = load_run_or_suggest(data_dir, tag)?;
     let all_runs = load_all_runs(data_dir).unwrap_or_default();
 
-    let mut report = build_distill(&run);
+    let events = crate::commands::usage::load_events(data_dir);
+    let funnel = crate::commands::usage::tag_funnel(&events, tag);
+    let mut report = build_distill(&run, Some(&funnel));
     report.continues_from = find_continuation(&run, &all_runs);
 
     // Write HTML artifact if requested.
@@ -684,7 +689,9 @@ pub fn distill_to_string(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("no such tag: {tag}"))?;
     let all_runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
-    let mut report = build_distill(&run);
+    let events = crate::commands::usage::load_events(data_dir);
+    let funnel = crate::commands::usage::tag_funnel(&events, tag);
+    let mut report = build_distill(&run, Some(&funnel));
     report.continues_from = find_continuation(&run, &all_runs);
     if json {
         serde_json::to_string_pretty(&report).map_err(|e| e.to_string())

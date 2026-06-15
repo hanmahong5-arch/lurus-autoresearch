@@ -46,7 +46,7 @@ fn make_run(tag: &str, exps: Vec<Experiment>) -> RunLog {
 #[test]
 fn build_distill_empty_run() {
     let run = make_run("empty", vec![]);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert_eq!(report.summary.total, 0);
     assert!(report.best.is_none());
     assert!(report.lineage.is_empty());
@@ -69,7 +69,7 @@ fn build_distill_groups_signals() {
             make_exp("a4", 0.0, Status::Crash, "nan", None, vec![Signal::NanLoss]),
         ],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert_eq!(report.failure_signals.get("oom").map(|v| v.len()), Some(3));
     assert_eq!(
         report.failure_signals.get("nan_loss").map(|v| v.len()),
@@ -90,7 +90,7 @@ fn build_distill_lineage_to_best() {
             make_exp("a3", 0.7, Status::Best, "best", Some("a2"), vec![]),
         ],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     // Lineage should be [a0, a1, a2, a3] — root to best.
     assert_eq!(report.lineage.len(), 4, "expected 4 lineage entries");
     assert_eq!(report.lineage[0].commit, "a0");
@@ -114,7 +114,7 @@ fn render_markdown_contains_sections() {
             ),
         ],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let md = render_markdown(&report);
     assert!(md.contains("## Best result"), "missing '## Best result'");
     assert!(
@@ -146,7 +146,7 @@ fn render_html_contains_title_and_tag() {
             vec![],
         )],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let html = render_html(&report);
     assert!(
         html.contains("my-tag"),
@@ -162,7 +162,7 @@ fn render_html_contains_title_and_tag() {
 #[test]
 fn render_html_empty_run_has_no_best_card_but_still_renders() {
     let run = make_run("empty-run", vec![]);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let html = render_html(&report);
     // Should contain the "no best" fallback text
     assert!(
@@ -190,7 +190,7 @@ fn render_html_with_signals_groups_by_kind() {
             make_exp("c3", 0.0, Status::Crash, "nan", None, vec![Signal::NanLoss]),
         ],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let html = render_html(&report);
     assert!(
         html.contains("<details>"),
@@ -214,7 +214,7 @@ fn render_html_escapes_html_in_description() {
             vec![],
         )],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let html = render_html(&report);
     assert!(
         html.contains("&lt;script&gt;"),
@@ -241,7 +241,7 @@ fn suggestions_include_unverified_best_when_best_is_keep() {
             make_exp("bbb22222", 0.8, Status::Best, "improved", None, vec![]),
         ],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let has_verify_hint = report
         .suggestions
         .iter()
@@ -274,7 +274,7 @@ fn suggestions_prefer_bulk_unverified_prompt_over_single_when_no_verified() {
         })
         .collect();
     let run = make_run("bulktest", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let bulk = report
         .suggestions
         .iter()
@@ -400,7 +400,7 @@ fn render_html_no_external_refs() {
         "netcheck",
         vec![make_exp("a1", 0.9, Status::Best, "best one", None, vec![])],
     );
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let html = render_html(&report);
     assert!(!html.contains("http://"));
     assert!(!html.contains("https://"));
@@ -451,7 +451,7 @@ fn suggestions_include_stagnation_when_no_improvement_in_8_runs() {
         exps.push(e);
     }
     let run = make_run("stalemate", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
 
     let has_stagnation = report
         .suggestions
@@ -482,7 +482,7 @@ fn suggestions_no_stagnation_under_threshold() {
         })
         .collect();
     let run = make_run("small", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert!(
         !report.suggestions.iter().any(|s| s.contains("stagnant")),
         "should not fire stagnation under threshold; got: {:?}",
@@ -517,7 +517,7 @@ fn suggestions_include_keep_but_reverted_when_verified_surpasses_keep_ancestor()
         ),
     ];
     let run = make_run("ladder", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
 
     let has_under_explored = report.suggestions.iter().any(|s| {
         s.contains("Under-explored")
@@ -548,7 +548,7 @@ fn branch_verdicts_converged_for_keep_terminal() {
         ),
     ];
     let run = make_run("conv", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert_eq!(report.branch_verdicts.len(), 1);
     let v = &report.branch_verdicts[0];
     assert_eq!(v.root_commit, "sideR");
@@ -575,7 +575,7 @@ fn branch_verdicts_broke_with_signal_note() {
         ),
     ];
     let run = make_run("broke", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert_eq!(report.branch_verdicts.len(), 1);
     let v = &report.branch_verdicts[0];
     assert_eq!(v.verdict, "broke");
@@ -599,7 +599,7 @@ fn branch_verdicts_abandoned_for_discard_terminal() {
         ),
     ];
     let run = make_run("abandon", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert_eq!(report.branch_verdicts.len(), 1);
     let v = &report.branch_verdicts[0];
     assert_eq!(v.verdict, "abandoned");
@@ -615,7 +615,7 @@ fn branch_verdicts_empty_when_all_on_best_chain() {
         make_exp("c", 0.90, Status::Best, "winner", Some("b"), vec![]),
     ];
     let run = make_run("linear", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert!(
         report.branch_verdicts.is_empty(),
         "all experiments on best lineage; expected no other branches, got: {:?}",
@@ -691,10 +691,13 @@ fn continuation_link_none_when_no_external_parents() {
 /// Markdown header includes the continuation line when set.
 #[test]
 fn render_markdown_includes_continuation_line() {
-    let mut report = build_distill(&make_run(
-        "today",
-        vec![make_exp("c1", 0.99, Status::Keep, "x", None, vec![])],
-    ));
+    let mut report = build_distill(
+        &make_run(
+            "today",
+            vec![make_exp("c1", 0.99, Status::Keep, "x", None, vec![])],
+        ),
+        None,
+    );
     report.continues_from = Some(super::ContinuationLink {
         from_tag: "yesterday".to_string(),
         from_commit: "bbb222deadbeef".to_string(),
@@ -714,7 +717,7 @@ fn render_markdown_includes_branch_verdicts_section() {
         make_exp("sideR", 0.0, Status::Crash, "oom", None, vec![Signal::Oom]),
     ];
     let run = make_run("mix", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     let md = super::render::render_markdown(&report);
     assert!(
         md.contains("## Other branches"),
@@ -735,7 +738,7 @@ fn suggestions_no_keep_reverted_without_verified() {
         make_exp("c", 0.97, Status::Keep, "tweak", Some("b"), vec![]),
     ];
     let run = make_run("nover", exps);
-    let report = build_distill(&run);
+    let report = build_distill(&run, None);
     assert!(
         !report
             .suggestions
@@ -743,5 +746,165 @@ fn suggestions_no_keep_reverted_without_verified() {
             .any(|s| s.contains("Under-explored")),
         "should not fire keep-but-reverted without any verified node; got: {:?}",
         report.suggestions
+    );
+}
+
+// ── usage-aware distill tests ────────────────────────────────────────────────
+
+fn make_funnel(added: u64, verified: u64, distilled: u64) -> crate::commands::usage::TagFunnel {
+    crate::commands::usage::TagFunnel {
+        added,
+        verified,
+        distilled,
+    }
+}
+
+fn base_run() -> RunLog {
+    make_run(
+        "tag1",
+        vec![make_exp(
+            "abc1",
+            0.9,
+            Status::Keep,
+            "baseline",
+            None,
+            vec![],
+        )],
+    )
+}
+
+/// Fires when added>=10 and verified==0.
+#[test]
+fn usage_suggestion_fires_at_threshold() {
+    let run = base_run();
+    let funnel = make_funnel(10, 0, 0);
+    let report = build_distill(&run, Some(&funnel));
+    let has = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("10 experiments added via MCP") && s.contains("resman verify"));
+    assert!(
+        has,
+        "expected usage suggestion for added=10, verified=0; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Does NOT fire when added==9 (below threshold).
+#[test]
+fn usage_suggestion_does_not_fire_below_threshold() {
+    let run = base_run();
+    let funnel = make_funnel(9, 0, 0);
+    let report = build_distill(&run, Some(&funnel));
+    let has = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("added via MCP"));
+    assert!(
+        !has,
+        "should not fire when added=9; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Does NOT fire when verified>=1 (gap already closed).
+#[test]
+fn usage_suggestion_does_not_fire_when_verified_nonzero() {
+    let run = base_run();
+    let funnel = make_funnel(20, 1, 0);
+    let report = build_distill(&run, Some(&funnel));
+    let has = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("added via MCP"));
+    assert!(
+        !has,
+        "should not fire when verified=1; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// build_distill with None is identical to today — does NOT contain the new string.
+#[test]
+fn usage_suggestion_absent_when_usage_none() {
+    let run = base_run();
+    let report = build_distill(&run, None);
+    let has = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("added via MCP"));
+    assert!(
+        !has,
+        "None usage must not produce MCP suggestion; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// tag_funnel counts correctly for the right tag and ignores others.
+#[test]
+fn tag_funnel_counts_for_correct_tag_only() {
+    use crate::commands::usage::{Event, tag_funnel};
+    use serde_json::json;
+
+    let events: Vec<Event> = vec![
+        Event {
+            ts: "t".into(),
+            tool: "resman_add_experiment".into(),
+            args: json!({"tag": "mytag"}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 0,
+        },
+        Event {
+            ts: "t".into(),
+            tool: "resman_add_experiment".into(),
+            args: json!({"tag": "mytag"}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 0,
+        },
+        Event {
+            ts: "t".into(),
+            tool: "resman_verify".into(),
+            args: json!({"tag": "mytag"}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 0,
+        },
+        // Different tag — must be ignored.
+        Event {
+            ts: "t".into(),
+            tool: "resman_add_experiment".into(),
+            args: json!({"tag": "other"}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 0,
+        },
+        // Unknown tool — must be ignored.
+        Event {
+            ts: "t".into(),
+            tool: "resman_best".into(),
+            args: json!({"tag": "mytag"}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 0,
+        },
+    ];
+
+    let f = tag_funnel(&events, "mytag");
+    assert_eq!(f.added, 2, "added should be 2");
+    assert_eq!(f.verified, 1, "verified should be 1");
+    assert_eq!(f.distilled, 0, "distilled should be 0");
+}
+
+/// load_events on a missing file returns empty Vec (never panics).
+#[test]
+fn load_events_missing_file_returns_empty() {
+    use crate::commands::usage::load_events;
+    let dir = tempfile::tempdir().unwrap();
+    let events = load_events(dir.path());
+    assert!(
+        events.is_empty(),
+        "expected empty Vec for missing usage.jsonl"
     );
 }

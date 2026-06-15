@@ -13,6 +13,7 @@ pub(super) fn build_suggestions(
     crash: usize,
     best_exp: Option<&Experiment>,
     tag: &str,
+    usage: Option<&crate::commands::usage::TagFunnel>,
 ) -> Vec<String> {
     let mut suggestions: Vec<String> = Vec::new();
 
@@ -43,6 +44,19 @@ pub(super) fn build_suggestions(
                  `resman verify {sc} --value <new>` to promote to verified status before you rely on it."
             ));
         }
+    }
+
+    // Usage-grounded verified-gap: MCP telemetry shows many adds but zero verifies.
+    if let Some(f) = usage
+        && f.added >= 10
+        && f.verified == 0
+    {
+        suggestions.push(format!(
+            "Agent usage shows {} experiments added via MCP for this tag but zero verify calls \
+             — a reproducibility gap. Re-run your top candidates through `resman verify` before \
+             trusting them.",
+            f.added
+        ));
     }
 
     let oom_count = failure_signals.get("oom").map(|v| v.len()).unwrap_or(0);

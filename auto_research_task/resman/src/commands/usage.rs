@@ -37,14 +37,59 @@ pub struct UsageOpts {
     pub format: OutputFormat,
 }
 
+/// Per-call telemetry event (crate-visible so distill can read usage.jsonl).
 #[derive(Debug, Clone)]
-struct Event {
-    ts: String,
-    tool: String,
-    args: Value,
-    ok: bool,
-    duration_ms: u64,
-    result_chars: u64,
+pub(crate) struct Event {
+    pub(crate) ts: String,
+    pub(crate) tool: String,
+    pub(crate) args: Value,
+    pub(crate) ok: bool,
+    pub(crate) duration_ms: u64,
+    pub(crate) result_chars: u64,
+}
+
+/// Adoption-funnel counts for a single tag.
+pub(crate) struct TagFunnel {
+    pub(crate) added: u64,
+    pub(crate) verified: u64,
+    /// Included for completeness/tests; not yet used by distill heuristics.
+    #[allow(dead_code)]
+    pub(crate) distilled: u64,
+}
+
+/// Count funnel events for exactly one tag from a pre-loaded event slice.
+/// Matches the same tool→field mapping used by `build_funnel`.
+pub(crate) fn tag_funnel(events: &[Event], tag: &str) -> TagFunnel {
+    let mut added = 0u64;
+    let mut verified = 0u64;
+    let mut distilled = 0u64;
+
+    for e in events {
+        let event_tag = e.args.get("tag").and_then(|v| v.as_str()).unwrap_or("_");
+        if event_tag != tag {
+            continue;
+        }
+        match e.tool.as_str() {
+            "resman_add_experiment" => added += 1,
+            "resman_verify" => verified += 1,
+            "resman_distill" => distilled += 1,
+            _ => {}
+        }
+    }
+
+    TagFunnel {
+        added,
+        verified,
+        distilled,
+    }
+}
+
+/// Load all events from `<data_dir>/usage.jsonl` with no filter applied.
+/// Graceful: missing file → empty Vec; unparseable lines → skipped; never panics.
+pub(crate) fn load_events(data_dir: &Path) -> Vec<Event> {
+    let path = data_dir.join("usage.jsonl");
+    // Reuse the private loader with no filters; ignore any error (graceful).
+    load_events_inner(&path, None, None).unwrap_or_default()
 }
 
 enum Flavor {
@@ -56,7 +101,7 @@ enum Flavor {
 
 pub fn cmd_usage(data_dir: &Path, opts: UsageOpts) -> Result<()> {
     let path = data_dir.join("usage.jsonl");
-    let events = load_events(&path, opts.tool.as_deref(), opts.since.as_deref())?;
+    let events = load_events_inner(&path, opts.tool.as_deref(), opts.since.as_deref())?;
 
     let flavor = if opts.by_tool {
         Flavor::ByTool
@@ -76,7 +121,7 @@ pub fn cmd_usage(data_dir: &Path, opts: UsageOpts) -> Result<()> {
     }
 }
 
-fn load_events(
+fn load_events_inner(
     path: &Path,
     tool_filter: Option<&str>,
     since_filter: Option<&str>,
@@ -605,7 +650,7 @@ mod tests {
 
         // Load events and check funnel
         let path = dir.path().join("usage.jsonl");
-        let events = load_events(&path, None, None).unwrap();
+        let events = load_events_inner(&path, None, None).unwrap();
         let funnel = build_funnel(&events);
         // Find the "x" tag entry
         let x_entry = funnel
@@ -641,7 +686,7 @@ mod tests {
         write_jsonl(dir.path(), &line_refs);
 
         let path = dir.path().join("usage.jsonl");
-        let events = load_events(&path, None, None).unwrap();
+        let events = load_events_inner(&path, None, None).unwrap();
         let stats = build_tool_stats(&events);
         assert_eq!(stats.len(), 1);
         let s = &stats[0];
@@ -665,7 +710,7 @@ mod tests {
         write_jsonl(dir.path(), lines);
 
         let path = dir.path().join("usage.jsonl");
-        let events = load_events(&path, None, None).unwrap();
+        let events = load_events_inner(&path, None, None).unwrap();
         let errors: Vec<&Event> = events.iter().filter(|e| !e.ok).collect();
         assert_eq!(errors.len(), 2, "should have exactly 2 error events");
     }
@@ -689,7 +734,7 @@ mod tests {
         write_jsonl(dir.path(), &line_refs);
 
         let path = dir.path().join("usage.jsonl");
-        let events = load_events(&path, None, None).unwrap();
+        let events = load_events_inner(&path, None, None).unwrap();
 
         let mut counts: HashMap<String, usize> = HashMap::new();
         for pair in events.windows(2) {
@@ -716,11 +761,129 @@ mod tests {
         write_jsonl(dir.path(), lines);
 
         let path = dir.path().join("usage.jsonl");
-        let events = load_events(&path, Some("resman_best"), None).unwrap();
+        let events = load_events_inner(&path, Some("resman_best"), None).unwrap();
         assert_eq!(events.len(), 2, "tool filter should yield exactly 2 events");
         assert!(
             events.iter().all(|e| e.tool == "resman_best"),
             "all events should be resman_best"
         );
+    }
+
+    #[test]
+    fn tag_funnel_counts_correct_tag() {
+        use serde_json::json;
+        let events = vec![
+            Event {
+                ts: "t".into(),
+                tool: "resman_add_experiment".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_add_experiment".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_verify".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_distill".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            // Different tag — must not count.
+            Event {
+                ts: "t".into(),
+                tool: "resman_add_experiment".into(),
+                args: json!({"tag": "other"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+        ];
+        let f = tag_funnel(&events, "x");
+        assert_eq!(f.added, 2);
+        assert_eq!(f.verified, 1);
+        assert_eq!(f.distilled, 1);
+    }
+
+    #[test]
+    fn tag_funnel_ignores_unknown_tools() {
+        use serde_json::json;
+        let events = vec![
+            Event {
+                ts: "t".into(),
+                tool: "resman_best".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_search".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+        ];
+        let f = tag_funnel(&events, "x");
+        assert_eq!(f.added, 0);
+        assert_eq!(f.verified, 0);
+        assert_eq!(f.distilled, 0);
+    }
+
+    #[test]
+    fn build_funnel_output_unchanged_with_tag_funnel() {
+        // Verify build_funnel still assembles correct JSON rows after refactor.
+        use serde_json::json;
+        let events = vec![
+            Event {
+                ts: "t".into(),
+                tool: "resman_add_experiment".into(),
+                args: json!({"tag": "a"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_verify".into(),
+                args: json!({"tag": "a"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_distill".into(),
+                args: json!({"tag": "b"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+        ];
+        let funnel = build_funnel(&events);
+        let a = funnel.iter().find(|e| e["tag"] == "a").unwrap();
+        assert_eq!(a["added"].as_u64().unwrap(), 1);
+        assert_eq!(a["verified"].as_u64().unwrap(), 1);
+        assert_eq!(a["distilled"].as_u64().unwrap(), 0);
+        let b = funnel.iter().find(|e| e["tag"] == "b").unwrap();
+        assert_eq!(b["distilled"].as_u64().unwrap(), 1);
     }
 }
