@@ -13,10 +13,7 @@ fn resman(home: &Path) -> Command {
 }
 
 fn sample_tsv() -> &'static str {
-    concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/examples/sample-results.tsv"
-    )
+    concat!(env!("CARGO_MANIFEST_DIR"), "/examples/sample-results.tsv")
 }
 
 /// Helper: init + import sample data into the given home dir.
@@ -61,9 +58,9 @@ fn best_value_format_is_pure_float() {
     );
 
     // Must parse as f64.
-    trimmed.parse::<f64>().unwrap_or_else(|_| {
-        panic!("`best -f value` output {:?} is not a valid f64", trimmed)
-    });
+    trimmed
+        .parse::<f64>()
+        .unwrap_or_else(|_| panic!("`best -f value` output {:?} is not a valid f64", trimmed));
 }
 
 // ── Test 2 ───────────────────────────────────────────────────────────────────
@@ -151,12 +148,14 @@ fn list_tsv_has_stable_header() {
         .clone();
 
     let text = String::from_utf8(output).unwrap();
-    let first_line = text.lines().next().expect("TSV output must have at least one line");
+    let first_line = text
+        .lines()
+        .next()
+        .expect("TSV output must have at least one line");
 
     // Lock the exact header.
     assert_eq!(
-        first_line,
-        "commit\tval_bpb\tmemory_gb\tstatus\tdescription",
+        first_line, "commit\tval_bpb\tmemory_gb\tstatus\tdescription",
         "TSV header changed — public contract broken"
     );
 }
