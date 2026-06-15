@@ -19,6 +19,7 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
   alias ExAutoresearch.Research.{Claim, Source}
 
   @verify_timeout :timer.seconds(90)
+  @max_contradiction_claims 12
 
   @doc """
   Verifies the given `body` against `investigations`, persists claims, and
@@ -85,7 +86,14 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
         lines =
           Enum.map_join(flagged, "\n", fn c ->
             pct = Float.round((c.confidence || 0.0) * 100, 0) |> trunc()
-            "- **#{String.capitalize(to_string(c.grounding))}** (#{pct}%): #{c.text}"
+
+            suffix =
+              if c.grounding == :contradicted and
+                   not Enum.empty?(List.wrap(c[:contradicting_source_ids])),
+                 do: " (sources disagree)",
+                 else: ""
+
+            "- **#{String.capitalize(to_string(c.grounding))}** (#{pct}%): #{c.text}#{suffix}"
           end)
 
         "\n\n" <> lines
@@ -104,6 +112,7 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
     else
       claims_data = extract_claims(report, body, numbered)
       grounded_claims = ground_claims(report, claims_data, numbered)
+      grounded_claims = detect_contradictions(report, grounded_claims, numbered)
       persisted = persist_claims(report, grounded_claims, numbered)
       footer = verification_footer(persisted)
       broadcast_verified(report, persisted)
@@ -165,7 +174,12 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
     evidence =
       Enum.map_join(numbered, "\n\n", fn {idx, inv} ->
         excerpt =
-          String.slice(inv.findings || "", 0, Application.get_env(:ex_autoresearch, :evidence_max_chars, 2000))
+          String.slice(
+            inv.findings || "",
+            0,
+            Application.get_env(:ex_autoresearch, :evidence_max_chars, 2000)
+          )
+
         "[#{idx}] #{inv.query}\n#{excerpt}"
       end)
 
@@ -224,6 +238,111 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
     end)
   end
 
+  # Step 2b: Detect cross-source contradictions via LLM; graceful — returns claims unchanged on failure
+  defp detect_contradictions(_report, [], _numbered), do: []
+
+  defp detect_contradictions(report, claims, numbered) do
+    candidates =
+      claims
+      |> Enum.filter(fn c -> length(List.wrap(c[:citations])) >= 2 end)
+      |> Enum.take(@max_contradiction_claims)
+
+    if candidates == [] do
+      claims
+    else
+      idx_to_inv = Map.new(numbered, fn {idx, inv} -> {idx, inv} end)
+      max_chars = Application.get_env(:ex_autoresearch, :evidence_max_chars, 2000)
+
+      candidates_block =
+        Enum.map_join(candidates, "\n", fn c ->
+          source_excerpts =
+            c.citations
+            |> List.wrap()
+            |> Enum.map(fn idx ->
+              inv = Map.get(idx_to_inv, idx)
+              excerpt = String.slice((inv && inv.findings) || "", 0, max_chars)
+              "[#{idx}] #{(inv && inv.query) || "unknown"}: #{excerpt}"
+            end)
+            |> Enum.join("\n")
+
+          "order_index=#{c.order_index}: #{c.text}\nSources cited:\n#{source_excerpts}"
+        end)
+
+      prompt = """
+      You are a contradiction detector. For each claim below, determine whether the SPECIFIC NUMBERED SOURCES cited for that claim directly disagree with each other (not whether the claim is right or wrong overall).
+
+      Claims with their per-source evidence:
+      #{candidates_block}
+
+      Return a JSON array ONLY (no prose, no markdown fences):
+      [{"index": <order_index>, "contradicting_sources": [<n>, <n>], "explanation": "..."}, ...]
+
+      Only include entries where at least 2 source numbers directly contradict each other.
+      If no contradiction exists for a claim, omit it from the array.
+      """
+
+      with {:ok, raw} <-
+             LLMClient.complete(prompt,
+               tier: :main,
+               timeout: @verify_timeout,
+               report_id: report.id
+             ),
+           {:ok, decoded} when is_list(decoded) <- parse_json_array(raw) do
+        apply_contradictions(claims, decoded, numbered, report.id)
+      else
+        _ ->
+          Logger.warning("[Verifier] Contradiction detection failed for report #{report.id}")
+          claims
+      end
+    end
+  end
+
+  @doc """
+  Pure function: merges contradiction detection results into the claims list.
+
+  For each decoded item with a valid integer `index` and at least 2
+  `contradicting_sources`, finds the matching claim by `order_index`, sets
+  `grounding: :contradicted` and `contradicting_source_ids` to the resolved
+  source UUIDs (nils dropped). Claims not referenced are returned unchanged.
+  """
+  @spec apply_contradictions(list(map()), list(map()), [{integer(), map()}], binary()) ::
+          list(map())
+  def apply_contradictions(claims, decoded, numbered, report_id) do
+    idx_to_inv = Map.new(numbered, fn {idx, inv} -> {idx, inv} end)
+
+    updates =
+      Enum.reduce(decoded, %{}, fn item, acc ->
+        order_index = Map.get(item, "index")
+        sources = Map.get(item, "contradicting_sources", []) |> List.wrap()
+
+        if is_integer(order_index) and length(sources) >= 2 do
+          source_ids =
+            sources
+            |> Enum.map(fn n ->
+              inv = Map.get(idx_to_inv, n)
+              resolve_source_id(report_id, inv && inv.url)
+            end)
+            |> Enum.reject(&is_nil/1)
+
+          Map.put(acc, order_index, source_ids)
+        else
+          acc
+        end
+      end)
+
+    Enum.map(claims, fn claim ->
+      case Map.get(updates, claim.order_index) do
+        nil ->
+          claim
+
+        source_ids ->
+          claim
+          |> Map.put(:grounding, :contradicted)
+          |> Map.put(:contradicting_source_ids, source_ids)
+      end
+    end)
+  end
+
   # Step 3: Persist Claim rows; one bad row must not abort
   defp persist_claims(report, claims, numbered) do
     idx_to_inv = Map.new(numbered, fn {idx, inv} -> {idx, inv} end)
@@ -248,7 +367,8 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
             confidence: claim.confidence,
             origin_subquery: origin_subquery,
             claim_hash: hash,
-            order_index: claim.order_index
+            order_index: claim.order_index,
+            contradicting_source_ids: claim[:contradicting_source_ids]
           },
           action: :create
         )
@@ -258,7 +378,8 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
           grounding: claim.grounding,
           confidence: claim.confidence,
           text: claim.text,
-          order_index: claim.order_index
+          order_index: claim.order_index,
+          contradicting_source_ids: claim[:contradicting_source_ids]
         }
       rescue
         e ->
@@ -268,7 +389,8 @@ defmodule ExAutoresearch.DeepResearch.Verifier do
             grounding: claim.grounding,
             confidence: claim.confidence || 0.0,
             text: claim.text,
-            order_index: claim.order_index
+            order_index: claim.order_index,
+            contradicting_source_ids: claim[:contradicting_source_ids]
           }
       end
     end)

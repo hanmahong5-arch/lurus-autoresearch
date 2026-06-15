@@ -57,6 +57,80 @@ defmodule ExAutoresearch.DeepResearch.VerifierTest do
     end
   end
 
+  describe "apply_contradictions/4" do
+    test "flips matched claim to :contradicted with source ids" do
+      # numbered entries whose urls will resolve to source uuids — but since
+      # resolve_source_id needs a real DB, we pass a report_id that won't find
+      # anything, so source_ids resolve to nil and get dropped. We verify the
+      # grounding flip instead.
+      numbered = [
+        {1, %{url: "http://source-1.example", query: "q1", findings: "f1"}},
+        {2, %{url: "http://source-2.example", query: "q2", findings: "f2"}}
+      ]
+
+      claims = [
+        %{
+          order_index: 0,
+          text: "Claim zero",
+          citations: [1, 2],
+          grounding: :grounded,
+          confidence: 0.9
+        },
+        %{
+          order_index: 1,
+          text: "Claim one",
+          citations: [1],
+          grounding: :grounded,
+          confidence: 0.8
+        }
+      ]
+
+      decoded = [
+        %{"index" => 0, "contradicting_sources" => [1, 2], "explanation" => "they disagree"}
+      ]
+
+      result = Verifier.apply_contradictions(claims, decoded, numbered, "fake-report-id")
+
+      # Claim 0 flips to contradicted
+      claim_0 = Enum.find(result, &(&1.order_index == 0))
+      assert claim_0.grounding == :contradicted
+      # source_ids are nil because no DB in pure unit test, so they get dropped
+      assert claim_0[:contradicting_source_ids] == []
+
+      # Claim 1 not referenced — unchanged
+      claim_1 = Enum.find(result, &(&1.order_index == 1))
+      assert claim_1.grounding == :grounded
+    end
+
+    test "claim with fewer than 2 contradicting_sources is not flipped" do
+      numbered = [{1, %{url: "http://x.example", query: "q", findings: "f"}}]
+
+      claims = [
+        %{order_index: 0, text: "Claim", citations: [1], grounding: :grounded, confidence: 0.8}
+      ]
+
+      # only 1 source — should be ignored
+      decoded = [%{"index" => 0, "contradicting_sources" => [1], "explanation" => "only one"}]
+
+      result = Verifier.apply_contradictions(claims, decoded, numbered, "fake-report-id")
+
+      claim_0 = Enum.find(result, &(&1.order_index == 0))
+      assert claim_0.grounding == :grounded
+    end
+
+    test "empty decoded list returns claims unchanged" do
+      numbered = [{1, %{url: "http://x.example", query: "q", findings: "f"}}]
+
+      claims = [
+        %{order_index: 0, text: "Claim A", citations: [1], grounding: :grounded, confidence: 0.9}
+      ]
+
+      result = Verifier.apply_contradictions(claims, [], numbered, "fake-report-id")
+
+      assert result == claims
+    end
+  end
+
   describe "verification_footer/1" do
     test "includes the tally line" do
       claims = [

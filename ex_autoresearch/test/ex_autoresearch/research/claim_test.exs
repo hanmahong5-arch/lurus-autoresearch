@@ -23,6 +23,46 @@ defmodule ExAutoresearch.Research.ClaimTest do
     )
   end
 
+  describe "Claim contradicting_source_ids" do
+    test "create with contradicting_source_ids round-trips correctly" do
+      tenant_id = setup_tenant("contra_ids")
+      report = create_report(tenant_id)
+
+      id1 = Ash.UUIDv7.generate()
+      id2 = Ash.UUIDv7.generate()
+
+      claim =
+        Ash.create!(
+          Claim,
+          %{
+            report_id: report.id,
+            text: "Contradicted claim",
+            grounding: :contradicted,
+            contradicting_source_ids: [id1, id2]
+          },
+          action: :create
+        )
+
+      reloaded = Ash.get!(Claim, claim.id)
+      assert reloaded.contradicting_source_ids == [id1, id2]
+    end
+
+    test "create without contradicting_source_ids reads back nil (back-compat)" do
+      tenant_id = setup_tenant("contra_nil")
+      report = create_report(tenant_id)
+
+      claim =
+        Ash.create!(
+          Claim,
+          %{report_id: report.id, text: "No contradiction data"},
+          action: :create
+        )
+
+      reloaded = Ash.get!(Claim, claim.id)
+      assert is_nil(reloaded.contradicting_source_ids)
+    end
+  end
+
   describe "Claim grounding" do
     test "grounding defaults to :unsupported when not provided" do
       tenant_id = setup_tenant("default_grounding")

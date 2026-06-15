@@ -27,7 +27,8 @@ defmodule ExAutoresearch.Research.Claim do
         :confidence,
         :origin_subquery,
         :claim_hash,
-        :order_index
+        :order_index,
+        :contradicting_source_ids
       ]
     end
   end
@@ -49,6 +50,8 @@ defmodule ExAutoresearch.Research.Claim do
     attribute :origin_subquery, :string, public?: true
     attribute :claim_hash, :string, public?: true
     attribute :order_index, :integer, public?: true
+
+    attribute :contradicting_source_ids, {:array, :uuid_v7}, public?: true
 
     timestamps()
   end

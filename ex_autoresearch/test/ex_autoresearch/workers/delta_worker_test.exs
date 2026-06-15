@@ -215,6 +215,25 @@ defmodule ExAutoresearch.Workers.DeltaWorkerTest do
       assert result.contradicted_count == 1
     end
 
+    test "to_claims with grounding :contradicted increments contradicted_count" do
+      from_claims = []
+
+      to_claims = [
+        %{
+          claim_hash: "contra_cross_src",
+          text: "Sources disagree on this finding",
+          grounding: :contradicted,
+          contradicting_source_ids: ["id-a", "id-b"]
+        }
+      ]
+
+      result = DeltaWorker.diff_claims(from_claims, to_claims)
+
+      assert length(result.added) == 1
+      assert result.contradicted_count == 1
+      assert hd(result.added).grounding == :contradicted
+    end
+
     test "each claim used once in greedy matching" do
       from_claims = [
         %{
