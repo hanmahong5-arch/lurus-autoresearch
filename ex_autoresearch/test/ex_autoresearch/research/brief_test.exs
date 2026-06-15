@@ -151,6 +151,36 @@ defmodule ExAutoresearch.Research.BriefTest do
     end
   end
 
+  describe "cross-tenant isolation" do
+    test "reading with org_b tenant does not return org_a's brief" do
+      org_a_id = setup_tenant("iso_read_a")
+      org_b_id = setup_tenant("iso_read_b")
+
+      brief_a = create_brief(org_a_id)
+
+      # org_b reads should return empty
+      results_for_b = Ash.read!(Brief, tenant: org_b_id)
+      ids_for_b = Enum.map(results_for_b, & &1.id)
+      refute brief_a.id in ids_for_b
+
+      # org_a reads should include its own brief
+      results_for_a = Ash.read!(Brief, tenant: org_a_id)
+      ids_for_a = Enum.map(results_for_a, & &1.id)
+      assert brief_a.id in ids_for_a
+    end
+
+    test "Ash.get with wrong tenant returns not-found error" do
+      org_a_id = setup_tenant("iso_get_a")
+      org_b_id = setup_tenant("iso_get_b")
+
+      brief_a = create_brief(org_a_id)
+
+      # Fetching org_a's brief with org_b's tenant should fail
+      result = Ash.get(Brief, brief_a.id, tenant: org_b_id)
+      assert {:error, _} = result
+    end
+  end
+
   describe "ResearchEngine.next_run_version/1" do
     test "returns 1 when a brief has no reports" do
       tenant_id = setup_tenant("next_version_no_reports")

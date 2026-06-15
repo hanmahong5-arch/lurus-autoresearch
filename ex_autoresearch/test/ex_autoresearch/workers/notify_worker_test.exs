@@ -2,6 +2,8 @@ defmodule ExAutoresearch.Workers.NotifyWorkerTest do
   use ExAutoresearch.DataCase, async: false
   use Oban.Testing, repo: ExAutoresearch.Repo
 
+  import Swoosh.TestAssertions
+
   alias ExAutoresearch.Workers.NotifyWorker
 
   describe "parse_channel/1" do
@@ -48,6 +50,89 @@ defmodule ExAutoresearch.Workers.NotifyWorkerTest do
         })
 
       assert result == :ok
+    end
+  end
+
+  describe "perform/1 multi-channel dispatch" do
+    setup do
+      Application.put_env(:ex_autoresearch, :webhook_req_options,
+        plug: {Req.Test, __MODULE__.WebhookStub}
+      )
+
+      on_exit(fn -> Application.delete_env(:ex_autoresearch, :webhook_req_options) end)
+
+      parent = self()
+
+      Req.Test.stub(__MODULE__.WebhookStub, fn conn ->
+        send(parent, {:webhook_called, conn.request_path})
+        Req.Test.json(conn, %{ok: true})
+      end)
+
+      :ok
+    end
+
+    test "all channels fire and perform returns :ok" do
+      org = setup_org()
+
+      brief =
+        create_brief(org,
+          notify_channels: ["inbox", "email:someone@test.com", "webhook:http://hook.test/x"]
+        )
+
+      report_v1 = create_report(org, brief, 1)
+      report_v2 = create_report(org, brief, 2)
+      delta = create_delta(org, brief, report_v1, report_v2)
+
+      result =
+        NotifyWorker.perform(%Oban.Job{
+          args: %{
+            "delta_id" => delta.id,
+            "brief_id" => brief.id,
+            "organization_id" => org.id
+          }
+        })
+
+      assert result == :ok
+      assert_email_sent(subject: "Research Update: #{brief.name}")
+      assert_received {:webhook_called, _}
+    end
+
+    test "webhook 500 does not abort email or :ok return" do
+      parent = self()
+
+      # Override stub to return 500 for this test
+      Req.Test.stub(__MODULE__.WebhookStub, fn conn ->
+        send(parent, {:webhook_called_500, conn.request_path})
+
+        conn
+        |> Plug.Conn.put_status(500)
+        |> Req.Test.json(%{error: "server error"})
+      end)
+
+      org = setup_org()
+
+      brief =
+        create_brief(org,
+          notify_channels: ["email:someone@test.com", "webhook:http://hook.test/fail"]
+        )
+
+      report_v1 = create_report(org, brief, 1)
+      report_v2 = create_report(org, brief, 2)
+      delta = create_delta(org, brief, report_v1, report_v2)
+
+      result =
+        NotifyWorker.perform(%Oban.Job{
+          args: %{
+            "delta_id" => delta.id,
+            "brief_id" => brief.id,
+            "organization_id" => org.id
+          }
+        })
+
+      # Despite webhook 500, email still sent and perform returns :ok
+      assert result == :ok
+      assert_email_sent(subject: "Research Update: #{brief.name}")
+      assert_received {:webhook_called_500, _}
     end
   end
 

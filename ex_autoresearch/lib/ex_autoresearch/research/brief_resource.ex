@@ -62,6 +62,8 @@ defmodule ExAutoresearch.Research.Brief do
     end
   end
 
+  # `global? true` exists ONLY so BriefScheduleWorker can scan due briefs across tenants;
+  # all user-facing reads MUST pass `tenant:` to enforce per-org isolation.
   multitenancy do
     strategy :attribute
     attribute :organization_id

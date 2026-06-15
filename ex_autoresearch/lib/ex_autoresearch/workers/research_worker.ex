@@ -116,11 +116,14 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
     end
   end
 
-  # Enqueue DeltaWorker when the completed report is linked to a brief
-  defp maybe_enqueue_delta(%{brief_id: nil}), do: :ok
+  @doc """
+  Enqueue DeltaWorker when the completed report is linked to a brief.
+  Public so it can be unit-tested without running the full research engine.
+  """
+  def maybe_enqueue_delta(%{brief_id: nil}), do: :ok
 
-  defp maybe_enqueue_delta(%{brief_id: brief_id, id: report_id, organization_id: org_id})
-       when is_binary(brief_id) do
+  def maybe_enqueue_delta(%{brief_id: brief_id, id: report_id, organization_id: org_id})
+      when is_binary(brief_id) do
     Oban.insert(
       DeltaWorker.new(%{
         "to_report_id" => report_id,
@@ -130,5 +133,5 @@ defmodule ExAutoresearch.Workers.ResearchWorker do
     )
   end
 
-  defp maybe_enqueue_delta(_), do: :ok
+  def maybe_enqueue_delta(_), do: :ok
 end
