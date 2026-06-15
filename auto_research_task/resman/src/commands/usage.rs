@@ -371,7 +371,7 @@ fn build_tool_stats(events: &[Event]) -> Vec<ToolStats> {
     }
 
     let mut rows: Vec<ToolStats> = map.into_values().collect();
-    rows.sort_by(|a, b| b.n.cmp(&a.n));
+    rows.sort_by_key(|x| std::cmp::Reverse(x.n));
     for r in &mut rows {
         r.durations.sort_unstable();
     }
@@ -539,7 +539,7 @@ fn render_sequences(events: &[Event], opts: &UsageOpts) -> Result<()> {
     }
 
     let mut pairs: Vec<(String, usize)> = counts.into_iter().collect();
-    pairs.sort_by(|a, b| b.1.cmp(&a.1));
+    pairs.sort_by_key(|x| std::cmp::Reverse(x.1));
     pairs.truncate(opts.top);
 
     match opts.format {

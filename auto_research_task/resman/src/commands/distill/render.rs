@@ -321,7 +321,7 @@ pub fn render_html(report: &DistillReport) -> String {
             .iter()
             .filter(|(_, v)| !v.is_empty())
             .collect();
-        kinds.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        kinds.sort_by_key(|x| std::cmp::Reverse(x.1.len()));
 
         for (kind, entries) in &kinds {
             let mut items = String::new();

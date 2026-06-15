@@ -67,11 +67,7 @@ pub(super) fn build_suggestions(
 
     // Suggestion 1: OOMs
     if oom_count >= 3 {
-        let pct = if total > 0 {
-            oom_count * 100 / total
-        } else {
-            0
-        };
+        let pct = (oom_count * 100).checked_div(total).unwrap_or(0);
         suggestions.push(format!(
             "Consider reducing batch size or enabling gradient checkpointing — OOMs account for {pct}% of failures."
         ));
@@ -273,7 +269,7 @@ pub(super) fn build_cross_suggestions(
 
     // OOM-concentration suggestion: if one tag accounts for >50% of all OOMs.
     if total_oom >= 3 {
-        oom_by_tag.sort_by(|a, b| b.1.cmp(&a.1));
+        oom_by_tag.sort_by_key(|x| std::cmp::Reverse(x.1));
         if let Some((top_tag, top_count)) = oom_by_tag.first()
             && *top_count * 2 > total_oom
         {
