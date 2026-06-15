@@ -4,6 +4,7 @@ version = "0.12.0"
 edition = "2024"
 description = "Local-first experiment tracker for autonomous AI training agents"
 license = "MIT"
+readme = "README.md"
 repository = "https://github.com/hanmahong5-arch/lurus-autoresearch"
 keywords = ["ml", "experiment-tracking", "ai-agents", "cli", "training"]
 categories = ["command-line-utilities", "science"]

@@ -27,7 +27,7 @@ See **[STRATEGY.md](STRATEGY.md)** for positioning, monetization plan, and anti-
 # one-liner (Linux / macOS)
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 
-# or from crates.io
+# or from crates.io (pending first publish)
 cargo install resman
 
 # or from source
@@ -147,7 +147,7 @@ MIT
 # 一行安装（Linux / macOS）
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 
-# 或从 crates.io
+# 或从 crates.io（待首次发布）
 cargo install resman
 
 # 或源码编译

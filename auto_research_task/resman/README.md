@@ -43,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/
 
 Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.3.0`.
 
-**From crates.io** (any OS with a Rust toolchain):
+**From crates.io** (any OS with a Rust toolchain) — *pending first publish to crates.io; until then use the prebuilt binary or build from source*:
 
 ```bash
 cargo install resman
@@ -53,7 +53,7 @@ cargo install resman
 
 ```bash
 git clone https://github.com/hanmahong5-arch/lurus-autoresearch
-cargo install --path autoresearch/auto_research_task/resman    # Rust 1.85+
+cargo install --path lurus-autoresearch/auto_research_task/resman    # Rust 1.85+
 ```
 
 Windows users: prebuilt binary on Releases, or `cargo install` path above.
