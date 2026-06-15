@@ -1,9 +1,13 @@
 name: resman
 
 on:
+    # NB: tags must be triggerable for the release job; a `paths` filter on
+    # `push` unreliably blocks tag pushes (GitHub evaluates paths against the
+    # tag push's changed files, which is empty for a tag on an existing commit).
+    # So no `paths` here — resman CI runs on every master push + resman-v* tag.
   push:
     branches: [master]
-    paths: ['auto_research_task/resman/**', '.github/workflows/resman.yml']
+    tags: ['resman-v*']
   pull_request:
     paths: ['auto_research_task/resman/**', '.github/workflows/resman.yml']
 
