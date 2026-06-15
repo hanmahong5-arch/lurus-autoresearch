@@ -1,5 +1,7 @@
 # ex_autoresearch Architecture
 
+> **⚠️ SUPERSEDED — historical/abandoned design.** This document describes an earlier conception of `ex_autoresearch` (an Elixir port of karpathy's GPU-training loop: Nx/Axon, Jido + GitHub Copilot, multi-GPU cluster). **None of those modules exist in the codebase.** The shipped product is a deep-research web agent — see **`../MISSION.md`** for the authoritative architecture. Retained only as pivot history.
+
 ## Overview
 
 An Elixir port of Karpathy's [autoresearch](https://github.com/karpathy/autoresearch) — an autonomous AI research framework that lets LLM agents conduct hyperparameter tuning and architectural experimentation on a GPT language model overnight.

@@ -122,11 +122,20 @@ Completed in v0.2 / v0.3 / v0.4 / v0.5 / v0.6:
 9. ✅ Tagged v0.6.1 → CI publishes Linux/macOS/Windows binaries (v0.6.0 tag hit fmt-check; v0.6.1 is the effective release).
 10. ✅ **v0.7 — `Status::Verified` + `resman verify` + opt-in composite `best`**: reproducibility promotion via tolerance-based comparison (no orchestration — caller provides the new value); `best --composite` blends metric + verified + lineage + desc. Default `best` unchanged — shell-script API preserved. Mirrored as `resman_verify` MCP tool + `composite` param on `resman_best`.
 
+Completed since (v0.7 → v0.12, all shipped):
+11. ✅ Tagged v0.7.0 → CI publishes Linux/macOS/Windows binaries.
+12. ✅ **v0.8 — human-friendly terminal + HTML distill** (`term.rs` ANSI helper, HTML distill rendering).
+13. ✅ **v0.9 — industrial-grade agent memory layer**.
+14. ✅ **v0.10 — agent UX symmetry + reliability validation** (`resman unverify` closes the verify ↔ unverify cycle; perf bench at 1000 experiments).
+15. ✅ **v0.11 — distill narrative + onboarding** (cross-tag continuation links; MCP entrypoint prompt refreshed to the full tool surface).
+16. ✅ **v0.12 — `resman tags` + `resman_tags` MCP tool** — per-tag snapshot. Deferred `DivergedLoss` / `SlowMfu` signals are now rendered in distill `signal_detail`.
+
+Surface as of v0.12: **23 CLI subcommands, 13 MCP tools, 146 tests.** distill is now split into `cluster` / `neighbors` / `suggest` / `render` submodules.
+
 Up next (v1.0 roadmap):
-11. Tag v0.7.0 → CI publishes binaries → update crates.io.
-12. **v0.8 — distill GA**: richer templates, cross-run clustering, full exploitation of signals + verified + lineage. Tune composite weights from v0.7 usage data. Add deferred signal variants (`DivergedLoss`, `SlowMfu`) once sufficient workload data informs thresholds.
-13. **v1.0**: schema freeze, reposition as "memory layer for agent training loops"; long-form launch blog post.
-14. Only after v1.0: the team-sync backend as a separate repo.
+17. Tune composite-`best` weights from accumulated usage data.
+18. **v1.0**: schema freeze, reposition as "memory layer for agent training loops"; long-form launch blog post.
+19. Only after v1.0: the team-sync backend as a separate repo.
 
 ## What would make us wrong
 
@@ -154,36 +163,36 @@ ex_autoresearch:
 ### Target customers
 Law firms, consulting firms, large company R&D departments, university / government research offices. *Not* consumers, *not* small SaaS startups.
 
-### Three-layer architecture
+### Architecture (BEAM-native — `ex_autoresearch/MISSION.md` is the engineering lock)
+
+> **Superseded the earlier jido + Symphony three-layer plan.** The SENTINEL trust + delta layer shipped on pure OTP / Oban / Ash — no external agent framework and no outer scheduler were needed. `MISSION.md` is the authoritative, committed decision lock.
 
 ```
-        ┌──────────────────────────────────┐
-        │   Symphony (outer scheduler)     │  ← OpenAI · Apache-2.0 · pinned commit SHA
-        │   workspaces · max_turns ·       │
-        │   max_concurrent_agents          │
-        └─────────────┬────────────────────┘
-                      │ schedules N concurrent
+        ┌────────────────────────────────────────────────┐
+        │  Scheduling — ash_oban triggers +              │  ← replaces Symphony + the
+        │  BriefScheduleWorker (Oban cron)               │     hand-rolled TemplateScheduler
+        └─────────────┬──────────────────────────────────┘
+                      │ enqueues due Briefs → :research queue
                       ▼
-        ┌──────────────────────────────────┐
-        │   ex_autoresearch (research)     │  ← Phoenix LiveView UI · Oban durable jobs
-        │   Crawl4AI for scraping          │     pgvector + Bumblebee for memory
-        │   resman for prompt A/B testing  │     Langfuse for cost / observability
-        └─────────────┬────────────────────┘
-                      │ uses
+        ┌────────────────────────────────────────────────┐
+        │  ResearchEngine — stateless, job-per-run       │  ← Phoenix LiveView UI · Oban durable jobs
+        │  plan→search→analyze→deepen→write→verify       │     Ash + AshSqlite multi-tenant state
+        │  Crawl4AI scraper (Native fallback)            │     telemetry-first observability
+        └─────────────┬──────────────────────────────────┘
+                      │ persists
                       ▼
-        ┌──────────────────────────────────┐
-        │   jido (agent runtime)           │  ← MIT · v2.2.0
-        │   Action / Agent / Sensor /      │
-        │   Signal / AgentServer           │
-        └──────────────────────────────────┘
+        ┌────────────────────────────────────────────────┐
+        │  Trust + Delta — Claim / Source / Delta        │  ← one Claim = citation + audit + delta unit
+        │  Verifier grounds claims · DeltaWorker diffs   │     ClaimExporter (CSV/JSON audit)
+        └────────────────────────────────────────────────┘
 ```
 
 ### Locked architectural decisions (do not relitigate without strong reason — see `ex_autoresearch/MISSION.md` for full rationale)
 
 1. **Crawl4AI is primary scraper.** Apache-2.0, fully open, Playwright-based. Firecrawl's self-hosted version is AGPL-3.0 with closed-source proxy/anti-bot/dashboard — disqualifies for enterprise on-prem legal review.
 2. **Firecrawl Hex SDK as cloud-spillover fallback only.** Customer-opt-in for bursty workloads; never the default path.
-3. **jido v2.2.0 as inner agent runtime.** Vendor into `deps/` long-term once we ship — bus-factor risk on a small project.
-4. **Symphony as outer scheduler.** Pin commit SHA, not `main` — engineering preview, breaking changes allowed by the maintainer.
+3. **No external agent runtime — BEAM/OTP-native.** `ResearchEngine` is a stateless module driven by Oban jobs; OTP + Oban + Ash supply supervision, durability, and bounded concurrency. *(Reverses the earlier jido v2.2.0 lock — jido was never adopted; the full trust + delta layer shipped without it.)*
+4. **No outer scheduler — `ash_oban` triggers + `BriefScheduleWorker` (Oban cron).** *(Reverses the earlier Symphony lock — Symphony was an "engineering preview"; ash_oban gives durable, multi-tenant cron scheduling natively.)*
 5. **resman is dogfooded internally.** Every research-agent prompt change creates a resman experiment with `quality_score` as the metric. We sell the same product we used to track our own work — quantifiable quality moat competitors can't match.
 6. **Phoenix LiveView for UI.** No separate React/Vue frontend. Real-time research-progress streaming is the killer demo.
 7. **Ash for all state, not raw Ecto.** `mix ash.codegen` is non-negotiable.
@@ -194,9 +203,11 @@ Law firms, consulting firms, large company R&D departments, university / governm
 - **General-purpose deep research clone.** Vertical-first (law/consulting/R&D) or die.
 - **SaaS-first deployment.** Self-host is canonical; cloud is optional.
 - **Cross-pollinating with the resman codebase.** They share *concepts* (experiments, lineage), not *binaries*.
-- **Adding more agent frameworks alongside jido.** Pick one. jido is the choice.
+- **Adding any external agent framework.** BEAM/OTP + Oban + Ash is the runtime — not jido, not LangChain, not Symphony.
 
 ### MVP roadmap (8 weeks, started 2026-05-01)
+
+> **Superseded by the SENTINEL pivot (2026-06-13).** The team did not follow the jido / Symphony / Langfuse / pgvector week-plan below; it instead shipped a BEAM-native trust + delta layer (199 tests green). The table is retained as historical planning — `ex_autoresearch/MISSION.md` § *Delivered* and § *Current sprint* are the live status.
 
 | Week | Deliverable | Status |
 |---|---|---|

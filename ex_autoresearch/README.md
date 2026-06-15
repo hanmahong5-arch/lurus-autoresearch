@@ -43,7 +43,7 @@ A **Brief** is the recurring unit: question + cadence + domain allow/block + not
 - **Source-level audit trail** — every cited URL is a deduped `Source` row; every `Claim` links back to its source — full provenance for legal/compliance review
 - **Multi-tenant** — organization-scoped data isolation, built for on-prem team deployments
 - **Quality-driven depth control** — stops digging when results diminish, deepens when findings are rich
-- **Pluggable LLM backends** — Copilot, Claude, or Gemini (switch at runtime)
+- **Pluggable LLM backends** — Anthropic (Claude) or OpenRouter (switch at runtime via env var)
 - **Pluggable scraper** — Crawl4AI (default, self-hosted) with automatic fallback to a native Req-based scraper
 - **Live progress** — watch plan → search → analyze → verify stream in real time (Dashboard + 3D Mission Control)
 - **Markdown / CSV-JSON export** — export completed reports and extracted claims
@@ -52,9 +52,8 @@ A **Brief** is the recurring unit: question + cadence + domain allow/block + not
 
 - **Elixir** ≥ 1.15 with OTP
 - **LLM access** — at least one of:
-  - GitHub Copilot (via `gh copilot` CLI)
-  - Anthropic API key (for Claude)
-  - Google API key (for Gemini)
+  - Anthropic API key (`ANTHROPIC_API_KEY`) for Claude
+  - OpenRouter API key (`OPENROUTER_API_KEY`) for other models
 - **Search API** — Serper (`SERPER_API_KEY`) or Brave (`BRAVE_API_KEY`)
 - **Scraper** (optional) — a Crawl4AI endpoint (`CRAWL4AI_BASE_URL`, default `http://localhost:11235`); falls back to the native scraper if unavailable
 
@@ -112,10 +111,8 @@ lib/ex_autoresearch/
 ├── analysis/
 │   ├── report_exporter.ex          # Markdown export
 │   └── claim_exporter.ex           # CSV / JSON claim export
-└── agent/llm/
-    ├── copilot_backend.ex          # GitHub Copilot LLM
-    ├── claude_backend.ex           # Claude LLM
-    └── gemini_backend.ex           # Gemini LLM
+└── agent/
+    └── llm_client.ex               # LLM dispatcher: Anthropic + OpenRouter via Req (runtime-selected)
 ```
 
 ## Tech Stack
@@ -124,10 +121,10 @@ lib/ex_autoresearch/
 |-------|------------|
 | Language | Elixir 1.15+ / OTP |
 | Web | Phoenix 1.8, LiveView 1.1, Bandit |
-| Persistence | Ash Framework, AshSqlite, SQLite (→ Postgres + pgvector) |
+| Persistence | Ash Framework, AshSqlite, SQLite (Postgres + pgvector optional, not yet adopted) |
 | Job queue | Oban, ash_oban (scheduled Briefs) |
 | Multi-tenancy | Ash attribute strategy (organization-scoped) |
-| LLM clients | jido_ghcopilot, claude_agent_sdk, gemini_cli_sdk |
+| LLM clients | `Agent.LLMClient` — direct Anthropic + OpenRouter via `Req`, runtime-selected by env var |
 | Scraping | Crawl4AI (self-hosted) + native Req fallback |
 | HTTP | Req |
 | Frontend | Tailwind CSS v4, esbuild, Three.js (Mission Control) |

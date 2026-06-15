@@ -25,39 +25,59 @@ Repo positioning is fully described in `../STRATEGY.md` § *"Second product line
 These were chosen after explicit research and trade-off analysis. Each has a reason. Don't re-open without showing the reason has changed.
 
 1. **Web scraping: Crawl4AI is primary, native `Req` is fallback, Firecrawl Hex SDK is cloud-spillover only.**
-   *Reason:* Crawl4AI is Apache-2.0 fully open. Firecrawl's self-hosted version is AGPL-3.0 with closed-source anti-bot/proxy/dashboard, which fails enterprise legal review for our target customers. Firecrawl cloud SDK (`firecrawl` v1.2.x on Hex) is fine as opt-in spillover.
+   *Reason:* Crawl4AI is Apache-2.0 fully open. Firecrawl's self-hosted version is AGPL-3.0 with closed-source anti-bot/proxy/dashboard, which fails enterprise legal review for our target customers. Firecrawl cloud SDK (`firecrawl` v1.2.x on Hex) is fine as opt-in spillover. *(Implemented: `Scraper` behaviour + `crawl4ai.ex` / `native.ex`, app-env `:scraper` selector, auto-fallback.)*
 
-2. **Agent runtime: `jido` v2.2.0** (Action / Agent / Sensor / Signal / AgentServer). Vendor into `deps/` once we ship — small community, bus-factor risk.
+2. **Runtime: BEAM/OTP-native — no external agent framework.** The research pipeline is a **stateless `ResearchEngine` module driven by Oban jobs (job-per-run)**, supervised by OTP. `Ash` owns all state, `Oban` owns durability/retries/bounded concurrency, OTP supervision owns fault-tolerance.
+   *Reason (changed decision — see Update protocol):* the earlier lock chose `jido` v2.2.0 as the inner agent runtime. We shipped the **entire SENTINEL trust + delta layer without it** — OTP + Oban + Ash already provide every primitive a deep-research runtime needs (supervision, durable jobs, bounded concurrency, multi-tenant persistence). Adding `jido` would be framework weight over capabilities BEAM gives natively, against a small-community dep the original lock itself flagged for bus-factor risk. **jido is dropped, not deferred.**
 
-3. **Outer scheduler: Symphony pinned to a specific commit SHA, not `main`.** It's an "engineering preview" per its own README. Budget one re-port within 12 months.
+3. **Scheduling: `ash_oban` triggers + the Oban-cron `BriefScheduleWorker`. No outer scheduler, no singleton scheduler process.**
+   *Reason (changed decision):* the earlier lock chose **Symphony** (a self-described "engineering preview" with maintainer-sanctioned breaking changes) as an outer scheduler, and a hand-rolled `TemplateScheduler` GenServer existed. Both are gone. `ash_oban` (already a dep, wired via `AshOban.config/2` in the supervision tree) gives durable, multi-tenant, cron-driven scheduling natively; `BriefScheduleWorker` enqueues due Briefs onto the `:research` queue.
 
-4. **State: Ash + AshSqlite (later AshPostgres for pgvector).** All resource changes go through `mix ash.codegen <desc> --yes` followed by `mix ash_sqlite.migrate`. Never write raw Ecto migrations for Ash-managed tables.
+4. **State: Ash + AshSqlite (AshPostgres only when a customer needs pgvector).** All resource changes go through `mix ash.codegen <desc> --yes` followed by `mix ash_sqlite.migrate`. Never write raw Ecto migrations for Ash-managed tables.
 
-5. **HTTP client: `Req`.** Never `:httpoison`, `:tesla`, `:httpc`. (Phoenix-stack default; preserved.)
+5. **Trust layer = the `Claim` resource (one row, three jobs).** Each `Claim` is simultaneously (a) an inline grounded citation, (b) an immutable audit unit, and (c) the minimal comparison unit for delta. `Verifier` extracts atomic claims from the draft and grounds each against numbered `Source` evidence (`:grounded | :contradicted | :unsupported | :complementary` + confidence). `Source` carries `relevance_score` (replaces the old byte-count "quality") and a `unique [report_id, url]` identity (cross-query URL dedup).
+   *Reason:* one schema underwrites trust + audit + delta — the three things hosted Deep Research structurally cannot offer.
 
-6. **UI: Phoenix LiveView, no separate React/Vue frontend.** Real-time research-progress streaming is a flagship demo.
+6. **Delta engine = versioned Reports + claim-hash diff.** A run yields a versioned `Report` (`brief_id` + `run_version`); `DeltaWorker` diffs the new claim set against the prior version by normalized `claim_hash` (added/changed/removed/contradicted); `NotifyWorker` pushes the digest. The moat is recurring "what changed and why it matters," not one-shot Q&A.
 
-7. **Memory: pgvector + Bumblebee for local embeddings (Week 6+).** No OpenAI embeddings on the canonical path — data sovereignty.
+7. **HTTP client: `Req`.** Never `:httpoison`, `:tesla`, `:httpc`. Keep retries **off** for scraping — fast-fail triggers the `Native` fallback.
 
-8. **Observability: Langfuse self-hosted (Week 5+).** Per-research-run cost + latency + LLM call tree are required for enterprise audit.
+8. **UI: Phoenix LiveView, no separate React/Vue frontend.** Real-time research-progress streaming on the `"research:events"` PubSub topic is the flagship trust signal.
 
-9. **Self-A/B testing: resman is the experiment ledger for our own prompt changes (Week 7+).** Every prompt edit creates a resman experiment with `quality_score` as the metric. This is the dogfooding moat — we ship the same product we used to track our own work.
+9. **Observability: telemetry-first; external sinks are pluggable, not locked.** Every external boundary emits `:telemetry`; `LLMUsageBridge` accrues token usage onto the owning `Report`. A Langfuse exporter is an **optional** sink on top of this seam — *not* a locked dependency.
+   *Reason (relaxed decision):* the elegant invariant is "telemetry at every boundary." Which sink consumes it is a config choice, not an architecture lock.
 
-10. **Deployment: docker-compose for enterprise on-prem POC (Week 8). No K8s on the canonical path** until a customer demands it.
+10. **Semantic memory (pgvector + Bumblebee) is an OPTIONAL future upgrade, not locked.** Delta matching today uses normalized `claim_hash`; embeddings are an upgrade path only if hash precision proves insufficient. Don't pull heavy ML deps onto the canonical path speculatively.
+
+11. **Self-A/B testing: resman is the experiment ledger for our own prompt changes (future).** Every prompt edit should create a resman experiment with `quality_score` as the metric — the dogfooding moat. **Concepts shared, code never** (anti-goals red line).
+
+12. **Deployment: docker-compose for enterprise on-prem POC. No K8s on the canonical path** until a customer demands it.
 
 ## Anti-goals (do not drift)
 
 - **No consumer pricing tier.** Enterprise-only revenue model.
 - **No general-purpose Perplexity clone.** Vertical-first (law/consulting/R&D).
 - **No cross-pollination with the resman Rust codebase.** Different binaries, different repos eventually. Concepts can be shared; code cannot.
-- **No second agent framework alongside `jido`.** One inner runtime.
+- **No external agent framework.** BEAM/OTP + Oban + Ash *is* the runtime — not jido, not LangChain, not Symphony. (Reverses the earlier jido lock; see Architectural decisions #2–3.)
 - **No raw Ecto for Ash-managed tables.** `mix ash.codegen` is non-negotiable.
 - **No closed-source dependencies on the canonical path.** AGPL is a flag-yellow; non-OSI is a flag-red.
-- **No "let's add LangChain too."** We have `jido`. That is sufficient.
+- **No speculative heavy deps on the canonical path.** No pgvector / Bumblebee / Langfuse until a concrete need (and a customer) pulls them in. Telemetry + claim-hash cover today's needs.
 
-## Delivered (as of 2026-05-16)
+## Delivered
 
-The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
+The headline is the **SENTINEL trust + delta layer**; the Week 1–2 scraper/UI/audit infrastructure underneath it still holds. What's in `master`:
+
+**SENTINEL trust + delta layer (the product moat):**
+- **Trust layer:** `Verifier` extracts atomic claims from each draft and grounds them against numbered `Source` evidence, persisting `Claim` rows (`grounding` + `confidence` + `origin_subquery`) and appending a `## ⚠ Verification Notes` footer. Never blocks completion — always returns `{:ok, body}`.
+- **`Source` resource:** `relevance_score` replaces the old byte-count quality; `unique [report_id, url]` identity enforces cross-query URL dedup; `scraper_source` recorded.
+- **Delta engine:** versioned `Report` (`brief_id` + `run_version`); `DeltaWorker` diffs claim sets by normalized `claim_hash` (added/changed/removed/contradicted); `NotifyWorker` + `Notifications.{Notifier,Webhook}` push the digest; `InboxLive` (`/inbox`) surfaces unread deltas.
+- **`Brief` resource:** recurring research subscription (question + cadence + source policy + notify channels), multi-tenant by `organization_id`.
+- **Job-per-run engine:** `ResearchEngine` is a stateless pipeline (plan→search→analyze→deepen→write→**verify**) driven by Oban jobs on the `:research` queue. The singleton `ResearchOrchestrator` GenServer and hand-rolled `TemplateScheduler` are **gone**.
+- **`ash_oban` scheduling:** `BriefScheduleWorker` (Oban cron) enqueues due Briefs; `ash_oban` wired via `AshOban.config/2` in the supervision tree.
+- **Search seam:** Serper + DuckDuckGo + SearXNG behind a `Search` behaviour (multi-backend, on-prem-friendly).
+- **Claim audit export:** `Analysis.ClaimExporter` (CSV/JSON) for legal/compliance.
+
+The Week 1–2 foundation below is unchanged and still in force:
 
 **Scraper layer (Week 1-2 + extras):**
 - `Scraper` behaviour with `Native` + `Crawl4ai` impls; configured default via `:scraper` app-env.
@@ -91,7 +111,7 @@ The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 **Health probes:**
 - `GET /healthz` (always 200 with version) + `GET /readyz` (Repo `SELECT 1`; Crawl4AI status reported informationally — never flips readiness because the auto-fallback means we still serve traffic).
 
-**Acceptance status:** `mix precommit` 60 tests, 0 failures, 0 skipped. Format clean. deps.unlock --unused clean. Compile clean.
+**Acceptance status:** `mix test` **199 tests, 0 failures, 0 skipped, 0 warnings** (verified 2026-06-13). Format clean, compile clean.
 
 ## Current sprint: pick one of
 
@@ -103,7 +123,7 @@ The 8-week MVP is ahead of its Week 1-2 plan. What's in `master`:
 
 4. **Cost USD calculation.** Add a model→price table (or a `Settings` resource for self-hosted customers to enter their own rates) so the `Report` shows cost in USD, not just tokens. Adds two columns + a tiny UI widget.
 
-5. **Week 3 — jido-ization** (deferred from original plan because the manual GenServer state machine works fine; jido pays off when we add Symphony in Week 8).
+5. **P3 enterprise unlock — per-tenant source-domain allow/block enforcement at scrape time + Slack/email/webhook notify channels.** `Brief` already carries `allow_domains` / `block_domains` / `notify_channels`; wire them through the scraper seam and `NotifyWorker`. This is the named enterprise paywall (data-sovereignty + audit), built on the trust layer at near-zero marginal cost.
 
 ## Robustness standards (every feature must hit these)
 
@@ -158,14 +178,19 @@ This product is sold to law firms and consulting partners. **The UI is the trust
 
 ## Where to look (file map)
 
-- Pipeline orchestrator: `lib/ex_autoresearch/deep_research/research_orchestrator.ex`
-- Search (Serper): `lib/ex_autoresearch/deep_research/tools/search.ex`
-- Web fetch (the seam we're replacing): `lib/ex_autoresearch/deep_research/tools/research_runner.ex:76-103`
+- Research engine (job-per-run pipeline): `lib/ex_autoresearch/deep_research/research_engine.ex`
+- Trust layer (claim grounding): `lib/ex_autoresearch/deep_research/verifier.ex`
+- Scraper seam: `lib/ex_autoresearch/deep_research/scraper.ex` (+ `scraper/{crawl4ai,native}.ex`)
+- Search seam: `lib/ex_autoresearch/deep_research/search.ex` (+ `search/{serper,duck_duck_go,sear_x_n_g}.ex`)
+- Per-thread executor: `lib/ex_autoresearch/deep_research/tools/research_runner.ex`
 - Ash domain root: `lib/ex_autoresearch/research/research.ex`
-- Ash resources: `lib/ex_autoresearch/research/{report,investigation,template}_resource.ex`
-- Oban worker: `lib/ex_autoresearch/workers/research_worker.ex`
-- LiveView entry: `lib/ex_autoresearch_web/live/dashboard_live.ex`
+- Ash resources: `lib/ex_autoresearch/research/{brief,report,investigation,source,claim,delta,template}_resource.ex`
+- Workers: `lib/ex_autoresearch/workers/{research,brief_schedule,delta,notify}_worker.ex`
+- LiveView: `lib/ex_autoresearch_web/live/{dashboard,inbox,mission_control,report_detail,audit}_live.ex`
+- Claim / audit export: `lib/ex_autoresearch/analysis/claim_exporter.ex`
 
 ## Update protocol
 
 When a locked decision changes (e.g., we rip out `jido` for a different runtime), update **this file in the same commit** as the code change. The git history of this file is the audit log of architectural decisions.
+
+**2026-06-13 reconciliation:** decisions #2 (jido) and #3 (Symphony) were de-facto reversed in code — the SENTINEL trust + delta layer shipped on pure OTP / Oban / Ash — but this file was not updated in step, violating the protocol above. This revision realigns the lock with `master` (199 tests green). Future decision changes must update this file in the same commit as the code.

@@ -1,5 +1,7 @@
 # BEAM-Native Autoresearch: The Self-Optimizing Training Loop
 
+> **⚠️ SUPERSEDED — historical/abandoned design.** This document describes an earlier conception of `ex_autoresearch` (an Elixir port of karpathy's GPU-training loop: Nx/Axon, Jido + GitHub Copilot, multi-GPU cluster). **None of those modules exist in the codebase.** The shipped product is a deep-research web agent — see **`../MISSION.md`** for the authoritative architecture. Retained only as pivot history.
+
 ## The Insight
 
 Karpathy's autoresearch has the LLM edit `train.py`, commit, run, evaluate, keep/revert.

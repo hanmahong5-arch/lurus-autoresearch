@@ -1,7 +1,7 @@
 # Sentinel PRD —「常驻研究员」产品定义
 
-> 状态:**草案 / 待 review**。本文件是产品级决策的白纸,先 review 再动代码。
-> 工作代号 **Sentinel**(常驻研究员)——名字本身是开放决策(见 §11)。
+> 状态:**✅ 已实现并合入 `master`**(2026-06-13 核对:199 测试全绿)。本 PRD 从"草案"转为"已落地记录"——§5 运行引擎(job-per-run)、§5.3 信任层(`Verifier` + `Claim`/`Source`)、§5.4 Delta 引擎(`Brief` + `Delta` + `DeltaWorker`)、§6 全部 schema、§7 workers 均已构建。**架构锁以 `MISSION.md` 为权威**;本文件记录设计意图与取舍。
+> 工作代号 **Sentinel**(常驻研究员)。
 > 适用范围:`ex_autoresearch/`(Elixir 深度研究 web agent)。**不得**与 `resman` 交叉污染(CLAUDE.md 红线)。
 
 ---
@@ -340,6 +340,8 @@ resource ExAutoresearch.Research.Delta
 ---
 
 ## 11. 开放决策(review 时定)
+
+> **✅ 已在实现中解决(2026-06-13):** §11.2 → 新建独立 `Brief` 资源(非扩展 `Template`);§11.3 → MVP 用 `claim_hash` 文本归一化,未上 embedding(见 `MISSION.md` 决策 #10);§11.1 产品名 → **Sentinel**。其余(通知渠道优先级、MCP 触发口、定价层)归入 `MISSION.md` 当前冲刺 / 路线。下列原文保留为历史记录。
 
 1. **产品名:** Sentinel?/ 常驻研究员 / 其它。
 2. **`Brief` vs 扩展 `Template`:** 新建独立资源(本草案),还是给 `Template` 加 cadence/source-policy/notify 字段并升格?(影响现有 TemplateLive/ScheduleLive 改动量)
