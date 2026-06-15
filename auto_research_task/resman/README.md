@@ -43,7 +43,11 @@ curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/
 
 Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.3.0`.
 
-**crates.io**: ⚠️ *not available — the name `resman` on crates.io is an unrelated crate, so `cargo install resman` would fetch the wrong project.* A published release under an available name is TBD; until then use the prebuilt binary above or build from source below.
+**From crates.io**:
+
+```bash
+cargo install resman-cli   # published as `resman-cli`; installs a `resman` command
+```
 
 **From source**:
 

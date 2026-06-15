@@ -1,6 +1,6 @@
 [package]
-name = "resman"
-version = "0.12.0"
+name = "resman-cli"
+version = "0.13.0"
 edition = "2024"
 description = "Local-first experiment tracker for autonomous AI training agents"
 license = "MIT"

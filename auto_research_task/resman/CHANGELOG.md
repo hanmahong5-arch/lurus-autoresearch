@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.13.0] — Feedback loop + crates.io rename (2026-06-15)
+
+Closes the usage-data feedback loop that makes `distill` and the composite
+scorer self-improving, and publishes the crate to crates.io for the first
+time.
+
+### Added — usage-aware distill
+
+- **Reproducibility-gap suggestion**: `distill` reads `usage.jsonl` and emits
+  an actionable suggestion when a tag shows many adds but zero verifies
+  (`added >= 10 && verified == 0`): *"Tag has N logged experiments but none
+  have been verified — consider re-running the best and calling
+  `resman verify`."* CLI + MCP aggregate via a `tag_funnel` pass over the
+  usage log. Graceful no-op when `usage.jsonl` is absent — output is
+  byte-identical to v0.12.0 in that case.
+- **CLI usage logging**: `add`, `verify`, `unverify`, `import`, and `distill`
+  now write one JSONL line to `usage.jsonl` on every invocation (same
+  `RESMAN_DISABLE_USAGE_LOG=1` opt-out as the MCP path; local-only; failures
+  stderr-once, never block the command). The hot `best -f value` path is
+  deliberately NOT logged so shell-script latency is unchanged.
+  Previously only `resman mcp` calls were recorded; CLI loops are now first-
+  class participants in the feedback dataset.
+
+### Packaging
+
+- Published to crates.io as **`resman-cli`** (binary remains `resman`).
+  The crate name `resman` is taken by an unrelated project.
+  `cargo install resman-cli` → installs the `resman` command.
+
+### Test counts
+
+146 → **169 tests** (160 unit + 9 CLI). Clippy 0 warnings.
+
+---
+
 ## [0.12.0] — Per-tag snapshot probe (2026-05-16)
 
 A targeted polish release: one new command + matching MCP tool that fills
