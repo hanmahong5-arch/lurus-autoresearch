@@ -669,7 +669,7 @@ fn continuation_link_none_when_parent_external() {
             vec![],
         )],
     );
-    let link = find_continuation(&today, &[today.clone()]);
+    let link = find_continuation(&today, std::slice::from_ref(&today));
     assert!(link.is_none(), "expected no link; got: {:?}", link);
 }
 
@@ -684,7 +684,7 @@ fn continuation_link_none_when_no_external_parents() {
             make_exp("c2", 0.98, Status::Keep, "next", Some("c1"), vec![]),
         ],
     );
-    let link = find_continuation(&today, &[today.clone()]);
+    let link = find_continuation(&today, std::slice::from_ref(&today));
     assert!(link.is_none());
 }
 
