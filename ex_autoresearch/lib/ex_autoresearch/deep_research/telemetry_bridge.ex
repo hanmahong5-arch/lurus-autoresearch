@@ -5,7 +5,10 @@ defmodule ExAutoresearch.DeepResearch.TelemetryBridge do
   """
 
   @handler_id "ex-autoresearch-scraper-bridge"
-  @events [[:ex_autoresearch, :scraper, :fetch, :stop]]
+  @events [
+    [:ex_autoresearch, :scraper, :fetch, :stop],
+    [:ex_autoresearch, :relevance, :fallback]
+  ]
 
   @doc """
   Attach the telemetry handler. Idempotent: detaches first if already registered.
@@ -47,6 +50,34 @@ defmodule ExAutoresearch.DeepResearch.TelemetryBridge do
           ExAutoresearch.PubSub,
           "research:events",
           {:scraper_progress, payload}
+        )
+      end
+    rescue
+      _ -> :ok
+    end
+  end
+
+  def handle_event(
+        [:ex_autoresearch, :relevance, :fallback],
+        _measurements,
+        metadata,
+        _config
+      ) do
+    try do
+      report_id = Map.get(metadata, :report_id)
+
+      if is_nil(report_id) do
+        :ok
+      else
+        Phoenix.PubSub.broadcast(
+          ExAutoresearch.PubSub,
+          "research:events",
+          {:research_progress, report_id,
+           %{
+             stage: :analyze,
+             status: :degraded,
+             detail: "Relevance judge unavailable — using byte-count heuristic for source quality"
+           }}
         )
       end
     rescue

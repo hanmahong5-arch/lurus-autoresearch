@@ -173,6 +173,17 @@ defmodule ExAutoresearch.DeepResearch.Tools.ResearchRunner do
       {contents_with_relevance, quality} =
         case relevance_scores(query, contents, opts) do
           :error ->
+            :telemetry.execute(
+              [:ex_autoresearch, :relevance, :fallback],
+              %{source_count: length(contents)},
+              %{
+                report_id: opts[:report_id],
+                investigation_id: opts[:investigation_id],
+                query: query,
+                reason: :relevance_judge_unavailable
+              }
+            )
+
             tagged = Enum.map(contents, &Map.put(&1, :relevance_score, nil))
             {tagged, compute_quality(contents, query)}
 

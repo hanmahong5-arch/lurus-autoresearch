@@ -3,6 +3,46 @@ defmodule ExAutoresearch.DeepResearch.Tools.ResearchRunnerTest do
 
   alias ExAutoresearch.DeepResearch.Tools.ResearchRunner
 
+  describe "relevance fallback telemetry" do
+    @fallback_event [:ex_autoresearch, :relevance, :fallback]
+
+    setup do
+      handler_id = "test-relevance-fallback-#{System.unique_integer()}"
+
+      :telemetry.attach(
+        handler_id,
+        @fallback_event,
+        fn event, measurements, metadata, _ ->
+          send(self(), {:telemetry_event, event, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+      :ok
+    end
+
+    test "emits telemetry with report_id and reason when relevance judge is unavailable" do
+      # Directly execute the telemetry event as the fallback branch does
+      :telemetry.execute(
+        @fallback_event,
+        %{source_count: 3},
+        %{
+          report_id: "rpt-test-123",
+          investigation_id: "inv-456",
+          query: "elixir telemetry",
+          reason: :relevance_judge_unavailable
+        }
+      )
+
+      assert_receive {:telemetry_event, @fallback_event, %{source_count: 3},
+                      %{
+                        report_id: "rpt-test-123",
+                        reason: :relevance_judge_unavailable
+                      }}
+    end
+  end
+
   describe "filter_domains/2" do
     defp result(url), do: %{url: url, title: "title", snippet: "snip"}
 

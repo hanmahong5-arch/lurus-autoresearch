@@ -90,4 +90,32 @@ defmodule ExAutoresearch.DeepResearch.TelemetryBridgeTest do
     assert msg =~ "Both"
     assert msg =~ "failed"
   end
+
+  test "broadcasts :research_progress with status :degraded on relevance fallback" do
+    :telemetry.execute(
+      [:ex_autoresearch, :relevance, :fallback],
+      %{source_count: 2},
+      %{
+        report_id: "rpt-bridge-test",
+        investigation_id: "inv-99",
+        query: "test query",
+        reason: :relevance_judge_unavailable
+      }
+    )
+
+    assert_receive {:research_progress, "rpt-bridge-test",
+                    %{stage: :analyze, status: :degraded, detail: detail}}
+
+    assert detail =~ "byte-count"
+  end
+
+  test "skips broadcast on relevance fallback when report_id is nil" do
+    :telemetry.execute(
+      [:ex_autoresearch, :relevance, :fallback],
+      %{source_count: 1},
+      %{report_id: nil, query: "q", reason: :relevance_judge_unavailable}
+    )
+
+    refute_receive {:research_progress, _, _}, 100
+  end
 end
