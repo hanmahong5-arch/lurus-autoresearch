@@ -105,7 +105,7 @@ The demo integration: karpathy-style loop + `resman add` calls in `program.md`. 
 No independent roadmap. Grows only when it exposes a resman gap.
 
 ### `ex_autoresearch/` (Elixir deep-research agent)
-**Status (as of 2026-05-01): elevated to active commercial focus.** Repositioned from "optionality side-project" to a second product line — the open-source self-hosted enterprise alternative to Perplexity Pro Deep Research, targeting law / consulting / regulated R&D where data sovereignty is non-negotiable. Full positioning, locked architectural decisions, MVP roadmap, and anti-goals: see **§ "Second product line: ex_autoresearch"** at the end of this doc, and `ex_autoresearch/MISSION.md` (committed) for engineering-level decision lock.
+**Status (as of 2026-06-15): archived optionality — NOT an active commercial line.** The 2026-05 "second product line" bet is parked. The code is real and shippable (BEAM-native SENTINEL trust + delta layer, 214 tests green), but the strategy is now single-focus on resman. Reason: enterprise on-prem deep research is the *slowest-feedback* business we could pick — multi-quarter sales cycles, and data sovereignty means we never see customer usage. That is the opposite of what a small team needs right now (see § "The one focus: resman's feedback flywheel"). Engineering record preserved in `ex_autoresearch/MISSION.md` for whoever resumes it; until then, maintenance only.
 
 ## Near-term execution
 
@@ -137,6 +137,25 @@ Up next (v1.0 roadmap):
 18. **v1.0**: schema freeze, reposition as "memory layer for agent training loops"; long-form launch blog post.
 19. Only after v1.0: the team-sync backend as a separate repo.
 
+## The one focus: resman's feedback flywheel
+
+The whole repo now serves a single thesis: **resman is the memory layer for agent-driven training loops, and its distribution model is a feedback flywheel an enterprise product structurally cannot match.**
+
+Why resman and not the deep-research agent — the deciding test is *feedback latency*:
+
+| | resman | ex_autoresearch (parked) |
+|---|---|---|
+| Distribution | `cargo install` / one-line binary, MIT, zero-friction | enterprise on-prem, security review, POC |
+| Feedback loop | days: GitHub issues, crates.io downloads, MCP call telemetry | quarters: sales cycle, then *no usage data* (data sovereignty) |
+| Compounding | usage → distill/composite weight tuning → better suggestions → more usage | none we can observe |
+| Channel | karpathy/autoresearch is a live public meme + focus group | cold enterprise outbound |
+
+**The flywheel, concretely:**
+1. **Ship the install path.** `cargo publish` (validated publish-ready via `--dry-run`, v0.12) so `cargo install resman` actually works, and point the README one-liner at a public source. This is the single highest-leverage unblock — today *neither* install path resolves for an outsider (crate unpublished; install.sh curls a private-looking repo).
+2. **Instrument the loop.** MCP tool calls already accumulate `usage.jsonl`; surface it as the signal that tunes composite weights + distill heuristics (roadmap #17). Every agent that uses resman makes resman smarter.
+3. **Pull demand through the meme.** `base_autoresearch` + `auto_research_task` are the live demo + data source — "this is the loop resman was built for." They are funnel, not products.
+4. **Close with v1.0.** Schema freeze + "memory layer for agent training loops" launch post, once weight-tuning has real usage behind it.
+
 ## What would make us wrong
 
 resman:
@@ -144,87 +163,16 @@ resman:
 - Agent coding assistants converge on an in-memory tracking protocol (MCP, etc.) and skip the filesystem. Probability: medium. Mitigation: resman's JSON schema *is* a protocol; offer a native MCP adapter.
 - karpathy/autoresearch fades as a meme and the overnight-agent-training pattern doesn't generalize. Probability: medium. Mitigation: resman's value doesn't depend on karpathy specifically — any LLM-training loop has the same needs.
 
-ex_autoresearch:
-- Microsoft / Google ship a self-hostable Copilot Research with M365/Workspace data-sovereignty guarantees. Probability: medium-high (12–18 months out). Mitigation: ship before they do, lock in 5+ enterprise reference customers, build switching cost via custom corpus integrations.
-- Symphony pivots, deprecates, or breaks the workspace API we depend on. Probability: medium (it's an "engineering preview" per the README). Mitigation: pin to a commit SHA, not main; budget one re-port within 12 months; the architecture is replaceable with raw Oban + DynamicSupervisor if Symphony dies.
-- Open-source competitors (Morphic, OpenDeepResearch, Open WebUI) add audit-log / on-prem features and erase our moat. Probability: medium. Mitigation: the dogfooding moat (resman A/B testing the agent's own prompts) produces quality data they can't match; double-down on vertical-specific corpus integrations.
+ex_autoresearch (parked — no longer an active bet): the category risks (Microsoft/Google ship self-hostable Copilot Research; OSS competitors add on-prem/audit) are real but moot while it is archived optionality. If resman's flywheel stalls and we need a second act, re-evaluate then — the engineering is preserved.
 
 ---
 
-## Second product line: ex_autoresearch (active 2026-05+)
+## Archived optionality: ex_autoresearch
 
-**One-sentence pitch:** Perplexity Pro Deep Research, but you can run it on your own infra, audit every data flow, and point it at your private corpus.
+**Status (2026-06-15): parked. Not an active commercial line.** The 2026-05 second-product-line bet is shelved in favor of single-focus on resman.
 
-### Why this category exists now
-1. Hosted deep-research products (Perplexity, You.com, Genspark) cannot legally serve clients in regulated verticals — confidential matter info cannot egress to OpenAI/Anthropic via a third party.
-2. Generic OSS Perplexity clones (Morphic, OpenDeepResearch) skip enterprise-mandatory features: audit logs, source provenance, role-based access, intranet ingestion.
-3. BEAM's fault-tolerance is uniquely suited to long-running multi-stage research where per-source failures are routine.
+**Why parked — it fails the feedback test.** Enterprise on-prem deep research for law / consulting / regulated R&D is the slowest-feedback business available to us: multi-quarter sales cycles, mandatory security review before a single POC, and — fatally for a small team trying to learn fast — *data sovereignty means the product's usage data never leaves the customer's network*. We would be blind on exactly the signal we most need. resman is the inverse (see § "The one focus").
 
-### Target customers
-Law firms, consulting firms, large company R&D departments, university / government research offices. *Not* consumers, *not* small SaaS startups.
+**What's preserved.** The code is not dead weight — it shipped a genuine BEAM-native SENTINEL trust + delta layer (214 tests green): job-per-run engine, claim-grounding verifier, versioned Reports + Delta digests, multi-tenant Ash, CSV/JSON audit export. The committed engineering lock lives in `ex_autoresearch/MISSION.md`. If resman's flywheel justifies a second act — or an inbound enterprise customer pulls it forward — this is a credible, mostly-built starting point. Until then: maintenance only, no roadmap, no cross-pollination with resman.
 
-### Architecture (BEAM-native — `ex_autoresearch/MISSION.md` is the engineering lock)
-
-> **Superseded the earlier jido + Symphony three-layer plan.** The SENTINEL trust + delta layer shipped on pure OTP / Oban / Ash — no external agent framework and no outer scheduler were needed. `MISSION.md` is the authoritative, committed decision lock.
-
-```
-        ┌────────────────────────────────────────────────┐
-        │  Scheduling — ash_oban triggers +              │  ← replaces Symphony + the
-        │  BriefScheduleWorker (Oban cron)               │     hand-rolled TemplateScheduler
-        └─────────────┬──────────────────────────────────┘
-                      │ enqueues due Briefs → :research queue
-                      ▼
-        ┌────────────────────────────────────────────────┐
-        │  ResearchEngine — stateless, job-per-run       │  ← Phoenix LiveView UI · Oban durable jobs
-        │  plan→search→analyze→deepen→write→verify       │     Ash + AshSqlite multi-tenant state
-        │  Crawl4AI scraper (Native fallback)            │     telemetry-first observability
-        └─────────────┬──────────────────────────────────┘
-                      │ persists
-                      ▼
-        ┌────────────────────────────────────────────────┐
-        │  Trust + Delta — Claim / Source / Delta        │  ← one Claim = citation + audit + delta unit
-        │  Verifier grounds claims · DeltaWorker diffs   │     ClaimExporter (CSV/JSON audit)
-        └────────────────────────────────────────────────┘
-```
-
-### Locked architectural decisions (do not relitigate without strong reason — see `ex_autoresearch/MISSION.md` for full rationale)
-
-1. **Crawl4AI is primary scraper.** Apache-2.0, fully open, Playwright-based. Firecrawl's self-hosted version is AGPL-3.0 with closed-source proxy/anti-bot/dashboard — disqualifies for enterprise on-prem legal review.
-2. **Firecrawl Hex SDK as cloud-spillover fallback only.** Customer-opt-in for bursty workloads; never the default path.
-3. **No external agent runtime — BEAM/OTP-native.** `ResearchEngine` is a stateless module driven by Oban jobs; OTP + Oban + Ash supply supervision, durability, and bounded concurrency. *(Reverses the earlier jido v2.2.0 lock — jido was never adopted; the full trust + delta layer shipped without it.)*
-4. **No outer scheduler — `ash_oban` triggers + `BriefScheduleWorker` (Oban cron).** *(Reverses the earlier Symphony lock — Symphony was an "engineering preview"; ash_oban gives durable, multi-tenant cron scheduling natively.)*
-5. **resman is dogfooded internally.** Every research-agent prompt change creates a resman experiment with `quality_score` as the metric. We sell the same product we used to track our own work — quantifiable quality moat competitors can't match.
-6. **Phoenix LiveView for UI.** No separate React/Vue frontend. Real-time research-progress streaming is the killer demo.
-7. **Ash for all state, not raw Ecto.** `mix ash.codegen` is non-negotiable.
-
-### Anti-goals (do not drift back into these)
-
-- **Consumer pricing tier.** This is enterprise-only. No "$9/mo Hobby plan."
-- **General-purpose deep research clone.** Vertical-first (law/consulting/R&D) or die.
-- **SaaS-first deployment.** Self-host is canonical; cloud is optional.
-- **Cross-pollinating with the resman codebase.** They share *concepts* (experiments, lineage), not *binaries*.
-- **Adding any external agent framework.** BEAM/OTP + Oban + Ash is the runtime — not jido, not LangChain, not Symphony.
-
-### MVP roadmap (8 weeks, started 2026-05-01)
-
-> **Superseded by the SENTINEL pivot (2026-06-13).** The team did not follow the jido / Symphony / Langfuse / pgvector week-plan below; it instead shipped a BEAM-native trust + delta layer (199 tests green). The table is retained as historical planning — `ex_autoresearch/MISSION.md` § *Delivered* and § *Current sprint* are the live status.
-
-| Week | Deliverable | Status |
-|---|---|---|
-| 1–2 | Scraper behaviour + Crawl4AI implementation replacing `ResearchRunner.fetch_page_content/2` | in progress |
-| 3 | Jido-ize ex_autoresearch — convert ResearchRunner stages into `jido` Actions | |
-| 4 | Phoenix LiveView real-time research-progress UI |  |
-| 5 | Langfuse integration for cost / observability |  |
-| 6 | pgvector + Bumblebee local-embedding memory layer |  |
-| 7 | resman integration — every prompt change becomes a versioned resman experiment |  |
-| 8 | Symphony outer-shell + docker-compose enterprise-POC bundle |  |
-
-### Monetization (added to existing resman tiers)
-
-| Tier | What | Price | When |
-|---|---|---|---|
-| **OSS Self-host** | Full source, MIT/Apache stack, customer runs on own infra | $0 | Week 8 (POC) |
-| **Enterprise Support** | SLA, security review docs, deployment assistance, custom corpus integrations | $2K–10K/mo per customer | Q3 2026 after first POC closes |
-| **Hosted (small firms)** | Multi-tenant cloud option, customer's own LLM API key | $99/seat/mo | Q1 2027 — only if inbound demand pulls it forward |
-
-The OSS self-host is the funnel; enterprise support is where the revenue lives. Same Tailscale/Linear/Supabase pattern as resman.
+**Anti-goal reaffirmed:** do not spread a small team across two "active commercial" products. One focus at a time.

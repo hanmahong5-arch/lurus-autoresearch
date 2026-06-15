@@ -17,7 +17,7 @@
 | **[`auto_research_task/resman/`](auto_research_task/resman)** | **The product.** Rust CLI — local-first experiment tracker for AI-agent training loops. | **Active** |
 | [`base_autoresearch/`](base_autoresearch) | karpathy's original single-GPU autoresearch loop. Reference only. | Upstream-tracking |
 | [`auto_research_task/`](auto_research_task) | A training loop wired up with `resman add` / `resman best`. Reference integration. | Active |
-| [`ex_autoresearch/`](ex_autoresearch) | Elixir/Phoenix deep-research web agent — a separate product, deprioritized. | Maintenance |
+| [`ex_autoresearch/`](ex_autoresearch) | Elixir/Phoenix deep-research web agent — archived optionality, not an active line. | Archived |
 
 See **[STRATEGY.md](STRATEGY.md)** for positioning, monetization plan, and anti-goals.
 
@@ -173,7 +173,7 @@ resman report report.html                     # 人读完整报告
 | **`auto_research_task/resman/`** | **主产品**。Rust CLI 实验追踪器 | **活跃开发** |
 | `base_autoresearch/` | karpathy 原版训练循环 | 仅跟随上游 |
 | `auto_research_task/` | 训练循环 + resman 集成示例 | 活跃 |
-| `ex_autoresearch/` | Elixir 深度研究 Web agent（独立产品，优先级低） | 维护 |
+| `ex_autoresearch/` | Elixir 深度研究 Web agent（已归档 optionality，非活跃） | 归档 |
 
 ### 训练循环（可选）
 

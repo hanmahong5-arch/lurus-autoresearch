@@ -7,9 +7,9 @@
 
 **The open-source, self-hosted, auditable, intranet-data-source-capable alternative to Perplexity Pro Deep Research.**
 
-Active commercial focus as of 2026-05-01. Status was previously "deprioritized optionality side-project" — that framing is **outdated and overridden by this document**.
+**Strategic status (2026-06-15): archived optionality — parked, not an active commercial line.** The repo converged to a single commercial focus (resman); see `../STRATEGY.md` § *"The one focus: resman's feedback flywheel"* and § *"Archived optionality: ex_autoresearch"* for why (feedback latency: enterprise on-prem deep research is the slowest-feedback business available, and data sovereignty means we never see usage). This document remains the durable **engineering** lock for the code that already shipped (BEAM-native SENTINEL trust + delta layer, 214 tests green) — accurate and authoritative for anyone who resumes the work; it is simply no longer an active-investment mandate.
 
-Repo positioning is fully described in `../STRATEGY.md` § *"Second product line: ex_autoresearch"*. This file is the engineering-level decision lock.
+Repo positioning is fully described in `../STRATEGY.md` § *"Archived optionality: ex_autoresearch"*.
 
 ## Target customers (named)
 

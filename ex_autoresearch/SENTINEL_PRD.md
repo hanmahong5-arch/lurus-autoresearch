@@ -1,6 +1,7 @@
 # Sentinel PRD —「常驻研究员」产品定义
 
 > 状态:**✅ 已实现并合入 `master`**(2026-06-13 核对:199 测试全绿)。本 PRD 从"草案"转为"已落地记录"——§5 运行引擎(job-per-run)、§5.3 信任层(`Verifier` + `Claim`/`Source`)、§5.4 Delta 引擎(`Brief` + `Delta` + `DeltaWorker`)、§6 全部 schema、§7 workers 均已构建。**架构锁以 `MISSION.md` 为权威**;本文件记录设计意图与取舍。
+> **战略状态(2026-06-15):已归档为 optionality(parked),非活跃商业线。** 仓库已收敛为单一聚焦 resman(见 `../STRATEGY.md`);本 PRD 仅作已落地工程记录保留,非活跃投资方向。
 > 工作代号 **Sentinel**(常驻研究员)。
 > 适用范围:`ex_autoresearch/`(Elixir 深度研究 web agent)。**不得**与 `resman` 交叉污染(CLAUDE.md 红线)。
 
