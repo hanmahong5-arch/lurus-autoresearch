@@ -52,7 +52,7 @@ pub(super) fn build_suggestions(
         && f.verified == 0
     {
         suggestions.push(format!(
-            "Agent usage shows {} experiments added via MCP for this tag but zero verify calls \
+            "Agent usage shows {} experiments added for this tag but zero verify calls \
              — a reproducibility gap. Re-run your top candidates through `resman verify` before \
              trusting them.",
             f.added

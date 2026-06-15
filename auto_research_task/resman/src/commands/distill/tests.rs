@@ -782,7 +782,7 @@ fn usage_suggestion_fires_at_threshold() {
     let has = report
         .suggestions
         .iter()
-        .any(|s| s.contains("10 experiments added via MCP") && s.contains("resman verify"));
+        .any(|s| s.contains("10 experiments added for this tag") && s.contains("resman verify"));
     assert!(
         has,
         "expected usage suggestion for added=10, verified=0; got: {:?}",
@@ -799,7 +799,7 @@ fn usage_suggestion_does_not_fire_below_threshold() {
     let has = report
         .suggestions
         .iter()
-        .any(|s| s.contains("added via MCP"));
+        .any(|s| s.contains("added for this tag"));
     assert!(
         !has,
         "should not fire when added=9; got: {:?}",
@@ -816,7 +816,7 @@ fn usage_suggestion_does_not_fire_when_verified_nonzero() {
     let has = report
         .suggestions
         .iter()
-        .any(|s| s.contains("added via MCP"));
+        .any(|s| s.contains("added for this tag"));
     assert!(
         !has,
         "should not fire when verified=1; got: {:?}",
@@ -832,7 +832,7 @@ fn usage_suggestion_absent_when_usage_none() {
     let has = report
         .suggestions
         .iter()
-        .any(|s| s.contains("added via MCP"));
+        .any(|s| s.contains("added for this tag"));
     assert!(
         !has,
         "None usage must not produce MCP suggestion; got: {:?}",

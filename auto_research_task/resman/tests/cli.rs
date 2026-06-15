@@ -198,3 +198,101 @@ fn mcp_initialize_handshake() {
         "response must have either a `result` or `error` field"
     );
 }
+
+// ── Test 7 ───────────────────────────────────────────────────────────────────
+/// `resman add` writes a usage.jsonl line with tool=resman_add_experiment and correct tag.
+#[test]
+fn add_writes_usage_jsonl() {
+    let home = TempDir::new().unwrap();
+    resman(home.path()).arg("init").assert().success();
+
+    resman(home.path())
+        .args([
+            "add", "-t", "T", "-c", "abc1234", "-v", "1.0", "-s", "keep", "-d", "test run",
+        ])
+        .assert()
+        .success();
+
+    let usage_path = home.path().join("usage.jsonl");
+    assert!(
+        usage_path.exists(),
+        "usage.jsonl must exist after resman add"
+    );
+
+    let contents = std::fs::read_to_string(&usage_path).unwrap();
+    let event: serde_json::Value = contents
+        .lines()
+        .find_map(|l| serde_json::from_str(l).ok())
+        .expect("usage.jsonl must contain at least one valid JSON line");
+
+    assert_eq!(
+        event["tool"].as_str(),
+        Some("resman_add_experiment"),
+        "tool must be resman_add_experiment"
+    );
+    assert_eq!(event["args"]["tag"].as_str(), Some("T"), "tag must be T");
+}
+
+// ── Test 8 ───────────────────────────────────────────────────────────────────
+/// `resman best -f value` does NOT append any line to usage.jsonl.
+#[test]
+fn best_does_not_write_usage_jsonl() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let usage_path = home.path().join("usage.jsonl");
+
+    // Count lines before (import may have written one).
+    let count_before = if usage_path.exists() {
+        std::fs::read_to_string(&usage_path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count()
+    } else {
+        0
+    };
+
+    resman(home.path())
+        .args(["best", "-f", "value"])
+        .assert()
+        .success();
+
+    let count_after = if usage_path.exists() {
+        std::fs::read_to_string(&usage_path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count()
+    } else {
+        0
+    };
+
+    assert_eq!(
+        count_before, count_after,
+        "`resman best` must not append to usage.jsonl (before={count_before}, after={count_after})"
+    );
+}
+
+// ── Test 9 ───────────────────────────────────────────────────────────────────
+/// With RESMAN_DISABLE_USAGE_LOG=1, `resman add` writes nothing to usage.jsonl.
+#[test]
+fn add_respects_disable_usage_log_env() {
+    let home = TempDir::new().unwrap();
+    resman(home.path()).arg("init").assert().success();
+
+    let mut cmd = Command::cargo_bin("resman").expect("binary must exist");
+    cmd.env("RESMAN_HOME", home.path())
+        .env("RESMAN_DISABLE_USAGE_LOG", "1")
+        .args([
+            "add", "-t", "T", "-c", "abc1234", "-v", "1.0", "-s", "keep", "-d", "test run",
+        ])
+        .assert()
+        .success();
+
+    let usage_path = home.path().join("usage.jsonl");
+    assert!(
+        !usage_path.exists(),
+        "usage.jsonl must NOT be created when RESMAN_DISABLE_USAGE_LOG=1"
+    );
+}

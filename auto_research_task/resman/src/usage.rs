@@ -1,9 +1,12 @@
-//! Per-call usage telemetry for the MCP server.
+//! Per-call usage telemetry for the MCP server and loop-advancing CLI commands.
 //!
 //! Writes one JSONL event per tool call into `<data_dir>/usage.jsonl`. This is
 //! the source of truth for "which agents call which tools, with what args, with
 //! what success rate" — needed to tune composite weights and distill templates
 //! before v1.0 schema freeze.
+//!
+//! Both MCP calls (via `src/commands/mcp.rs`) and CLI loop-advancing commands
+//! (add, verify, unverify, import, distill) are logged through the same path.
 //!
 //! Opt out via `RESMAN_DISABLE_USAGE_LOG=1`. Failures log once to stderr and
 //! are silently swallowed afterward — telemetry must never break a tool call.
@@ -64,14 +67,11 @@ pub fn log_call(
     match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut f) => {
             if let Err(e) = f.write_all(line.as_bytes()) {
-                eprintln!("resman-mcp: usage log write failed: {e}");
+                eprintln!("resman: usage log write failed: {e}");
             }
         }
         Err(e) => {
-            eprintln!(
-                "resman-mcp: usage log open failed ({}): {e}",
-                path.display()
-            );
+            eprintln!("resman: usage log open failed ({}): {e}", path.display());
         }
     }
 }

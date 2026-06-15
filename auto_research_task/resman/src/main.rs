@@ -13,14 +13,45 @@ mod usage;
 use std::process::ExitCode;
 
 use clap::{CommandFactory, Parser};
+use serde_json::json;
 
 use cli::{Cli, Commands};
 use store::default_data_dir;
+
+/// Return `(canonical_tool_name, args_json)` ONLY for loop-advancing CLI
+/// commands that should be mirrored in `usage.jsonl`. Returns `None` for all
+/// read-only / shell-API / infrastructure commands (Best, List, Search, …).
+fn usage_descriptor(cmd: &Commands) -> Option<(&'static str, serde_json::Value)> {
+    match cmd {
+        Commands::Add { tag, status, .. } => Some((
+            "resman_add_experiment",
+            json!({"tag": tag, "status": status}),
+        )),
+        Commands::Verify { tag, commit, .. } => {
+            Some(("resman_verify", json!({"tag": tag, "commit": commit})))
+        }
+        Commands::Unverify { commit, tag } => {
+            Some(("resman_unverify", json!({"tag": tag, "commit": commit})))
+        }
+        Commands::Import { tag, .. } => Some(("resman_import", json!({"tag": tag}))),
+        Commands::Distill { tag, all, .. } => {
+            if *all {
+                Some(("resman_distill", json!({"all": true})))
+            } else {
+                Some(("resman_distill", json!({"tag": tag})))
+            }
+        }
+        _ => None,
+    }
+}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
     term::init(cli.no_color);
     let data_dir = cli.data_dir.unwrap_or_else(default_data_dir);
+
+    let descriptor = usage_descriptor(&cli.command);
+    let timer = usage::CallTimer::start();
 
     let result = match cli.command {
         Commands::Init { path } => commands::init::cmd_init(path.as_deref().unwrap_or(&data_dir)),
@@ -199,11 +230,177 @@ fn main() -> ExitCode {
         }
     };
 
+    if let Some((tool, args)) = &descriptor {
+        usage::log_call(&data_dir, tool, args, result.is_ok(), timer.elapsed_ms(), 0);
+    }
+
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cli::{Commands, OutputFormat};
+
+    fn make_add(tag: &str, status: &str) -> Commands {
+        Commands::Add {
+            tag: tag.to_string(),
+            commit: "abc1234".to_string(),
+            val_bpb: 1.0,
+            memory_gb: 0.0,
+            status: status.to_string(),
+            description: "test".to_string(),
+            params: vec![],
+            parent: None,
+            log: None,
+            no_gpu_probe: false,
+            metric_name: None,
+            metric_direction: None,
+        }
+    }
+
+    #[test]
+    fn usage_descriptor_add() {
+        let cmd = make_add("mytag", "keep");
+        let (name, args) = usage_descriptor(&cmd).expect("Add must produce a descriptor");
+        assert_eq!(name, "resman_add_experiment");
+        assert_eq!(args["tag"], "mytag");
+        assert_eq!(args["status"], "keep");
+    }
+
+    #[test]
+    fn usage_descriptor_verify() {
+        let cmd = Commands::Verify {
+            commit: "abc1234".to_string(),
+            value: 0.9,
+            tolerance: 0.01,
+            tag: Some("t1".to_string()),
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Verify must produce a descriptor");
+        assert_eq!(name, "resman_verify");
+        assert_eq!(args["commit"], "abc1234");
+        assert_eq!(args["tag"], "t1");
+    }
+
+    #[test]
+    fn usage_descriptor_verify_no_tag() {
+        let cmd = Commands::Verify {
+            commit: "abc1234".to_string(),
+            value: 0.9,
+            tolerance: 0.01,
+            tag: None,
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Verify must produce a descriptor");
+        assert_eq!(name, "resman_verify");
+        assert!(args["tag"].is_null());
+    }
+
+    #[test]
+    fn usage_descriptor_unverify() {
+        let cmd = Commands::Unverify {
+            commit: "def5678".to_string(),
+            tag: Some("t2".to_string()),
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Unverify must produce a descriptor");
+        assert_eq!(name, "resman_unverify");
+        assert_eq!(args["commit"], "def5678");
+        assert_eq!(args["tag"], "t2");
+    }
+
+    #[test]
+    fn usage_descriptor_import() {
+        let cmd = Commands::Import {
+            path: std::path::PathBuf::from("x.tsv"),
+            tag: Some("run1".to_string()),
+            force: false,
+            metric_name: None,
+            metric_direction: None,
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Import must produce a descriptor");
+        assert_eq!(name, "resman_import");
+        assert_eq!(args["tag"], "run1");
+    }
+
+    #[test]
+    fn usage_descriptor_distill_tag() {
+        let cmd = Commands::Distill {
+            tag: Some("run1".to_string()),
+            out: None,
+            format: crate::commands::distill::DistillFormat::Markdown,
+            html: None,
+            all: false,
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Distill(tag) must produce a descriptor");
+        assert_eq!(name, "resman_distill");
+        assert_eq!(args["tag"], "run1");
+        assert!(args.get("all").is_none() || args["all"].is_null());
+    }
+
+    #[test]
+    fn usage_descriptor_distill_all() {
+        let cmd = Commands::Distill {
+            tag: None,
+            out: None,
+            format: crate::commands::distill::DistillFormat::Markdown,
+            html: None,
+            all: true,
+        };
+        let (name, args) = usage_descriptor(&cmd).expect("Distill(all) must produce a descriptor");
+        assert_eq!(name, "resman_distill");
+        assert_eq!(args["all"], true);
+    }
+
+    #[test]
+    fn usage_descriptor_returns_none_for_best() {
+        let cmd = Commands::Best {
+            tag: None,
+            format: "value".to_string(),
+            composite: false,
+        };
+        assert!(
+            usage_descriptor(&cmd).is_none(),
+            "Best must NOT produce a usage descriptor"
+        );
+    }
+
+    #[test]
+    fn usage_descriptor_returns_none_for_mcp() {
+        assert!(usage_descriptor(&Commands::Mcp).is_none());
+    }
+
+    #[test]
+    fn usage_descriptor_returns_none_for_usage() {
+        let cmd = Commands::Usage {
+            by_tool: false,
+            errors: false,
+            sequences: false,
+            summary: false,
+            tool: None,
+            since: None,
+            top: 20,
+            format: OutputFormat::Table,
+        };
+        assert!(usage_descriptor(&cmd).is_none());
+    }
+
+    #[test]
+    fn usage_descriptor_returns_none_for_list() {
+        let cmd = Commands::List {
+            status: None,
+            sort_by: cli::SortField::ValBpb,
+            grep: None,
+            top: None,
+            reverse: false,
+            tag: None,
+            format: OutputFormat::Table,
+            signal: vec![],
+        };
+        assert!(usage_descriptor(&cmd).is_none());
     }
 }
