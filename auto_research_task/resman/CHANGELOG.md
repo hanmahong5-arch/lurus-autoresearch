@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.4] — doctor path display on Windows (2026-06-16)
+
+Found by dogfooding `resman doctor` on a Windows host.
+
+### Fixed
+
+- `resman doctor` printed the data dir with Windows' `\\?\C:\...`
+  verbatim/extended-length prefix (from `canonicalize`), inconsistent with
+  every other line. Stripped for display via a `strip_verbatim_prefix`
+  helper (cosmetic only — the writability probe path is unchanged; no-op on
+  non-Windows paths).
+
+---
+
 ## [0.15.3] — distill accuracy polish (2026-06-16)
 
 Found by dogfooding the flagship `distill` artifact against a realistic

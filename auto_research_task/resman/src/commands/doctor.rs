@@ -67,17 +67,27 @@ pub struct DoctorReport {
 // Individual checks
 // ---------------------------------------------------------------------------
 
+/// Strip the Windows `\\?\` verbatim/extended-length prefix that `canonicalize`
+/// adds, for clean user-facing display. No-op on paths without it (i.e. every
+/// non-Windows path, and Windows paths that were not canonicalized).
+fn strip_verbatim_prefix(s: &str) -> String {
+    s.strip_prefix(r"\\?\").unwrap_or(s).to_string()
+}
+
 /// Check 1: data_dir exists and is writable.
 pub fn check_data_dir(data_dir: &Path) -> CheckResult {
     let abs = data_dir
         .canonicalize()
         .unwrap_or_else(|_| data_dir.to_path_buf());
+    // canonicalize() adds a `\\?\C:\...` verbatim prefix on Windows; strip it
+    // for clean display (cosmetic only — `abs` itself is unchanged).
+    let shown = strip_verbatim_prefix(&abs.display().to_string());
 
     if !data_dir.exists() {
         return CheckResult {
             name: "data_dir",
             status: CheckStatus::Fail,
-            detail: format!("{} (does not exist)", abs.display()),
+            detail: format!("{shown} (does not exist)"),
             hint: Some("run `resman init` to create it".into()),
         };
     }
@@ -93,15 +103,15 @@ pub fn check_data_dir(data_dir: &Path) -> CheckResult {
         CheckResult {
             name: "data_dir",
             status: CheckStatus::Ok,
-            detail: format!("{} (writable)", abs.display()),
+            detail: format!("{shown} (writable)"),
             hint: None,
         }
     } else {
         CheckResult {
             name: "data_dir",
             status: CheckStatus::Fail,
-            detail: format!("{} (not writable)", abs.display()),
-            hint: Some(format!("check directory permissions on {}", abs.display())),
+            detail: format!("{shown} (not writable)"),
+            hint: Some(format!("check directory permissions on {shown}")),
         }
     }
 }
@@ -545,6 +555,14 @@ mod tests {
         let path = dir.path().to_path_buf();
         crate::store::ensure_initialized(&path).unwrap();
         (dir, path)
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_cleans_windows_paths() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\Users\x"), r"C:\Users\x");
+        // No-op when the prefix is absent (every non-Windows path).
+        assert_eq!(strip_verbatim_prefix("/home/x/.resman"), "/home/x/.resman");
+        assert_eq!(strip_verbatim_prefix(r"C:\plain"), r"C:\plain");
     }
 
     // 1. data_dir writable (tempdir always is)
