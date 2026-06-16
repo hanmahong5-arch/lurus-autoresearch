@@ -321,6 +321,32 @@ mod model_tests {
         assert!("bad".parse::<Direction>().is_err());
     }
 
+    /// Guard the wire-format invariant: every Status variant must serialize to
+    /// its exact lowercase string. A serde rename or variant rename would silently
+    /// corrupt existing stores; this test catches that at compile+test time.
+    #[test]
+    fn status_serde_wire_format_all_variants() {
+        let cases = [
+            (Status::Keep, "\"keep\""),
+            (Status::Discard, "\"discard\""),
+            (Status::Crash, "\"crash\""),
+            (Status::Best, "\"best\""),
+            (Status::Verified, "\"verified\""),
+        ];
+        for (variant, expected_json) in cases {
+            let serialized = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                serialized, expected_json,
+                "Status::{variant:?} must serialize to {expected_json}, got {serialized}"
+            );
+            let roundtrip: Status = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(
+                roundtrip, variant,
+                "Status::{variant:?} must deserialize back from {serialized}"
+            );
+        }
+    }
+
     #[test]
     fn direction_serde_lowercase() {
         let s = serde_json::to_string(&Direction::Minimize).unwrap();

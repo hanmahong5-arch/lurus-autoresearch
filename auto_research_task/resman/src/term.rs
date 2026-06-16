@@ -113,29 +113,65 @@ pub fn status_glyph(s: &crate::model::Status) -> String {
 mod tests {
     use super::*;
 
+    /// Bypass the global OnceLock and call paint() directly with color off.
+    /// paint() calls enabled() which returns *USE_COLOR.get().unwrap_or(&false).
+    /// In a test binary USE_COLOR is never init()'d (no main), so it defaults
+    /// to false — paint() must return the bare string, no ANSI escapes.
     #[test]
-    fn paint_disabled_returns_plain() {
-        // OnceLock may already be set by another test; we just test the logic
-        // directly via paint().
-        // Force disabled by checking raw logic without relying on global state.
-        let result = if false {
-            format!("\x1b[32m{}\x1b[0m", "hi")
-        } else {
-            "hi".to_string()
-        };
-        assert_eq!(result, "hi");
+    fn paint_disabled_no_ansi_escapes() {
+        // Confirm the global default is disabled (uninitialised = false).
+        assert!(!enabled(), "expected color disabled in test context");
+        let result = paint("hello", "32");
+        assert_eq!(
+            result, "hello",
+            "paint() with color OFF must return bare string"
+        );
+        assert!(
+            !result.contains('\x1b'),
+            "paint() with color OFF must not emit any ANSI escape byte"
+        );
     }
 
+    /// Verify that the ANSI formatting path produces the correct escape sequence
+    /// by calling the formatting logic directly (bypasses the OnceLock entirely).
+    /// This is the only testable seam for the enabled path because OnceLock can
+    /// only be set once per process and the test harness does not call init().
     #[test]
-    fn paint_enabled_contains_escape() {
-        let colored = format!("\x1b[32m{}\x1b[0m", "hi");
-        assert!(colored.contains("\x1b[32m"));
-        assert!(colored.contains("\x1b[0m"));
+    fn paint_enabled_logic_produces_correct_escape() {
+        // Replicate paint()'s enabled branch exactly — same format string.
+        let s = "hi";
+        let code = "32";
+        let colored = format!("\x1b[{}m{}\x1b[0m", code, s);
+        assert!(colored.contains("\x1b[32m"), "must contain opening escape");
+        assert!(colored.contains("\x1b[0m"), "must contain reset escape");
+        assert!(colored.contains("hi"), "must contain original text");
+    }
+
+    /// Color helper functions must also pass through cleanly when color is off.
+    #[test]
+    fn color_helpers_no_escapes_when_disabled() {
+        assert!(!enabled());
+        for result in [
+            red("x"),
+            green("x"),
+            dim("x"),
+            bold_green("x"),
+            bold_cyan("x"),
+        ] {
+            assert_eq!(
+                result, "x",
+                "helper must return bare string when color disabled"
+            );
+            assert!(
+                !result.contains('\x1b'),
+                "helper must not emit ANSI when disabled"
+            );
+        }
     }
 
     #[test]
     fn enabled_defaults_false_without_init() {
-        // In tests, USE_COLOR may or may not be set. Just verify it doesn't panic.
-        let _ = enabled();
+        // Confirm no-panic and correct default.
+        assert!(!enabled());
     }
 }

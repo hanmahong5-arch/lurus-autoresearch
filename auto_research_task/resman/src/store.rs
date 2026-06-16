@@ -316,19 +316,35 @@ mod tests {
 
     #[test]
     fn proptest_save_load_roundtrip_preserves_fields() {
+        use crate::model::Status;
         use proptest::prelude::*;
+
+        // Strategy that generates all five Status variants.
+        let status_strategy = prop_oneof![
+            Just(Status::Keep),
+            Just(Status::Discard),
+            Just(Status::Crash),
+            Just(Status::Best),
+            Just(Status::Verified),
+        ];
+
+        // val_bpb range: 0.0 (edge), typical training range, and large finite.
+        let val_bpb_strategy = prop_oneof![Just(0.0f64), 0.5f64..=2.0f64, Just(1e6f64),];
+
         proptest!(|(
             tag in "[a-z][a-z0-9]{2,10}",
             n_exp in 0usize..6,
+            statuses in proptest::collection::vec(status_strategy, 0..6),
+            val_bpbs in proptest::collection::vec(val_bpb_strategy, 0..6),
         )| {
             let dir = tempfile::tempdir().unwrap();
             ensure_initialized(dir.path()).unwrap();
 
             let experiments: Vec<crate::model::Experiment> = (0..n_exp).map(|i| crate::model::Experiment {
                 commit: format!("c{i:07x}"),
-                val_bpb: i as f64 * 0.1 + 0.5,
+                val_bpb: *val_bpbs.get(i).unwrap_or(&(i as f64 * 0.1 + 0.5)),
                 memory_gb: i as f64,
-                status: crate::model::Status::Keep,
+                status: *statuses.get(i).unwrap_or(&Status::Keep),
                 description: format!("exp {i}"),
                 timestamp: "2026-05-16T00:00:00Z".to_string(),
                 params: std::collections::HashMap::new(),
@@ -356,7 +372,17 @@ mod tests {
             prop_assert_eq!(loaded.schema_version, 1u32);
             for (a, b) in loaded.experiments.iter().zip(run.experiments.iter()) {
                 prop_assert_eq!(a.commit.clone(), b.commit.clone());
-                prop_assert_eq!(a.val_bpb, b.val_bpb);
+                // Round-trip must preserve val_bpb to far below operational
+                // precision (printed at {:.6}); a relative 1e-9 tolerance ignores
+                // sub-ULP JSON noise while still catching a real precision bug
+                // (e.g. accidental f32 storage would drift ~1e-7 and fail).
+                prop_assert!(
+                    (a.val_bpb - b.val_bpb).abs() <= 1e-9 * b.val_bpb.abs().max(1.0),
+                    "val_bpb round-trip drifted beyond tolerance: {} vs {}",
+                    a.val_bpb,
+                    b.val_bpb
+                );
+                prop_assert_eq!(a.status, b.status);
             }
         });
     }

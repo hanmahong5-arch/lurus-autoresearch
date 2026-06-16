@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.13.3] — Classifier hardening + test rigor (2026-06-16)
+
+Tier 3 of the audit follow-up: systematic signal-classifier coverage, stronger
+tests, and supply-chain hardening of the installer. No schema changes.
+
+### Improved — signal-classifier coverage
+
+Common real-world failure phrasings that previously fell through to `unknown`
+are now classified, each with a dedicated test (plus a negative test asserting
+normal log lines stay signal-free):
+
+- **Oom** — PyTorch allocator line (`… GiB total capacity`, no "out of memory")
+  and explicit NCCL OOM.
+- **CudaError** — cuBLAS (`CUBLAS_STATUS_*`), cuDNN (`CUDNN_STATUS_*`),
+  `device-side assert triggered`, and generic `ncclInternalError` (a generic
+  NCCL failure is a CUDA-stack error, *not* an OOM).
+- **NanLoss** — AMP `Gradient overflow detected` / `GradScaler … overflow`.
+- **DivergedLoss** — `loss: -inf`, the HF-Trainer dict form `'train_loss': inf`,
+  Megatron `lm_loss: inf`, and grad-norm inf.
+- **SlowMfu** — HuggingFace `mfu=15.3%` / `MFU: 15.3` (plus existing
+  `mfu_percent:`).
+- **Timeout** — SLURM `DUE TO TIME LIMIT`, `subprocess.TimeoutExpired`,
+  `SIGALRM`.
+
+### Hardened — tests
+
+- Replaced a tautological `term.rs` color test (it asserted on a hardcoded
+  `if false`) with one that calls `paint()` and checks real output.
+- The `store.rs` round-trip proptest now generates all `Status` variants and a
+  full `val_bpb` range (0.0 … 1e6), not just `Status::Keep`.
+- Added a `Status` wire-format guard (every variant → its exact lowercase
+  string) and locked `best -f value` to the exact six-decimal byte format.
+
+### Hardened — supply chain
+
+- Release CI now publishes a `.sha256` per binary; `install.sh` verifies it when
+  present (aborting on mismatch) and still installs older pre-checksum releases
+  with a warning. Fully backward-compatible.
+
+### Tests
+
+176 → **199 passing** (0 failed). Clippy 0 warnings.
+
+---
+
 ## [0.13.2] — Audit hardening (2026-06-16)
 
 Fixes from a comprehensive 5-domain adversarial audit (MCP parity, correctness,

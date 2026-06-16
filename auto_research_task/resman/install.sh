@@ -70,6 +70,26 @@ have tar  || die "tar is required"
 curl -fsSL "$url" -o "$tmpdir/$asset" \
     || die "download failed. see https://github.com/$REPO/releases for manual install."
 
+# --- integrity check (optional; absent checksum = older release = skip) -----
+checksum_url="${url}.sha256"
+checksum_file="$tmpdir/${asset}.sha256"
+if curl -fsSL "$checksum_url" -o "$checksum_file" 2>/dev/null; then
+    # Rewrite checksum file so the path matches the local tmpdir location.
+    expected_hash=$(awk '{print $1}' "$checksum_file")
+    printf '%s  %s\n' "$expected_hash" "$tmpdir/$asset" > "$checksum_file"
+    if have sha256sum; then
+        sha256sum -c "$checksum_file" >/dev/null 2>&1 \
+            || die "checksum verification failed for $asset — aborting install."
+    elif have shasum; then
+        shasum -a 256 -c "$checksum_file" >/dev/null 2>&1 \
+            || die "checksum verification failed for $asset — aborting install."
+    else
+        printf 'warning: no sha256 tool available; skipping integrity check\n' >&2
+    fi
+else
+    printf 'warning: checksum file not found for %s (older release); skipping integrity check\n' "$asset" >&2
+fi
+
 tar -xzf "$tmpdir/$asset" -C "$tmpdir" \
     || die "extract failed"
 

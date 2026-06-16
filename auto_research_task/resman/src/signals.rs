@@ -21,8 +21,9 @@ pub enum Signal {
     /// CUDA runtime error other than OOM (e.g. illegal memory access,
     /// driver mismatch). `hint` is a short snippet from the matched line.
     CudaError { hint: String },
-    /// Training loss went NaN. Usually LR too high, numerical overflow,
-    /// or a malformed input.
+    /// Training loss went NaN, or gradient overflow was detected (AMP
+    /// GradScaler overflow lands here — numerically equivalent instability).
+    /// Usually LR too high, numerical overflow, or a malformed input.
     NanLoss,
     /// A Python `assert` fired. `location` is the file:line when
     /// extractable, else empty.
@@ -32,9 +33,10 @@ pub enum Signal {
     /// Nothing matched a known pattern. `pattern` is the last non-empty
     /// line of the tail, for forensic later.
     Unknown { pattern: String },
-    /// Training loss diverged to +inf (or -inf). Distinct from `NanLoss`
-    /// which covers NaN; this catches the "loss blew up" case where the
-    /// value is finite-but-infinite. `detail` is the matching log line.
+    /// Training loss diverged to +inf or -inf, or gradient norm hit inf.
+    /// Distinct from `NanLoss` which covers NaN; this catches the "loss
+    /// blew up" case where the value is infinite. `detail` is the matching
+    /// log line.
     DivergedLoss { detail: String },
     /// Hardware MFU (model FLOP utilization) is below 20 %, indicating
     /// severe under-utilization (memory-bandwidth-bound or misconfigured
@@ -87,24 +89,49 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     static RE_DIVERGED: OnceLock<Regex> = OnceLock::new();
     static RE_MFU: OnceLock<Regex> = OnceLock::new();
 
+    // OOM: original phrasings + PyTorch allocator line (contains "GiB total capacity"
+    // without the words "out of memory") + NCCL internal OOM.
     let re_oom = RE_OOM.get_or_init(|| {
-        re(r"(?i)(CUDA out of memory|CUDAOutOfMemoryError|torch\.cuda\.OutOfMemoryError|out of memory while|RuntimeError:.*out of memory)")
+        re(r"(?i)(CUDA out of memory\b|CUDAOutOfMemoryError|torch\.cuda\.OutOfMemoryError|out of memory while|RuntimeError:.*out of memory|GiB\s+total capacity\b|NCCL error:.*out of memory)")
     });
+
+    // CudaError: original + cuBLAS internal error + cuDNN status errors +
+    // device-side assert (which always fires a CUDA assertion, not an OOM).
     let re_cuda = RE_CUDA.get_or_init(|| {
-        re(r"(?i)(CUDA error[:\s]|RuntimeError:\s*CUDA|cuda runtime error|illegal memory access)")
+        re(r"(?i)(CUDA error[:\s]|RuntimeError:\s*CUDA|cuda runtime error|illegal memory access|cublasStatus_t|CUBLAS_STATUS_|cuDNN error:|CUDNN_STATUS_|device-side assert triggered|ncclInternalError)")
     });
+
+    // NanLoss: original phrasings + AMP gradient overflow phrasings.
+    // "Gradient overflow detected" and "GradScaler.*overflow" are numerically
+    // equivalent to NaN-loss instability so they land in the same bucket.
     let re_nan = RE_NAN.get_or_init(|| {
-        re(r"(?i)(loss is nan|loss\s*[:=]\s*nan|loss\s+nan|loss=.*nan|\bnan loss|returned nan|\bnan values?|detected nan|\bnan detected|found inf or nan|\bnan in (the )?grad)")
+        re(r"(?i)(loss is nan|loss\s*[:=]\s*nan|loss\s+nan|loss=.*nan|\bnan loss|returned nan|\bnan values?|detected nan|\bnan detected|found inf or nan|\bnan in (the )?grad|gradient overflow detected|gradscaler\b.*\boverflow\b)")
     });
+
     let re_assert = RE_ASSERT.get_or_init(|| re(r"AssertionError"));
     let re_assert_loc = RE_ASSERT_LOC.get_or_init(|| re(r#"File "([^"]+)", line (\d+)"#));
+
+    // Timeout: original phrasings + SLURM wall-time kill + subprocess timeout +
+    // POSIX SIGALRM (signal.alarm / SIGALRM).
     let re_timeout = RE_TIMEOUT.get_or_init(|| {
-        re(r"(?i)(TimeoutError|wall\s*clock.*exceeded|budget exceeded|exceeded.*time limit|training time.*exceeded)")
+        re(r"(?i)(TimeoutError|wall\s*clock.*exceeded|budget exceeded|exceeded.*time limit|training time.*exceeded|DUE TO TIME LIMIT|subprocess\.TimeoutExpired|SIGALRM\b|signal\.alarm\b)")
     });
-    // Matches "loss=inf", "loss: inf", "loss = inf", "loss : inf" (0-2 spaces around = or :)
-    // Does NOT match NaN — NanLoss regex covers that; DivergedLoss is the inf-only fallback.
-    let re_diverged = RE_DIVERGED.get_or_init(|| re(r"(?i)loss\s{0,2}[=:]\s{0,2}inf\b"));
-    let re_mfu = RE_MFU.get_or_init(|| re(r"mfu_percent:\s*([\d.]+)"));
+
+    // DivergedLoss: broadened to cover:
+    //   - optional leading minus: loss=inf, loss=-inf
+    //   - more key names: train_loss, lm_loss, plus the bare "loss" key
+    //   - separator is = or : with optional surrounding spaces
+    //   - grad-norm inf alternate: "grad norm: inf" / "clip_grad_norm ... inf"
+    // NanLoss still takes priority (guard below); this regex deliberately does
+    // NOT match "nan" — that is handled by RE_NAN.
+    let re_diverged = RE_DIVERGED.get_or_init(|| {
+        re(r"(?i)(\b(?:train_loss|lm_loss|loss)'?\s{0,2}[=:]\s{0,2}-?inf\b|(?:grad\s+norm|clip_grad_norm)[^:\n]*?:\s*inf\b)")
+    });
+
+    // SlowMfu: original "mfu_percent: N" + HuggingFace "mfu=N%" + bare "MFU: N"
+    // (case-insensitive for the latter two). Captures the numeric value in group 1.
+    let re_mfu =
+        RE_MFU.get_or_init(|| re(r"(?i)(?:mfu_percent:\s*([\d.]+)|mfu=([\d.]+)%|MFU:\s*([\d.]+))"));
 
     let mut out = Vec::new();
 
@@ -135,7 +162,6 @@ pub fn classify(tail: &str) -> Vec<Signal> {
         out.push(Signal::Timeout);
     }
     // DivergedLoss: only fire when NanLoss did NOT already match, so NaN takes priority.
-    // Primarily catches "loss=inf" / "loss: inf" cases.
     if re_diverged.is_match(tail) && !out.iter().any(|s| matches!(s, Signal::NanLoss)) {
         let detail = tail
             .lines()
@@ -144,10 +170,17 @@ pub fn classify(tail: &str) -> Vec<Signal> {
             .unwrap_or_default();
         out.push(Signal::DivergedLoss { detail });
     }
-    // SlowMfu: parse the first mfu_percent value found; signal only if < 20.0.
+    // SlowMfu: parse the first mfu value found across all three format variants;
+    // signal only if < 20.0.
     if let Some(mfu) = re_mfu
         .captures(tail)
-        .and_then(|cap| cap[1].parse::<f64>().ok())
+        .and_then(|cap| {
+            // Groups 1/2/3 correspond to the three alternates.
+            cap.get(1)
+                .or_else(|| cap.get(2))
+                .or_else(|| cap.get(3))
+                .and_then(|m| m.as_str().parse::<f64>().ok())
+        })
         .filter(|&v| v < 20.0)
     {
         out.push(Signal::SlowMfu { mfu_percent: mfu });
@@ -359,5 +392,262 @@ mod tests {
                 .any(|s| matches!(s, Signal::DivergedLoss { .. })),
             "DivergedLoss should not fire when NanLoss already matched"
         );
+    }
+
+    // ── NEW TESTS ────────────────────────────────────────────────────────────
+
+    // OOM: PyTorch allocator line without "out of memory" text.
+    #[test]
+    fn oom_pytorch_allocator_line_without_oom_text() {
+        let t = "torch.cuda.OutOfMemoryError: Tried to allocate 4.00 GiB (GPU 0; 6.00 GiB total capacity)";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Oom)),
+            "expected Oom from PyTorch allocator line"
+        );
+    }
+
+    // CudaError: a *generic* NCCL internal error is a CUDA-stack/comms failure,
+    // not necessarily OOM — only an explicit "NCCL error: ... out of memory"
+    // counts as Oom (see oom_nccl_explicit_oom).
+    #[test]
+    fn nccl_internal_error_is_cuda_error() {
+        let t = "ncclInternalError: ncclSystemError";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter().any(|s| matches!(s, Signal::CudaError { .. })),
+            "expected CudaError from generic ncclInternalError, got {sigs:?}"
+        );
+        assert!(
+            !sigs.iter().any(|s| matches!(s, Signal::Oom)),
+            "generic ncclInternalError must NOT classify as Oom"
+        );
+    }
+
+    // OOM: NCCL explicit out-of-memory message.
+    #[test]
+    fn oom_nccl_explicit_oom() {
+        let t = "NCCL error: out of memory during all-reduce";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Oom)),
+            "expected Oom from NCCL error: out of memory"
+        );
+    }
+
+    // CudaError: cuBLAS status error.
+    #[test]
+    fn cuda_error_cublas_status() {
+        let t = "RuntimeError: cuBLAS error: cublasStatus_t: CUBLAS_STATUS_INTERNAL_ERROR";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter().any(|s| matches!(s, Signal::CudaError { .. })),
+            "expected CudaError from cuBLAS status, got {sigs:?}"
+        );
+        // Must not also fire OOM.
+        assert!(!sigs.iter().any(|s| matches!(s, Signal::Oom)));
+    }
+
+    // CudaError: cuDNN status error.
+    #[test]
+    fn cuda_error_cudnn_status() {
+        let t = "RuntimeError: cuDNN error: CUDNN_STATUS_EXECUTION_FAILED";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter().any(|s| matches!(s, Signal::CudaError { .. })),
+            "expected CudaError from cuDNN status, got {sigs:?}"
+        );
+    }
+
+    // CudaError: device-side assert.
+    #[test]
+    fn cuda_error_device_side_assert() {
+        let t = "CUDA error: device-side assert triggered";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter().any(|s| matches!(s, Signal::CudaError { .. })),
+            "expected CudaError from device-side assert, got {sigs:?}"
+        );
+    }
+
+    // NanLoss: AMP gradient overflow (GradScaler variant).
+    #[test]
+    fn nan_loss_amp_grad_scaler_overflow() {
+        let t = "GradScaler: overflow detected, skipping optimizer step";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::NanLoss)),
+            "expected NanLoss from GradScaler overflow"
+        );
+    }
+
+    // NanLoss: explicit "Gradient overflow detected" phrasing.
+    #[test]
+    fn nan_loss_gradient_overflow_detected() {
+        let t = "Gradient overflow detected in fp16 training";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::NanLoss)),
+            "expected NanLoss from gradient overflow detected"
+        );
+    }
+
+    // DivergedLoss: negative-inf loss (loss: -inf).
+    #[test]
+    fn diverged_loss_negative_inf() {
+        let t = "step 50: loss: -inf";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss for loss: -inf, got {sigs:?}"
+        );
+    }
+
+    // DivergedLoss: HuggingFace Trainer key name (train_loss=inf).
+    #[test]
+    fn diverged_loss_train_loss_key() {
+        let t = "{'train_loss': inf, 'epoch': 1}";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss for train_loss=inf, got {sigs:?}"
+        );
+    }
+
+    // DivergedLoss: Megatron-LM lm_loss key.
+    #[test]
+    fn diverged_loss_lm_loss_key() {
+        let t = "iteration 200 | lm_loss: inf";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss for lm_loss: inf, got {sigs:?}"
+        );
+    }
+
+    // DivergedLoss: grad norm inf (bare form).
+    #[test]
+    fn diverged_loss_grad_norm_inf() {
+        let t = "grad norm: inf";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss for grad norm: inf, got {sigs:?}"
+        );
+    }
+
+    // DivergedLoss: clip_grad_norm inf.
+    #[test]
+    fn diverged_loss_clip_grad_norm_inf() {
+        let t = "clip_grad_norm before clip: inf";
+        let sigs = classify(t);
+        assert!(
+            sigs.iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "expected DivergedLoss for clip_grad_norm inf, got {sigs:?}"
+        );
+    }
+
+    // DivergedLoss must NOT fire when NanLoss already matched (priority guard).
+    #[test]
+    fn diverged_loss_does_not_fire_when_nan_matched() {
+        // A log that matches NanLoss first; any potential inf match must be suppressed.
+        let t = "loss is nan\ngrad norm: inf";
+        let sigs = classify(t);
+        assert!(sigs.iter().any(|s| matches!(s, Signal::NanLoss)));
+        assert!(
+            !sigs
+                .iter()
+                .any(|s| matches!(s, Signal::DivergedLoss { .. })),
+            "DivergedLoss must not fire when NanLoss already matched"
+        );
+    }
+
+    // SlowMfu: HuggingFace "mfu=15.3%" format.
+    #[test]
+    fn slow_mfu_hf_percent_format() {
+        let t = "step 100 | loss 2.1 | mfu=15.3%";
+        let sigs = classify(t);
+        match sigs.iter().find(|s| matches!(s, Signal::SlowMfu { .. })) {
+            Some(Signal::SlowMfu { mfu_percent }) => {
+                assert!((mfu_percent - 15.3).abs() < 1e-9, "mfu={mfu_percent}")
+            }
+            _ => panic!("expected SlowMfu from mfu=15.3%, got {sigs:?}"),
+        }
+    }
+
+    // SlowMfu: bare "MFU: 15.3" (case-insensitive).
+    #[test]
+    fn slow_mfu_bare_mfu_colon_format() {
+        let t = "MFU: 15.3";
+        let sigs = classify(t);
+        match sigs.iter().find(|s| matches!(s, Signal::SlowMfu { .. })) {
+            Some(Signal::SlowMfu { mfu_percent }) => {
+                assert!((mfu_percent - 15.3).abs() < 1e-9, "mfu={mfu_percent}")
+            }
+            _ => panic!("expected SlowMfu from MFU: 15.3, got {sigs:?}"),
+        }
+    }
+
+    // SlowMfu: "mfu=45.0%" must NOT fire (above threshold).
+    #[test]
+    fn slow_mfu_hf_above_threshold_no_signal() {
+        let t = "step 200 | loss 1.9 | mfu=45.0%";
+        assert!(
+            !classify(t)
+                .iter()
+                .any(|s| matches!(s, Signal::SlowMfu { .. })),
+            "unexpected SlowMfu for mfu=45.0%"
+        );
+    }
+
+    // Timeout: SLURM wall-time kill.
+    #[test]
+    fn timeout_slurm_due_to_time_limit() {
+        let t = "slurmstepd: error: *** JOB 12345 ON node01 CANCELLED AT 2024-01-01T00:00:00 DUE TO TIME LIMIT ***";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Timeout)),
+            "expected Timeout from SLURM DUE TO TIME LIMIT"
+        );
+    }
+
+    // Timeout: subprocess.TimeoutExpired.
+    #[test]
+    fn timeout_subprocess_timeout_expired() {
+        let t = "subprocess.TimeoutExpired: Command '['python', 'train.py']' timed out after 300 seconds";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Timeout)),
+            "expected Timeout from subprocess.TimeoutExpired"
+        );
+    }
+
+    // Timeout: SIGALRM.
+    #[test]
+    fn timeout_sigalrm() {
+        let t = "Killed by signal SIGALRM";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Timeout)),
+            "expected Timeout from SIGALRM"
+        );
+    }
+
+    // Negative test: normal training progress lines must yield no real signal.
+    // Only Unknown (or no signals at all) is acceptable.
+    #[test]
+    fn negative_normal_training_log_no_real_signal() {
+        let t = concat!(
+            "iter 100/5000 | loss 3.21 | mfu 45.0%\n",
+            "iter 200/5000 | loss 2.87 | mfu 46.1%\n",
+            "saving checkpoint to checkpoints/step200.pt\n",
+            "lr 0.001\n",
+            "iter 300/5000 | loss 2.54 | mfu 45.8%\n",
+        );
+        let sigs = classify(t);
+        for sig in &sigs {
+            assert!(
+                matches!(sig, Signal::Unknown { .. }),
+                "unexpected real signal {sig:?} in normal training log"
+            );
+        }
     }
 }

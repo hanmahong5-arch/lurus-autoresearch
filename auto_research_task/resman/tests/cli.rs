@@ -61,6 +61,17 @@ fn best_value_format_is_pure_float() {
     trimmed
         .parse::<f64>()
         .unwrap_or_else(|_| panic!("`best -f value` output {:?} is not a valid f64", trimmed));
+
+    // Must be the exact `{:.6}` byte format (six decimals) — the public
+    // shell-script API contract. Lock it so a format change can't slip through.
+    let dot = trimmed
+        .find('.')
+        .expect("`best -f value` must contain a decimal point");
+    assert_eq!(
+        trimmed.len() - dot - 1,
+        6,
+        "`best -f value` must print exactly six decimals: {trimmed:?}"
+    );
 }
 
 // ── Test 2 ───────────────────────────────────────────────────────────────────
