@@ -183,6 +183,33 @@ analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`.
 - MCP wiring guide: [docs/MCP.md](docs/MCP.md)
 - Field-level schema decisions: [docs/SCHEMA.md](docs/SCHEMA.md)
 
+## The feedback flywheel
+
+resman doesn't just store what an agent did — it reads its own usage back and
+turns it into advice. **The more an agent uses resman, the sharper
+`resman distill` gets.**
+
+Every MCP and loop CLI call lands in `$RESMAN_HOME/usage.jsonl`. `resman distill`
+mines that telemetry for behavioral gaps and surfaces them as *evidence-grounded*
+suggestions. For example, an agent that logged ten experiments under a tag but
+never verified one:
+
+```bash
+$ resman distill -t apr17
+...
+## Suggestions
+1. ...
+2. Agent usage shows 10 experiments added for this tag but zero verify calls —
+   a reproducibility gap. Re-run your top candidates through `resman verify`
+   before trusting them.
+```
+
+That line fires *only because the telemetry shows the behavior* — not from a
+static rule. Remove `usage.jsonl` and it vanishes: distill degrades gracefully
+to its baseline output, so there is **zero noise before an agent has any
+history**, and the advice compounds as real usage accumulates. Local-only; opt
+out any time with `RESMAN_DISABLE_USAGE_LOG=1`.
+
 ## Roadmap
 
 Shipped in v0.9: `doctor`, `usage`, structured MCP JSON across all tools,
