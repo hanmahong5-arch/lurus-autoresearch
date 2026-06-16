@@ -156,7 +156,7 @@ Add to `.claude/mcp.json` (Claude Code) or `~/.cursor/mcp.json`:
 { "mcpServers": { "resman": { "command": "resman", "args": ["mcp"] } } }
 ```
 
-Now the agent gets **thirteen structured tools** out of the box, all returning
+Now the agent gets **seventeen structured tools** out of the box, all returning
 parseable JSON (no substring match on English prose):
 
 - `resman_doctor` — one-shot health probe, call this first.
@@ -176,6 +176,12 @@ parseable JSON (no substring match on English prose):
 - `resman_tags` — per-tag snapshot: count, best, metric, last_update per tag.
 - `resman_verify` / `resman_unverify` — promote a reproduced experiment
   to `status=verified`, and walk that label back when evidence disagrees.
+- `resman_list` — filtered, sorted experiment list (status, signal, grep,
+  top, sort) — richer than `resman_list_recent`.
+- `resman_compare` — best-of-each across runs, side by side.
+- `resman_stats` — aggregate counts + val_bpb best/worst/mean/stddev.
+- `resman_usage` — telemetry summary: totals, per-tag adoption funnel, and
+  cold (never-called) tools.
 
 Every `tools/call` is logged to `$RESMAN_HOME/usage.jsonl` for `resman usage`
 analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`.
@@ -213,11 +219,13 @@ out any time with `RESMAN_DISABLE_USAGE_LOG=1`.
 
 ## Roadmap
 
-The project is at **v0.13.1**. Through v0.9–v0.13 the following shipped:
+The project is at **v0.14.0**. Through v0.9–v0.14 the following shipped:
 `doctor`, `usage`, structured MCP JSON across all tools, typed signals
 (`diverged_loss`, `slow_mfu`), schema_version, property tests (v0.9–v0.11);
 usage-aware distill, composite best, verify/unverify, `resman_tags`,
-`resman_unverify`, `resman_doctor` MCP tools (v0.12–v0.13).
+`resman_unverify`, `resman_doctor` MCP tools (v0.12–v0.13); full MCP parity
+for the query commands — `resman_list`, `resman_compare`, `resman_stats`,
+`resman_usage` (v0.14).
 See [CHANGELOG.md](CHANGELOG.md) and field-level decisions in
 [docs/SCHEMA.md](docs/SCHEMA.md).
 

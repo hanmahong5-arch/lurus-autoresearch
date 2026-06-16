@@ -19,38 +19,19 @@ pub struct ListOpts<'a> {
     pub signal_filters: &'a [String],
 }
 
-pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
-    let ListOpts {
-        status_filter,
-        sort_by,
-        grep_pat,
-        top,
-        reverse,
-        tag,
-        format,
-        signal_filters,
-    } = opts;
-    let runs = match tag {
-        Some(t) => vec![load_run_or_suggest(data_dir, t)?],
-        None => load_all_runs(data_dir)?,
-    };
-    if runs.is_empty() {
-        println!("no experiments found. try `resman import <results.tsv>` first.");
-        return Ok(());
-    }
-
+/// Filter, sort, and truncate a flat list of `(Experiment, RunLog)` pairs.
+///
+/// Returns `Err` when a signal filter name or status string is invalid.
+pub(crate) fn filter_sort_truncate(
+    mut tagged: Vec<(Experiment, RunLog)>,
+    status_filter: Option<&str>,
+    sort_by: &SortField,
+    grep_pat: Option<&str>,
+    top: Option<usize>,
+    reverse: bool,
+    signal_filters: &[String],
+) -> Result<Vec<(Experiment, RunLog)>> {
     let re = grep_pat.map(Regex::new).transpose()?;
-
-    // Build Vec<(Experiment, RunLog)> to preserve run context for metric name resolution.
-    let mut tagged: Vec<(Experiment, RunLog)> = runs
-        .into_iter()
-        .flat_map(|r| {
-            let exps: Vec<Experiment> = r.experiments.clone();
-            exps.into_iter()
-                .map(move |e| (e, r.clone()))
-                .collect::<Vec<_>>()
-        })
-        .collect();
 
     match status_filter {
         None => tagged.retain(|(e, _)| e.status.is_kept()),
@@ -103,6 +84,50 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
     if let Some(n) = top {
         tagged.truncate(n);
     }
+
+    Ok(tagged)
+}
+
+pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
+    let ListOpts {
+        status_filter,
+        sort_by,
+        grep_pat,
+        top,
+        reverse,
+        tag,
+        format,
+        signal_filters,
+    } = opts;
+    let runs = match tag {
+        Some(t) => vec![load_run_or_suggest(data_dir, t)?],
+        None => load_all_runs(data_dir)?,
+    };
+    if runs.is_empty() {
+        println!("no experiments found. try `resman import <results.tsv>` first.");
+        return Ok(());
+    }
+
+    // Build Vec<(Experiment, RunLog)> to preserve run context for metric name resolution.
+    let tagged: Vec<(Experiment, RunLog)> = runs
+        .into_iter()
+        .flat_map(|r| {
+            let exps: Vec<Experiment> = r.experiments.clone();
+            exps.into_iter()
+                .map(move |e| (e, r.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    let tagged = filter_sort_truncate(
+        tagged,
+        status_filter,
+        sort_by,
+        grep_pat,
+        top,
+        reverse,
+        signal_filters,
+    )?;
 
     if tagged.is_empty() {
         println!("no experiments matched filters.");
@@ -157,16 +182,17 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::SortField;
     use crate::model::{Experiment, RunLog, Status};
     use crate::signals::Signal;
     use std::collections::HashMap;
 
-    fn make_exp_with_signals(commit: &str, sigs: Vec<Signal>) -> Experiment {
+    fn make_exp(commit: &str, status: Status, val_bpb: f64, sigs: Vec<Signal>) -> Experiment {
         Experiment {
             commit: commit.to_string(),
-            val_bpb: 1.0,
+            val_bpb,
             memory_gb: 0.0,
-            status: Status::Keep,
+            status,
             description: String::new(),
             timestamp: String::new(),
             params: HashMap::new(),
@@ -178,49 +204,125 @@ mod tests {
         }
     }
 
+    fn make_run(tag: &str, exps: Vec<Experiment>) -> RunLog {
+        RunLog {
+            run_tag: tag.to_string(),
+            created_at: String::new(),
+            experiments: exps,
+            metric_name: None,
+            metric_direction: None,
+            schema_version: 1,
+        }
+    }
+
     #[test]
     fn list_filters_by_signal() {
         let data_dir = std::env::temp_dir().join("resman_test_list_signal");
         std::fs::create_dir_all(crate::store::runs_dir(&data_dir)).unwrap();
 
-        let run = RunLog {
-            run_tag: "sig_test".to_string(),
-            created_at: String::new(),
-            experiments: vec![
-                make_exp_with_signals("oom_commit", vec![Signal::Oom]),
-                make_exp_with_signals("nan_commit", vec![Signal::NanLoss]),
+        let run = make_run(
+            "sig_test",
+            vec![
+                make_exp("oom_commit", Status::Keep, 1.0, vec![Signal::Oom]),
+                make_exp("nan_commit", Status::Keep, 1.0, vec![Signal::NanLoss]),
             ],
-            metric_name: None,
-            metric_direction: None,
-            schema_version: 1,
-        };
+        );
         crate::store::save_run(&data_dir, &run).unwrap();
 
         // Filtering to "oom" should only return the first experiment.
-        // We test the filtering logic directly by building tagged and applying it.
-        let signal_filters: Vec<String> = vec!["oom".to_string()];
-        let mut tagged: Vec<(Experiment, RunLog)> = run
+        let tagged: Vec<_> = run
             .experiments
             .clone()
             .into_iter()
             .map(|e| (e, run.clone()))
             .collect();
 
-        for want in signal_filters.iter() {
-            assert!(
-                crate::signals::ALL_KINDS.contains(&want.as_str()),
-                "unexpected kind {want}"
-            );
-        }
-        tagged.retain(|(e, _)| {
-            signal_filters
-                .iter()
-                .all(|want| e.signals.iter().any(|s| s.kind() == want))
-        });
+        let signal_filters = vec!["oom".to_string()];
+        let result = super::filter_sort_truncate(
+            tagged,
+            Some("all"),
+            &SortField::ValBpb,
+            None,
+            None,
+            false,
+            &signal_filters,
+        )
+        .unwrap();
 
-        assert_eq!(tagged.len(), 1);
-        assert_eq!(tagged[0].0.commit, "oom_commit");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0.commit, "oom_commit");
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn filter_sort_truncate_status_and_top() {
+        let run = make_run(
+            "t",
+            vec![
+                make_exp("a", Status::Keep, 2.0, vec![]),
+                make_exp("b", Status::Discard, 1.0, vec![]),
+                make_exp("c", Status::Keep, 3.0, vec![]),
+                make_exp("d", Status::Keep, 1.5, vec![]),
+            ],
+        );
+        let tagged: Vec<_> = run
+            .experiments
+            .clone()
+            .into_iter()
+            .map(|e| (e, run.clone()))
+            .collect();
+
+        // status_filter=None retains only kept; top=2; sorted by val_bpb ascending.
+        let result = super::filter_sort_truncate(
+            tagged,
+            None,
+            &SortField::ValBpb,
+            None,
+            Some(2),
+            false,
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 2, "top=2 should yield 2 results");
+        // After filtering (keep only kept: a=2.0, c=3.0, d=1.5), sorted ascending: d(1.5), a(2.0), c(3.0) → top 2: d, a
+        assert_eq!(result[0].0.commit, "d");
+        assert_eq!(result[0].0.val_bpb, 1.5);
+        assert_eq!(result[1].0.commit, "a");
+        assert_eq!(result[1].0.val_bpb, 2.0);
+    }
+
+    #[test]
+    fn filter_sort_truncate_signal_and_status() {
+        let run = make_run(
+            "t",
+            vec![
+                make_exp("x", Status::Keep, 1.0, vec![Signal::Oom]),
+                make_exp("y", Status::Keep, 1.0, vec![Signal::NanLoss]),
+                make_exp("z", Status::Discard, 1.0, vec![Signal::Oom]),
+            ],
+        );
+        let tagged: Vec<_> = run
+            .experiments
+            .clone()
+            .into_iter()
+            .map(|e| (e, run.clone()))
+            .collect();
+
+        // status_filter=None (kept only) + signal oom → only "x"
+        let result = super::filter_sort_truncate(
+            tagged,
+            None,
+            &SortField::ValBpb,
+            None,
+            None,
+            false,
+            &["oom".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0.commit, "x");
     }
 }

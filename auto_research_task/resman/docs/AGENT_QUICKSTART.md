@@ -56,7 +56,7 @@ to know which directions to avoid wasting a 5-minute slot on.
 
 Summarize what you learned to the user in 2-3 bullets before coding.
 
-## 2. The thirteen MCP tools, by lifecycle moment
+## 2. The seventeen MCP tools, by lifecycle moment
 
 | Moment | Tool | Why |
 |---|---|---|
@@ -72,12 +72,16 @@ Summarize what you learned to the user in 2-3 bullets before coding.
 | After a reproduction run near a prior baseline | `resman_verify` | Promote to verified if within tolerance (default 0.01, absolute, direction-sensitive). |
 | When later evidence disagrees with a verified result | `resman_unverify` | Retract the trust label back to `keep`. val_bpb retained. |
 | Comparing two branches | `resman_diff_tags` | Why did branch A beat branch B? |
+| Triaging mid-session | `resman_list` | Filtered, sorted view (by `status`, `signal`, `grep`, `top`) — deeper than `resman_list_recent`. |
+| Comparing many runs at once | `resman_compare` | Best-of-each across runs, side by side. |
+| Sanity-checking progress | `resman_stats` | Counts + val_bpb best/worst/mean/stddev for one tag or all runs. |
+| Auditing your own behavior | `resman_usage` | Telemetry totals, per-tag adoption funnel, cold (never-called) tools. |
 | End of session (or every ~10 runs) | `resman_distill` | Refresh your mental model. This is also what the *next* session will read. |
 
 `resman_near` rounds it out: after a new result, "what else landed near
 this val_bpb?" — useful for grounding.
 
-**All thirteen tools return structured JSON.** Parse, don't substring-match.
+**All seventeen tools return structured JSON.** Parse, don't substring-match.
 
 ## 3. Per-run write contract (`resman_add_experiment`)
 

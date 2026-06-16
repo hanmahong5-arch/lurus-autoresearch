@@ -25,6 +25,28 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "resman";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Canonical list of every MCP tool name. Single source of truth shared by the
+/// manifest, dispatch, and usage cold-tool analysis.
+pub(crate) const TOOL_NAMES: &[&str] = &[
+    "resman_best",
+    "resman_search",
+    "resman_near",
+    "resman_list_recent",
+    "resman_add_experiment",
+    "resman_diff_tags",
+    "resman_lineage",
+    "resman_find_by_signal",
+    "resman_distill",
+    "resman_verify",
+    "resman_unverify",
+    "resman_doctor",
+    "resman_tags",
+    "resman_list",
+    "resman_compare",
+    "resman_stats",
+    "resman_usage",
+];
+
 pub fn cmd_mcp(data_dir: PathBuf) -> Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -164,7 +186,7 @@ fn initialize_result() -> Value {
             "(5) If later evidence disagrees with a verified result, retract: `resman_unverify { commit }`. Symmetric — val_bpb retained, only the trust label moves back to keep. ",
             "(6) Every ~10 runs and at session end: `resman_distill { tag }`. This is what the next session will inherit — make sure it tells the story you'd want to read. ",
             "Tags group experiments into a session (e.g. `apr17-overnight`). Metrics can be any name via metric_name; set metric_direction to 'max' for higher-better metrics. ",
-            "Diagnostic surface: `resman_diff_tags` for branch-vs-branch comparison, `resman_near` for grounding a new bpb. ",
+            "Diagnostic surface: `resman_diff_tags` for branch-vs-branch comparison, `resman_near` for grounding a new bpb, `resman_list` for filtered/sorted triage (by status/signal/grep), `resman_compare` for best-of-each across runs, `resman_stats` for aggregate counts + bpb spread, and `resman_usage` to audit your own tool use (adoption funnel + cold tools). ",
             "See docs/AGENT_QUICKSTART.md for the full protocol."
         ),
     })
@@ -331,6 +353,50 @@ fn tool_manifest() -> Value {
                     "tag": { "type": "string", "description": "Optional: restrict search to this run tag." }
                 }
             }
+        },
+        {
+            "name": "resman_list",
+            "description": "Filtered, sorted list of experiments across all runs (richer than resman_list_recent: supports status/signal/grep filters and choice of sort field). Defaults to kept-only experiments. Returns JSON {count, experiments:[{tag, commit, val_bpb, memory_gb, status, metric_name, description, signals}]}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "status": { "type": "string", "enum": ["keep","discard","crash","best","verified","all"], "description": "Filter by status. Omit for the default kept-only view; 'all' shows everything." },
+                    "sort_by": { "type": "string", "enum": ["val_bpb","memory_gb","description","commit"], "default": "val_bpb" },
+                    "grep": { "type": "string", "description": "Regex filter on description." },
+                    "top": { "type": "integer", "description": "Show only the top N after sorting." },
+                    "reverse": { "type": "boolean", "default": false },
+                    "tag": { "type": "string", "description": "Restrict to a single run tag." },
+                    "signal": { "type": "array", "items": { "type": "string", "enum": crate::signals::ALL_KINDS }, "description": "Keep only experiments whose signals include ALL of these (AND)." }
+                }
+            }
+        },
+        {
+            "name": "resman_compare",
+            "description": "Compare the best experiment of multiple runs side by side. Omit tags to compare all runs; tags match by substring. Returns JSON {count, runs:[{run, best_bpb, metric_name, direction, best_commit, best_description, kept, crashed, total}]}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tags": { "type": "array", "items": { "type": "string" }, "description": "Run tags (substring match). Omit to compare all runs." }
+                }
+            }
+        },
+        {
+            "name": "resman_stats",
+            "description": "Aggregate statistics over experiments — status counts (kept/discarded/crashed) plus val_bpb best/worst/mean/stddev/improvement over kept runs. Omit tag for a cross-run summary. Returns JSON {tag, total, kept, discarded, crashed, val_bpb}; val_bpb is null when no kept run has a positive metric.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tag": { "type": "string", "description": "Restrict to a single run tag." }
+                }
+            }
+        },
+        {
+            "name": "resman_usage",
+            "description": "Telemetry summary from usage.jsonl (written by this MCP server on every tool call): totals, per-tag adoption funnel (added→verified→distilled), and cold tools never called. Use to audit how the agent actually uses resman and to find discoverability gaps. Returns JSON {total_events, ok, errors, funnel_by_tag, cold_tools}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
         }
     ])
 }
@@ -359,6 +425,10 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
         "resman_unverify" => tool_unverify(data_dir, &args),
         "resman_doctor" => tool_doctor(data_dir, &args),
         "resman_tags" => tool_tags(data_dir, &args),
+        "resman_list" => tool_list(data_dir, &args),
+        "resman_compare" => tool_compare(data_dir, &args),
+        "resman_stats" => tool_stats(data_dir, &args),
+        "resman_usage" => tool_usage(data_dir, &args),
         other => Err(format!("unknown tool: {other}")),
     }
 }
@@ -933,6 +1003,168 @@ fn tool_doctor(data_dir: &Path, _args: &Value) -> std::result::Result<String, St
     serde_json::to_string(&report).map_err(|e| e.to_string())
 }
 
+fn tool_list(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    use crate::cli::SortField;
+    use crate::commands::list::filter_sort_truncate;
+    use crate::model::Experiment;
+
+    let status = args.get("status").and_then(|v| v.as_str());
+    let grep = args.get("grep").and_then(|v| v.as_str());
+    let tag = args.get("tag").and_then(|v| v.as_str());
+    let top = args.get("top").and_then(|v| v.as_u64()).map(|n| n as usize);
+    let reverse = args
+        .get("reverse")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let signal_filters: Vec<String> = args
+        .get("signal")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let sort_by = match args
+        .get("sort_by")
+        .and_then(|v| v.as_str())
+        .unwrap_or("val_bpb")
+    {
+        "val_bpb" | "val-bpb" => SortField::ValBpb,
+        "memory_gb" | "memory-gb" => SortField::MemoryGb,
+        "description" => SortField::Description,
+        "commit" => SortField::Commit,
+        other => {
+            return Err(format!(
+                "unknown sort_by value `{other}`; expected one of: val_bpb, memory_gb, description, commit"
+            ));
+        }
+    };
+
+    let runs = match tag {
+        Some(t) => match load_run(data_dir, t).map_err(|e| e.to_string())? {
+            Some(r) => vec![r],
+            None => return Err(format!("no such tag: {t}")),
+        },
+        None => load_all_runs(data_dir).map_err(|e| e.to_string())?,
+    };
+
+    let tagged: Vec<(Experiment, crate::model::RunLog)> = runs
+        .into_iter()
+        .flat_map(|r| {
+            let exps: Vec<Experiment> = r.experiments.clone();
+            exps.into_iter()
+                .map(move |e| (e, r.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    let filtered = filter_sort_truncate(
+        tagged,
+        status,
+        &sort_by,
+        grep,
+        top,
+        reverse,
+        &signal_filters,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let experiments: Vec<Value> = filtered
+        .iter()
+        .map(|(e, r)| {
+            json!({
+                "tag": r.run_tag,
+                "commit": e.commit,
+                "val_bpb": e.val_bpb,
+                "memory_gb": e.memory_gb,
+                "status": e.status.to_string(),
+                "metric_name": e.effective_metric_name(r),
+                "description": e.description,
+                "signals": e.signals.iter().map(|s| s.kind()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    serde_json::to_string(&json!({ "count": experiments.len(), "experiments": experiments }))
+        .map_err(|e| e.to_string())
+}
+
+fn tool_compare(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    use crate::commands::compare::compare_summary;
+
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
+    let filtered: Vec<_> = if tags.is_empty() {
+        runs
+    } else {
+        runs.into_iter()
+            .filter(|r| tags.iter().any(|t| r.run_tag.contains(t.as_str())))
+            .collect()
+    };
+
+    let summary = compare_summary(&filtered);
+    serde_json::to_string(&json!({ "count": summary.len(), "runs": summary }))
+        .map_err(|e| e.to_string())
+}
+
+fn tool_stats(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
+    use crate::commands::stats::{compute_stats, pct};
+    use crate::model::Experiment;
+
+    let tag = args.get("tag").and_then(|v| v.as_str());
+
+    let experiments: Vec<Experiment> = match tag {
+        Some(t) => match load_run(data_dir, t).map_err(|e| e.to_string())? {
+            Some(r) => r.experiments,
+            None => return Err(format!("no such tag: {t}")),
+        },
+        None => load_all_runs(data_dir)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .flat_map(|r| r.experiments)
+            .collect(),
+    };
+
+    let d = compute_stats(&experiments);
+    let val_bpb = d.bpb.map(|b| {
+        json!({
+            "best": b.best,
+            "worst": b.worst,
+            "mean": b.mean,
+            "stddev": b.stddev,
+            "improvement": b.improvement,
+            "improvement_pct": b.pct_improve,
+            "bpb_drop_per_experiment": b.improvement_rate,
+        })
+    });
+
+    serde_json::to_string(&json!({
+        "tag": tag,
+        "total": d.total,
+        "kept": { "count": d.kept, "pct": pct(d.kept, d.total) },
+        "discarded": { "count": d.discarded, "pct": pct(d.discarded, d.total) },
+        "crashed": { "count": d.crashed, "pct": pct(d.crashed, d.total) },
+        "val_bpb": val_bpb,
+    }))
+    .map_err(|e| e.to_string())
+}
+
+fn tool_usage(data_dir: &Path, _args: &Value) -> std::result::Result<String, String> {
+    let events = crate::commands::usage::load_events(data_dir);
+    Ok(crate::commands::usage::summary_json(&events).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1411,5 +1643,117 @@ mod tests {
         };
         assert!(guard_result.is_err());
         assert!(guard_result.unwrap_err().contains("finite"));
+    }
+
+    // -----------------------------------------------------------------------
+    // New tests for resman_list / resman_compare / resman_stats / resman_usage
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_list_filters_by_signal_and_status() {
+        let (_dir, path) = tmp();
+        // Add a kept experiment with an OOM signal via log_tail.
+        let mut m1 = serde_json::Map::new();
+        m1.insert("tag".into(), json!("lt1"));
+        m1.insert("commit".into(), json!("oom001"));
+        m1.insert("val_bpb".into(), json!(0.0));
+        m1.insert("status".into(), json!("crash"));
+        m1.insert("description".into(), json!("oom run"));
+        m1.insert(
+            "log_tail".into(),
+            json!("RuntimeError: CUDA out of memory. Tried to allocate 4.00 GiB"),
+        );
+        tool_add(&path, &Value::Object(m1)).unwrap();
+
+        // Add a plain kept experiment with no signals.
+        tool_add(&path, &add_args("lt1", "plain001", 0.95, None)).unwrap();
+
+        // signal=["oom"] should return only the crash with oom signal.
+        let out = tool_list(&path, &json!({"signal": ["oom"], "status": "all"})).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["count"], 1, "expected 1 oom experiment");
+        let exps = v["experiments"].as_array().unwrap();
+        let signals = exps[0]["signals"].as_array().unwrap();
+        assert!(
+            signals.iter().any(|s| s.as_str() == Some("oom")),
+            "signals must contain oom"
+        );
+
+        // status=all should return both experiments (>=2).
+        let out2 = tool_list(&path, &json!({"status": "all"})).unwrap();
+        let v2: Value = serde_json::from_str(&out2).unwrap();
+        assert!(
+            v2["count"].as_u64().unwrap() >= 2,
+            "status=all must return >=2"
+        );
+    }
+
+    #[test]
+    fn tool_compare_one_entry_per_run() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("runA", "aaa001", 0.99, None)).unwrap();
+        tool_add(&path, &add_args("runB", "bbb001", 0.98, None)).unwrap();
+
+        let out = tool_compare(&path, &json!({})).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["count"], 2, "expected one entry per run");
+        let runs = v["runs"].as_array().unwrap();
+        assert_eq!(runs.len(), 2);
+    }
+
+    #[test]
+    fn tool_stats_returns_counts_and_bpb() {
+        let (_dir, path) = tmp();
+        tool_add(&path, &add_args("st1", "s001", 0.95, None)).unwrap();
+        tool_add(&path, &add_args("st1", "s002", 0.90, Some("s001"))).unwrap();
+
+        let out = tool_stats(&path, &json!({"tag": "st1"})).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["total"], 2, "total must be 2");
+        assert_eq!(v["kept"]["count"], 2, "kept.count must be 2");
+        let bpb = &v["val_bpb"];
+        assert!(bpb.is_object(), "val_bpb must be present and an object");
+        let best = bpb["best"].as_f64().unwrap();
+        assert!(best.is_finite(), "val_bpb.best must be finite");
+        assert!(best > 0.0, "val_bpb.best must be positive");
+    }
+
+    #[test]
+    fn tool_usage_reports_cold_tools() {
+        let (_dir, path) = tmp();
+        // Empty store — no usage.jsonl written, so all tools are cold.
+        let out = tool_usage(&path, &json!({})).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            v["total_events"].as_u64().unwrap(),
+            0,
+            "total_events must be 0"
+        );
+        let cold = v["cold_tools"].as_array().unwrap();
+        assert!(
+            !cold.is_empty(),
+            "cold_tools must be non-empty when no calls made"
+        );
+    }
+
+    #[test]
+    fn tool_names_match_manifest_and_dispatch() {
+        let manifest = tool_manifest();
+        let arr = manifest.as_array().unwrap();
+        assert_eq!(arr.len(), TOOL_NAMES.len(), "manifest count != TOOL_NAMES");
+        for name in TOOL_NAMES {
+            assert!(
+                arr.iter().any(|t| t["name"] == *name),
+                "manifest missing {name}"
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        crate::store::ensure_initialized(dir.path()).unwrap();
+        for name in TOOL_NAMES {
+            let res = handle_tool_call(dir.path(), &json!({"name": name, "arguments": {}}));
+            if let Err(e) = res {
+                assert!(!e.contains("unknown tool"), "dispatch missing {name}: {e}");
+            }
+        }
     }
 }

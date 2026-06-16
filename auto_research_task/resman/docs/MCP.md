@@ -1,6 +1,6 @@
 # resman as an MCP server
 
-**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets thirteen tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill`, `resman_verify`, `resman_unverify`, `resman_doctor`, `resman_tags` — without ever seeing resman's CLI in its context window.
+**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets seventeen tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill`, `resman_verify`, `resman_unverify`, `resman_doctor`, `resman_tags`, `resman_list`, `resman_compare`, `resman_stats`, `resman_usage` — without ever seeing resman's CLI in its context window.
 
 ## Why this matters
 
@@ -74,6 +74,10 @@ Expected client messages: `initialize` → `notifications/initialized` (no reply
 | `resman_unverify` | When later evidence disagrees with a verified result — retracts the trust label back to `keep`; val_bpb is retained. Symmetric counterpart to `resman_verify`. | (JSON) |
 | `resman_doctor` | Session start health probe — runs six checks (data dir, env, runs present, usage telemetry, MCP wiring, store invariants). Read `summary.fail`; fix any failing check's `hint` before proceeding. | (JSON) |
 | `resman_tags` | Per-tag snapshot: one row per tag (count, best, metric, last_update). Use for "what tags do I have?" — complements `resman_list_recent` which is per-experiment. | (JSON) |
+| `resman_list` *(v0.14)* | Mid-session triage — filtered, sorted experiment list across runs. Filters: `status`, `signal` (AND-repeatable), `grep`, `top`, `sort_by`, `tag`. Richer than `resman_list_recent` (which is recency-only). | (JSON) |
+| `resman_compare` *(v0.14)* | Comparing many runs at once — best experiment of each run side by side. Omit `tags` for all runs; tags match by substring. | (JSON) |
+| `resman_stats` *(v0.14)* | Sanity-check progress — aggregate counts (kept/discarded/crashed) + val_bpb best/worst/mean/stddev/improvement. `tag` optional (omit for cross-run). | (JSON) |
+| `resman_usage` *(v0.14)* | Audit the agent's own behavior — telemetry totals, per-tag adoption funnel (added→verified→distilled), and cold (never-called) tools. Reads `usage.jsonl`. | (JSON) |
 
 `resman_best` also accepts `composite: true` *(v0.7)* to rank by a multi-dim score (metric + verification + lineage + description) rather than raw metric. Preferred when the agent asks "which experiment should I resume from?".
 

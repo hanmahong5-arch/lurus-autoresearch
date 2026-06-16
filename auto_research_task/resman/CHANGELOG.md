@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.14.0] — Full MCP parity for query commands (2026-06-16)
+
+Four new MCP tools give the query CLI commands a first-class agent-facing
+surface. `TOOL_NAMES` is now the single source of truth for all 17 tools,
+fixing the stale cold-tools list in `resman usage` (was 13, now 17).
+A manifest↔dispatch drift-guard test catches future mismatches at CI time.
+
+### Added — MCP tools
+
+- **`resman_list`** — filtered, sorted experiment list (status/signal/grep/top/reverse/tag/sort_by). Richer than `resman_list_recent`; backed by the shared `filter_sort_truncate` helper.
+- **`resman_compare`** — per-run best-experiment table; optional tag substring filter. Backed by `compare_summary`.
+- **`resman_stats`** — aggregate counts (kept/discarded/crashed) + val_bpb best/worst/mean/stddev/improvement. Backed by `compute_stats`/`pct`.
+- **`resman_usage`** — telemetry summary from `usage.jsonl`: totals, per-tag adoption funnel, and cold tools. Backed by `load_events`/`summary_json`.
+
+### Fixed
+
+- `TOOL_NAMES` const (single source of truth) now lists all 17 tools; cold-tool
+  detection in `resman usage` and the new `resman_usage` MCP tool is accurate.
+
+### Tests
+
+199 → **~212 passing** (5 new handler tests + drift-guard). Clippy 0 warnings.
+
+---
+
 ## [0.13.3] — Classifier hardening + test rigor (2026-06-16)
 
 Tier 3 of the audit follow-up: systematic signal-classifier coverage, stronger

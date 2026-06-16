@@ -10,20 +10,6 @@ use serde_json::Value;
 use crate::cli::OutputFormat;
 use crate::error::Result;
 
-// All MCP tools — used to compute "cold" tools.
-const ALL_TOOLS: &[&str] = &[
-    "resman_best",
-    "resman_search",
-    "resman_near",
-    "resman_list_recent",
-    "resman_add_experiment",
-    "resman_diff_tags",
-    "resman_lineage",
-    "resman_find_by_signal",
-    "resman_distill",
-    "resman_verify",
-];
-
 pub struct UsageOpts {
     pub by_tool: bool,
     pub errors: bool,
@@ -90,6 +76,30 @@ pub(crate) fn load_events(data_dir: &Path) -> Vec<Event> {
     let path = data_dir.join("usage.jsonl");
     // Reuse the private loader with no filters; ignore any error (graceful).
     load_events_inner(&path, None, None).unwrap_or_default()
+}
+
+/// Build a JSON summary value suitable for `usage -o json` output.
+/// Includes `cold_tools`: TOOL_NAMES entries that never appear as `e.tool`,
+/// sorted alphabetically.
+pub(crate) fn summary_json(events: &[Event]) -> serde_json::Value {
+    let n = events.len();
+    let total_ok = events.iter().filter(|e| e.ok).count();
+    let funnel = build_funnel(events);
+    let called_tools: std::collections::HashSet<&str> =
+        events.iter().map(|e| e.tool.as_str()).collect();
+    let mut cold: Vec<&str> = crate::commands::mcp::TOOL_NAMES
+        .iter()
+        .copied()
+        .filter(|t| !called_tools.contains(t))
+        .collect();
+    cold.sort_unstable();
+    serde_json::json!({
+        "total_events": n,
+        "ok": total_ok,
+        "errors": n - total_ok,
+        "funnel_by_tag": funnel,
+        "cold_tools": cold,
+    })
 }
 
 enum Flavor {
@@ -209,16 +219,7 @@ fn render_summary(events: &[Event], opts: &UsageOpts) -> Result<()> {
 
     match opts.format {
         OutputFormat::Json => {
-            // adoption funnel per tag
-            let funnel = build_funnel(events);
-            let total_ok = events.iter().filter(|e| e.ok).count();
-            let out = serde_json::json!({
-                "total_events": n,
-                "ok": total_ok,
-                "errors": n - total_ok,
-                "funnel_by_tag": funnel,
-            });
-            println!("{}", serde_json::to_string_pretty(&out)?);
+            println!("{}", serde_json::to_string_pretty(&summary_json(events))?);
         }
         OutputFormat::Tsv => {
             println!("tag\tadded\tverified\tdistilled");
@@ -286,7 +287,7 @@ fn render_summary(events: &[Event], opts: &UsageOpts) -> Result<()> {
             // cold tools
             let called_tools: std::collections::HashSet<&str> =
                 events.iter().map(|e| e.tool.as_str()).collect();
-            let cold: Vec<&str> = ALL_TOOLS
+            let cold: Vec<&str> = crate::commands::mcp::TOOL_NAMES
                 .iter()
                 .copied()
                 .filter(|t| !called_tools.contains(t))
@@ -300,7 +301,7 @@ fn render_summary(events: &[Event], opts: &UsageOpts) -> Result<()> {
     Ok(())
 }
 
-fn build_funnel(events: &[Event]) -> Vec<Value> {
+pub(crate) fn build_funnel(events: &[Event]) -> Vec<Value> {
     // Group by args.tag (if present).
     let mut tag_map: HashMap<String, (u64, u64, u64)> = HashMap::new(); // (added, verified, distilled)
 
@@ -459,7 +460,7 @@ fn render_by_tool(events: &[Event], opts: &UsageOpts) -> Result<()> {
             // cold tools
             let called: std::collections::HashSet<&str> =
                 stats.iter().map(|s| s.tool.as_str()).collect();
-            let cold: Vec<&str> = ALL_TOOLS
+            let cold: Vec<&str> = crate::commands::mcp::TOOL_NAMES
                 .iter()
                 .copied()
                 .filter(|t| !called.contains(t))
@@ -885,5 +886,57 @@ mod tests {
         assert_eq!(a["distilled"].as_u64().unwrap(), 0);
         let b = funnel.iter().find(|e| e["tag"] == "b").unwrap();
         assert_eq!(b["distilled"].as_u64().unwrap(), 1);
+    }
+
+    #[test]
+    fn summary_json_cold_tools_lists_uncalled() {
+        use serde_json::json;
+        // Only resman_best and resman_add_experiment are "called"
+        let events = vec![
+            Event {
+                ts: "t".into(),
+                tool: "resman_best".into(),
+                args: json!({}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+            Event {
+                ts: "t".into(),
+                tool: "resman_add_experiment".into(),
+                args: json!({"tag": "x"}),
+                ok: true,
+                duration_ms: 1,
+                result_chars: 0,
+            },
+        ];
+        let val = summary_json(&events);
+
+        // total_events, ok, errors
+        assert_eq!(val["total_events"].as_u64().unwrap(), 2);
+        assert_eq!(val["ok"].as_u64().unwrap(), 2);
+        assert_eq!(val["errors"].as_u64().unwrap(), 0);
+
+        // cold_tools must be sorted and must not contain the two called tools
+        let cold = val["cold_tools"].as_array().unwrap();
+        let cold_strs: Vec<&str> = cold.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(
+            !cold_strs.contains(&"resman_best"),
+            "resman_best was called, must not be cold"
+        );
+        assert!(
+            !cold_strs.contains(&"resman_add_experiment"),
+            "resman_add_experiment was called, must not be cold"
+        );
+        // All remaining TOOL_NAMES should appear
+        for tool in crate::commands::mcp::TOOL_NAMES {
+            if *tool != "resman_best" && *tool != "resman_add_experiment" {
+                assert!(cold_strs.contains(tool), "expected {tool} in cold_tools");
+            }
+        }
+        // Verify sorted order
+        let mut sorted = cold_strs.clone();
+        sorted.sort_unstable();
+        assert_eq!(cold_strs, sorted, "cold_tools must be sorted");
     }
 }
