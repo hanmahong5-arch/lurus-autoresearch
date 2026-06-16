@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod csv;
 mod error;
 mod html;
 mod hw;
@@ -61,6 +62,8 @@ fn main() -> ExitCode {
             force,
             metric_name,
             metric_direction,
+            from,
+            metric,
         } => commands::import::cmd_import(
             &data_dir,
             &path,
@@ -68,6 +71,8 @@ fn main() -> ExitCode {
             force,
             metric_name,
             metric_direction,
+            from,
+            metric,
         ),
         Commands::Add {
             tag,
@@ -321,6 +326,8 @@ mod tests {
             force: false,
             metric_name: None,
             metric_direction: None,
+            from: cli::ImportSource::Tsv,
+            metric: None,
         };
         let (name, args) = usage_descriptor(&cmd).expect("Import must produce a descriptor");
         assert_eq!(name, "resman_import");

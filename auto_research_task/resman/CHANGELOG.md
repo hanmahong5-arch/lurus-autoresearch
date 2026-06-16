@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.15.0] — W&B and MLflow CSV import (2026-06-16)
+
+Extends `resman import` with a `--from <source>` selector supporting W&B and
+MLflow CSV exports. The new zero-dependency `src/csv.rs` RFC-4180 reader handles
+quoted fields, embedded commas, embedded newlines, `""` escaped quotes, and both
+`\n`/`\r\n` line endings. Default `--from tsv` behavior is byte-identical to v0.14.
+
+### Added
+
+- **`resman import --from wandb --metric <col> -t <tag>`** — imports a W&B
+  "Export runs" CSV. Maps `State` to status (`finished`→keep, `crashed/failed/
+  killed/preempted`→crash). Commit is the `ID` col, description from `Notes` or
+  `Name`. Extra columns become `params.*`. Empty metric cells default to 0.0;
+  unparseable cells emit a per-row warning and use 0.0 (import never aborts).
+- **`resman import --from mlflow --metric <col> -t <tag>`** — imports an MLflow
+  `search_runs` CSV. Accepts `--metric loss` or `--metric metrics.loss` (prefix
+  resolved automatically). `run_id`→commit, `tags.mlflow.runName`→description,
+  `params.*` prefix stripped into the params map, `FAILED/KILLED`→Crash.
+- **`src/csv.rs`** — RFC-4180 char-by-char state machine; no new crate
+  dependencies. Six unit tests cover all edge cases.
+- **`examples/wandb-export.csv`** and **`examples/mlflow-export.csv`** — realistic
+  4-row fixtures used in integration tests and the smoke test above.
+- `ImportSource` value enum (`tsv`/`wandb`/`mlflow`) in `cli.rs`.
+- `Error::Import(String)` variant in `error.rs`.
+
+### Improved
+
+- **Actionable empty states.** `stats`, `compare`, `export`, and `report` now
+  tell a first-time user what to do when the store is empty (e.g. "no
+  experiments to summarize yet — add or import some first (`resman add ...` or
+  `resman import <file>`).") instead of a dead-end "no experiments found." —
+  matching the guidance `list`/`tags`/`usage` already gave.
+
+### Unchanged
+
+- Default `--from tsv` path: code path is identical to v0.14; shell-script API
+  (`resman best -f value`) preserved.
+- No new MCP tool added (CSV import is a setup-time ingestion operation;
+  `resman_add_experiment` remains the agent-facing write path).
+
+### Tests
+
+211 → **234 passing** (csv.rs edge cases + require_metric + parse_wandb +
+parse_mlflow + end-to-end import fixtures). Clippy 0 warnings, fmt clean.
+
+---
+
 ## [0.14.0] — Full MCP parity for query commands (2026-06-16)
 
 Four new MCP tools give the query CLI commands a first-class agent-facing

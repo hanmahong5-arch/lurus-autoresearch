@@ -1,0 +1,5 @@
+ID,Name,State,Created,eval/loss,lr,notes
+run-001,baseline-run,finished,2024-04-17T09:00:00,0.9879,0.001,initial baseline
+run-002,lr-sweep-high,finished,2024-04-17T11:30:00,0.9651,0.01,higher lr experiment
+run-003,"run with, extra config",crashed,2024-04-17T14:00:00,,0.005,OOM on batch 120
+run-004,warmup-cosine,finished,2024-04-17T16:45:00,0.9512,0.001,cosine warmup schedule

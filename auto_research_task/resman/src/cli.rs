@@ -45,6 +45,15 @@ pub enum SortField {
     Commit,
 }
 
+#[derive(ValueEnum, Clone, Debug, Default, PartialEq)]
+#[value(rename_all = "lower")]
+pub enum ImportSource {
+    #[default]
+    Tsv,
+    Wandb,
+    Mlflow,
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     /// Initialize a resman data directory
@@ -55,14 +64,19 @@ pub enum Commands {
     /// Example: `resman init` (uses default data dir)
     Init { path: Option<PathBuf> },
 
-    /// Import a results.tsv file from an autoresearch run
+    /// Import a results file (TSV, W&B CSV, or MLflow CSV) as a named run
     ///
-    /// Reads a tab-separated results file and stores it as a named run (tag).
-    /// Re-importing with `--force` replaces the existing run atomically.
+    /// Reads a tab-separated results file or CSV export and stores it as a named
+    /// run (tag). Re-importing with `--force` replaces the existing run atomically.
+    /// Use `--from wandb` or `--from mlflow` for CSV exports from those platforms;
+    /// both require `--metric <column>` to select the primary metric column.
     ///
-    /// Example: `resman import run.tsv -t apr17`
+    /// Examples:
+    ///   `resman import run.tsv -t apr17`
+    ///   `resman import runs.csv --from wandb --metric eval/loss -t apr17`
+    ///   `resman import search_runs.csv --from mlflow --metric loss -t apr17`
     Import {
-        /// Path to results.tsv
+        /// Path to results.tsv (default) or CSV export file
         path: PathBuf,
         /// Tag for this run (default: filename stem)
         #[arg(short, long)]
@@ -76,6 +90,14 @@ pub enum Commands {
         /// Direction: min (lower better, default) or max (higher better).
         #[arg(long)]
         metric_direction: Option<String>,
+        /// Source format: tsv (default), wandb (CSV export), or mlflow (search_runs CSV).
+        #[arg(long, value_enum, default_value_t = ImportSource::Tsv)]
+        from: ImportSource,
+        /// Which CSV column holds the primary metric. REQUIRED for --from wandb/mlflow
+        /// (they export many metrics). Ignored for tsv. For mlflow accept either
+        /// "loss" or "metrics.loss".
+        #[arg(long)]
+        metric: Option<String>,
     },
 
     /// Append a single experiment to a run (agent-friendly, no TSV needed)

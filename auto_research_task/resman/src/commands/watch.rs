@@ -44,7 +44,16 @@ pub fn cmd_watch(
         let mtime = fs::metadata(path).and_then(|m| m.modified()).ok();
         if mtime != last_mtime {
             last_mtime = mtime;
-            match super::import::cmd_import(data_dir, path, Some(tag.clone()), true, None, None) {
+            match super::import::cmd_import(
+                data_dir,
+                path,
+                Some(tag.clone()),
+                true,
+                None,
+                None,
+                crate::cli::ImportSource::Tsv,
+                None,
+            ) {
                 Ok(_) => {
                     // After import, read back the current count so we can show deltas.
                     if let Ok(Some(run)) = crate::store::load_run(data_dir, &tag) {

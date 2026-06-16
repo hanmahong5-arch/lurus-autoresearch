@@ -40,6 +40,9 @@ pub enum Error {
     Glob(#[from] glob::PatternError),
 
     #[error("{0}")]
+    Import(String),
+
+    #[error("{0}")]
     Custom(String),
 }
 

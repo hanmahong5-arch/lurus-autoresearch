@@ -11,7 +11,9 @@ use crate::store::load_all_runs;
 pub fn cmd_report(data_dir: &Path, output: &Path, title: Option<&str>) -> Result<()> {
     let runs = load_all_runs(data_dir)?;
     if runs.is_empty() {
-        eprintln!("no experiments found.");
+        eprintln!(
+            "nothing to report yet — add or import experiments first (`resman add ...` or `resman import <file>`)."
+        );
         return Ok(());
     }
 

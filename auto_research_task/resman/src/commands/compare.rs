@@ -43,7 +43,9 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
     };
 
     if filtered.is_empty() {
-        println!("no runs found to compare.");
+        println!(
+            "no runs to compare yet — add or import experiments first (`resman add ...` or `resman import <file>`)."
+        );
         return Ok(());
     }
 

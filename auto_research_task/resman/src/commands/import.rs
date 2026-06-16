@@ -5,25 +5,28 @@ use std::str::FromStr;
 
 use chrono::Local;
 
+use crate::cli::ImportSource;
 use crate::error::{Error, Result};
 use crate::model::{Direction, Experiment, RunLog, Status};
 use crate::store::{load_run, save_run};
 
+#[allow(clippy::too_many_arguments)]
 pub fn cmd_import(
     data_dir: &Path,
-    tsv_path: &Path,
+    path: &Path,
     tag_override: Option<String>,
     force: bool,
     metric_name: Option<String>,
     metric_direction: Option<String>,
+    source: ImportSource,
+    metric_col: Option<String>,
 ) -> Result<()> {
-    if !tsv_path.exists() {
-        return Err(Error::NotFound(tsv_path.to_path_buf()));
+    if !path.exists() {
+        return Err(Error::NotFound(path.to_path_buf()));
     }
 
     let run_tag = tag_override.unwrap_or_else(|| {
-        tsv_path
-            .file_stem()
+        path.file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("untagged")
             .to_string()
@@ -39,18 +42,35 @@ pub fn cmd_import(
         .map(Direction::from_str)
         .transpose()?;
 
-    let content = fs::read_to_string(tsv_path)?;
-    let experiments = parse_tsv(&content)?;
+    let content = fs::read_to_string(path)?;
+
+    // Effective metric name for the RunLog:
+    //   - if metric_name (--metric-name) is Some, use it
+    //   - else for wandb/mlflow default to the metric_col (strip metrics. prefix for mlflow)
+    //   - for tsv keep None (current behavior)
+    let effective_metric_name = metric_name.clone().or_else(|| match &source {
+        ImportSource::Tsv => None,
+        ImportSource::Wandb => metric_col.clone(),
+        ImportSource::Mlflow => metric_col
+            .as_deref()
+            .map(|c| c.strip_prefix("metrics.").unwrap_or(c).to_string()),
+    });
+
+    let experiments = match source {
+        ImportSource::Tsv => parse_tsv(&content)?,
+        ImportSource::Wandb => parse_wandb(&content, require_metric(&metric_col)?)?,
+        ImportSource::Mlflow => parse_mlflow(&content, require_metric(&metric_col)?)?,
+    };
 
     if experiments.is_empty() {
-        eprintln!("warning: no data rows found in {}", tsv_path.display());
+        eprintln!("warning: no data rows found in {}", path.display());
     }
 
     let run_log = RunLog {
         run_tag: run_tag.clone(),
         created_at: Local::now().to_rfc3339(),
         experiments,
-        metric_name,
+        metric_name: effective_metric_name,
         metric_direction: parsed_direction,
         schema_version: 1,
     };
@@ -68,7 +88,7 @@ pub fn cmd_import(
         .iter()
         .filter(|e| e.status == Status::Crash)
         .count();
-    println!("imported {n} experiments from {}", tsv_path.display());
+    println!("imported {n} experiments from {}", path.display());
     if let Some(best) = run_log.best() {
         println!(
             "  best {}: {:.6}  ({})",
@@ -80,6 +100,11 @@ pub fn cmd_import(
     println!("  kept: {kept}  crashed: {crashed}");
     println!("  saved: {}", out_path.display());
     Ok(())
+}
+
+fn require_metric(col: &Option<String>) -> Result<&str> {
+    col.as_deref()
+        .ok_or_else(|| Error::Import("--from wandb/mlflow requires --metric <column>".to_string()))
 }
 
 fn parse_tsv(content: &str) -> Result<Vec<Experiment>> {
@@ -148,9 +173,247 @@ fn parse_tsv(content: &str) -> Result<Vec<Experiment>> {
     Ok(experiments)
 }
 
+/// Build a name→index map from a header row, case-insensitive.
+fn header_map(header: &[String]) -> HashMap<String, usize> {
+    header
+        .iter()
+        .enumerate()
+        .map(|(i, h)| (h.to_ascii_lowercase(), i))
+        .collect()
+}
+
+/// Look up a column: exact match first (case-insensitive), then as provided.
+fn col_index(map: &HashMap<String, usize>, name: &str) -> Option<usize> {
+    map.get(&name.to_ascii_lowercase()).copied()
+}
+
+fn get_cell(row: &[String], idx: Option<usize>) -> &str {
+    idx.and_then(|i| row.get(i))
+        .map(|s| s.as_str())
+        .unwrap_or("")
+}
+
+fn parse_metric_cell(cell: &str, row_idx: usize, col_name: &str) -> f64 {
+    if cell.is_empty() {
+        return 0.0;
+    }
+    cell.parse::<f64>().unwrap_or_else(|_| {
+        eprintln!(
+            "warning: row {row_idx}: cannot parse metric column '{col_name}' value '{cell}' as f64; using 0.0"
+        );
+        0.0
+    })
+}
+
+fn parse_wandb(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
+    let rows = crate::csv::parse_csv(content);
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let header = &rows[0];
+    let map = header_map(header);
+
+    // Verify metric column exists
+    let metric_idx = col_index(&map, metric_col).ok_or_else(|| {
+        Error::Import(format!(
+            "metric column '{}' not found; available: {}",
+            metric_col,
+            header.join(", ")
+        ))
+    })?;
+
+    let id_idx = col_index(&map, "id");
+    let name_idx = col_index(&map, "name");
+    let state_idx = col_index(&map, "state");
+    let notes_idx = col_index(&map, "notes");
+    let created_idx = col_index(&map, "created");
+
+    // Columns to exclude from params
+    let excluded: std::collections::HashSet<usize> = [
+        id_idx,
+        name_idx,
+        Some(metric_idx),
+        state_idx,
+        notes_idx,
+        created_idx,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut experiments = Vec::new();
+    for (i, row) in rows.iter().skip(1).enumerate() {
+        let id_cell = get_cell(row, id_idx);
+        let name_cell = get_cell(row, name_idx);
+        let commit = if !id_cell.is_empty() {
+            id_cell.to_string()
+        } else if !name_cell.is_empty() {
+            name_cell.to_string()
+        } else {
+            format!("row{i}")
+        };
+
+        let metric_cell = get_cell(row, Some(metric_idx));
+        let val_bpb = parse_metric_cell(metric_cell, i + 1, metric_col);
+
+        let state_cell = get_cell(row, state_idx);
+        let status = match state_cell.to_ascii_lowercase().as_str() {
+            "finished" => Status::Keep,
+            "crashed" | "failed" | "killed" | "preempted" => Status::Crash,
+            _ => Status::Keep,
+        };
+
+        let notes_cell = get_cell(row, notes_idx);
+        let description = if !notes_cell.is_empty() {
+            notes_cell.to_string()
+        } else if !name_cell.is_empty() {
+            name_cell.to_string()
+        } else {
+            String::new()
+        };
+
+        let timestamp = get_cell(row, created_idx).to_string();
+
+        // Collect params from non-excluded columns
+        let mut params = HashMap::new();
+        for (col_idx, col_name) in header.iter().enumerate() {
+            if excluded.contains(&col_idx) {
+                continue;
+            }
+            let cell = get_cell(row, Some(col_idx));
+            if !cell.is_empty() {
+                params.insert(col_name.clone(), cell.to_string());
+            }
+        }
+
+        experiments.push(Experiment {
+            commit,
+            val_bpb,
+            memory_gb: 0.0,
+            status,
+            description,
+            timestamp,
+            params,
+            parent_commit: None,
+            crash_excerpt: None,
+            metric_name: None,
+            metric_direction: None,
+            signals: Vec::new(),
+        });
+    }
+
+    Ok(experiments)
+}
+
+fn parse_mlflow(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
+    let rows = crate::csv::parse_csv(content);
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let header = &rows[0];
+    let map = header_map(header);
+
+    // Accept metric_col verbatim or with metrics. prefix
+    let resolved_metric_idx =
+        col_index(&map, metric_col).or_else(|| col_index(&map, &format!("metrics.{metric_col}")));
+
+    let metric_idx = resolved_metric_idx.ok_or_else(|| {
+        Error::Import(format!(
+            "metric column '{}' not found (tried '{}' and 'metrics.{}'); available: {}",
+            metric_col,
+            metric_col,
+            metric_col,
+            header.join(", ")
+        ))
+    })?;
+
+    let run_id_idx = col_index(&map, "run_id");
+    let status_idx = col_index(&map, "status");
+    let start_time_idx = col_index(&map, "start_time");
+    let run_name_idx = col_index(&map, "tags.mlflow.runname");
+
+    // Columns to exclude from params (non-param columns)
+    let excluded: std::collections::HashSet<usize> = [
+        run_id_idx,
+        Some(metric_idx),
+        status_idx,
+        start_time_idx,
+        run_name_idx,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut experiments = Vec::new();
+    for (i, row) in rows.iter().skip(1).enumerate() {
+        let run_id_cell = get_cell(row, run_id_idx);
+        let commit = if !run_id_cell.is_empty() {
+            run_id_cell.to_string()
+        } else {
+            format!("row{i}")
+        };
+
+        let metric_cell = get_cell(row, Some(metric_idx));
+        let val_bpb = parse_metric_cell(metric_cell, i + 1, metric_col);
+
+        let status_cell = get_cell(row, status_idx);
+        let status = match status_cell.to_ascii_uppercase().as_str() {
+            "FINISHED" => Status::Keep,
+            "FAILED" | "KILLED" => Status::Crash,
+            _ => Status::Keep,
+        };
+
+        let run_name_cell = get_cell(row, run_name_idx);
+        let description = if !run_name_cell.is_empty() {
+            run_name_cell.to_string()
+        } else {
+            String::new()
+        };
+
+        let timestamp = get_cell(row, start_time_idx).to_string();
+
+        // Collect params from columns starting with "params."
+        let mut params = HashMap::new();
+        for (col_idx, col_name) in header.iter().enumerate() {
+            if excluded.contains(&col_idx) {
+                continue;
+            }
+            if let Some(key) = col_name.strip_prefix("params.") {
+                let cell = get_cell(row, Some(col_idx));
+                if !cell.is_empty() {
+                    params.insert(key.to_string(), cell.to_string());
+                }
+            }
+        }
+
+        experiments.push(Experiment {
+            commit,
+            val_bpb,
+            memory_gb: 0.0,
+            status,
+            description,
+            timestamp,
+            params,
+            parent_commit: None,
+            crash_excerpt: None,
+            metric_name: None,
+            metric_direction: None,
+            signals: Vec::new(),
+        });
+    }
+
+    Ok(experiments)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::load_run;
+    use tempfile::TempDir;
+
+    // ---- parse_tsv tests (preserved) ----
 
     #[test]
     fn parses_with_header() {
@@ -183,5 +446,212 @@ mod tests {
         let tsv = "abc\t0.9\t44.0\tkeep\thas\ttabs\there";
         let out = parse_tsv(tsv).unwrap();
         assert_eq!(out[0].description, "has\ttabs\there");
+    }
+
+    // ---- require_metric tests ----
+
+    #[test]
+    fn require_metric_returns_error_when_none() {
+        let result = require_metric(&None);
+        assert!(
+            matches!(result, Err(Error::Import(_))),
+            "expect ImportError when metric_col is None"
+        );
+    }
+
+    #[test]
+    fn require_metric_returns_str_when_some() {
+        let col = Some("eval/loss".to_string());
+        assert_eq!(require_metric(&col).unwrap(), "eval/loss");
+    }
+
+    // ---- parse_wandb tests ----
+
+    fn wandb_csv() -> &'static str {
+        "ID,Name,State,Created,eval/loss,lr,notes\n\
+         run001,baseline,finished,2024-01-01,0.987,0.001,good start\n\
+         run002,bigger-lr,crashed,,0.0,0.01,\n\
+         run003,\"run with, comma\",finished,2024-01-03,0.975,0.001,best so far\n"
+    }
+
+    #[test]
+    fn wandb_status_mapping() {
+        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        assert_eq!(exps.len(), 3);
+        assert_eq!(exps[0].status, Status::Keep);
+        assert_eq!(exps[1].status, Status::Crash);
+        assert_eq!(exps[2].status, Status::Keep);
+    }
+
+    #[test]
+    fn wandb_empty_metric_is_zero() {
+        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        assert_eq!(exps[1].val_bpb, 0.0);
+    }
+
+    #[test]
+    fn wandb_commit_from_id() {
+        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        assert_eq!(exps[0].commit, "run001");
+    }
+
+    #[test]
+    fn wandb_params_populated() {
+        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        // "lr" is not in excluded set for wandb
+        assert_eq!(exps[0].params.get("lr"), Some(&"0.001".to_string()));
+    }
+
+    #[test]
+    fn wandb_metric_col_not_found_error() {
+        let result = parse_wandb(wandb_csv(), "nonexistent_metric");
+        assert!(
+            matches!(result, Err(Error::Import(_))),
+            "expect ImportError for missing metric column"
+        );
+    }
+
+    #[test]
+    fn wandb_quoted_field_with_comma() {
+        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        // run003 name has a comma in it
+        assert_eq!(exps[2].commit, "run003");
+    }
+
+    // ---- parse_mlflow tests ----
+
+    fn mlflow_csv() -> &'static str {
+        "run_id,status,start_time,metrics.loss,params.lr,params.optimizer,tags.mlflow.runName\n\
+         abc123,FINISHED,2024-01-01,0.543,0.001,adam,run-alpha\n\
+         def456,FAILED,2024-01-02,0.0,0.01,sgd,run-beta\n\
+         ghi789,FINISHED,2024-01-03,0.412,0.0001,adamw,\"run,gamma\"\n"
+    }
+
+    #[test]
+    fn mlflow_run_id_becomes_commit() {
+        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        assert_eq!(exps[0].commit, "abc123");
+    }
+
+    #[test]
+    fn mlflow_failed_becomes_crash() {
+        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        assert_eq!(exps[1].status, Status::Crash);
+    }
+
+    #[test]
+    fn mlflow_finished_becomes_keep() {
+        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        assert_eq!(exps[0].status, Status::Keep);
+    }
+
+    #[test]
+    fn mlflow_params_prefix_stripped() {
+        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        assert_eq!(exps[0].params.get("lr"), Some(&"0.001".to_string()));
+        assert_eq!(exps[0].params.get("optimizer"), Some(&"adam".to_string()));
+        // Should NOT have "params.lr" key
+        assert!(exps[0].params.get("params.lr").is_none());
+    }
+
+    #[test]
+    fn mlflow_accepts_metric_col_with_metrics_prefix() {
+        // When user passes "metrics.loss", it should also work
+        let exps = parse_mlflow(mlflow_csv(), "metrics.loss").unwrap();
+        assert_eq!(exps.len(), 3);
+        assert!((exps[0].val_bpb - 0.543).abs() < 1e-9);
+    }
+
+    #[test]
+    fn mlflow_accepts_metric_col_without_prefix() {
+        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        assert_eq!(exps.len(), 3);
+        assert!((exps[0].val_bpb - 0.543).abs() < 1e-9);
+    }
+
+    #[test]
+    fn mlflow_metric_col_not_found_error() {
+        let result = parse_mlflow(mlflow_csv(), "nonexistent");
+        assert!(
+            matches!(result, Err(Error::Import(_))),
+            "expect ImportError for missing metric column"
+        );
+    }
+
+    // ---- end-to-end cmd_import tests ----
+
+    fn init_dir(tmp: &TempDir) {
+        let runs_dir = tmp.path().join("runs");
+        std::fs::create_dir_all(&runs_dir).unwrap();
+    }
+
+    #[test]
+    fn end_to_end_wandb_import() {
+        let tmp = TempDir::new().unwrap();
+        init_dir(&tmp);
+
+        // Write a small wandb CSV fixture
+        let csv_path = tmp.path().join("wb.csv");
+        std::fs::write(
+            &csv_path,
+            "ID,Name,State,Created,eval/loss,lr,notes\n\
+             r1,baseline,finished,2024-01-01,0.987,0.001,ok\n\
+             r2,bigger,finished,2024-01-02,0.965,0.01,better\n\
+             r3,crash,crashed,,0.0,0.1,bad\n",
+        )
+        .unwrap();
+
+        cmd_import(
+            tmp.path(),
+            &csv_path,
+            Some("wbtest".to_string()),
+            false,
+            None,
+            None,
+            ImportSource::Wandb,
+            Some("eval/loss".to_string()),
+        )
+        .unwrap();
+
+        let run = load_run(tmp.path(), "wbtest").unwrap().unwrap();
+        assert_eq!(run.experiments.len(), 3);
+        // best() must be Some and finite
+        let best = run.best().expect("best must exist");
+        assert!(best.val_bpb.is_finite());
+        assert!(best.val_bpb > 0.0);
+    }
+
+    #[test]
+    fn end_to_end_mlflow_import() {
+        let tmp = TempDir::new().unwrap();
+        init_dir(&tmp);
+
+        let csv_path = tmp.path().join("ml.csv");
+        std::fs::write(
+            &csv_path,
+            "run_id,status,start_time,metrics.loss,params.lr,params.optimizer,tags.mlflow.runName\n\
+             abc,FINISHED,2024-01-01,0.543,0.001,adam,run-a\n\
+             def,FAILED,2024-01-02,0.0,0.01,sgd,run-b\n\
+             ghi,FINISHED,2024-01-03,0.412,0.0001,adamw,run-c\n",
+        )
+        .unwrap();
+
+        cmd_import(
+            tmp.path(),
+            &csv_path,
+            Some("mltest".to_string()),
+            false,
+            None,
+            None,
+            ImportSource::Mlflow,
+            Some("loss".to_string()),
+        )
+        .unwrap();
+
+        let run = load_run(tmp.path(), "mltest").unwrap().unwrap();
+        assert_eq!(run.experiments.len(), 3);
+        let best = run.best().expect("best must exist");
+        assert!(best.val_bpb.is_finite());
+        assert!(best.val_bpb > 0.0);
     }
 }

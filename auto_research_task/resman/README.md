@@ -41,7 +41,7 @@ This is a *different product category* than cloud experiment trackers — not a 
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
-Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.13.1`.
+Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.15.0`. Each release also ships a `.sha256` the installer verifies automatically.
 
 **From crates.io**:
 
@@ -89,7 +89,7 @@ resman watch results.tsv -t apr17 -i 2   # re-imports on every change
 | Command | Purpose |
 |---|---|
 | `init [path]` | Create data directory (`$RESMAN_HOME` / `$XDG_DATA_HOME/resman` / `~/.resman`). |
-| `import <tsv>` | Bulk-import a `results.tsv`. `-t <tag>` names the run; `-f` overwrites. |
+| `import <file>` | Bulk-import experiments. `-t <tag>` names the run; `-f` overwrites. Default reads a `results.tsv`; `--from wandb\|mlflow --metric <col>` ingests a wandb/mlflow CSV export. |
 | `add -t <tag> -c <commit> -v <bpb> …` | Append one experiment. Auto-probes `nvidia-smi` for GPU; `--log run.log` captures crash context; `--parent <commit>` records lineage. |
 | `search <regex>` | "Has this been tried?" — regex across every description, commit, and param. |
 | `near <val_bpb>` | Show N experiments whose val_bpb is closest to a target — grounds a new result. |
@@ -109,6 +109,27 @@ resman watch results.tsv -t apr17 -i 2   # re-imports on every change
 | `completions <shell>` | Generate tab-completion script for bash / zsh / fish / powershell / elvish. `source <(resman completions bash)`. |
 
 Global flags: `-D, --data-dir <path>` overrides the data dir for any command.
+
+## Migrating from wandb / mlflow
+
+resman is a complement, not a rip-and-replace — bring your existing history
+with you. Both importers read a **CSV export** (no API key, no network, no
+Python): in wandb, *Export to CSV* from a runs table; in mlflow,
+`mlflow.search_runs().to_csv("runs.csv")`.
+
+```bash
+# wandb: pick which metric column is your primary objective
+resman import wandb-export.csv --from wandb --metric 'eval/loss' -t apr17
+
+# mlflow: the metrics. / params. prefixes are handled for you
+resman import runs.csv --from mlflow --metric loss -t apr17
+```
+
+Run `State`/`status` maps to keep/crash, config columns become searchable
+`params`, and the rest of resman (`best`, `distill`, `search`, MCP) works
+immediately. `--metric` is required because these tools log many metrics and
+resman won't guess your objective. The CSV reader is hand-rolled and zero-dep —
+quoted fields, embedded commas, and newlines all parse correctly.
 
 ## The agent loop it was built for
 
@@ -219,13 +240,13 @@ out any time with `RESMAN_DISABLE_USAGE_LOG=1`.
 
 ## Roadmap
 
-The project is at **v0.14.0**. Through v0.9–v0.14 the following shipped:
+The project is at **v0.15.0**. Through v0.9–v0.15 the following shipped:
 `doctor`, `usage`, structured MCP JSON across all tools, typed signals
 (`diverged_loss`, `slow_mfu`), schema_version, property tests (v0.9–v0.11);
 usage-aware distill, composite best, verify/unverify, `resman_tags`,
 `resman_unverify`, `resman_doctor` MCP tools (v0.12–v0.13); full MCP parity
 for the query commands — `resman_list`, `resman_compare`, `resman_stats`,
-`resman_usage` (v0.14).
+`resman_usage` (v0.14); wandb/mlflow CSV import (v0.15).
 See [CHANGELOG.md](CHANGELOG.md) and field-level decisions in
 [docs/SCHEMA.md](docs/SCHEMA.md).
 
@@ -237,7 +258,6 @@ Next:
 - **`resman serve`** — zero-dep HTTP dashboard (upstream request).
 - **`resman sync`** — opt-in cloud sync for teams (paid tier; OSS CLI
   stays free).
-- **`resman import --from wandb` / `--from mlflow`** — migration helpers.
 
 ## License
 
