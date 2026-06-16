@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.15.1] — import error UX (2026-06-16)
+
+Error-message-only patch; no happy-path behaviour change.
+
+### Improved
+
+- **Missing `--metric` now lists detected metric columns.** `parse_wandb` and
+  `parse_mlflow` accept `Option<&str>` and, when `None`, parse the CSV header
+  and emit a helpful message: numeric non-meta candidates for wandb (capped at
+  12), `metrics.*`-prefixed columns (prefix stripped) for mlflow, with a
+  concrete `--metric <first-candidate>` hint. The existing "column not found"
+  error for a wrong `--metric` is unchanged.
+- **Default tsv path detects a CSV file.** `cmd_import` on `ImportSource::Tsv`
+  checks the first non-empty line: if it contains `,` and no `\t` it returns
+  `Err(Import(...))` explaining the format mismatch and pointing to `--from
+  wandb` / `--from mlflow`. Valid TSV files (always tab-containing) are
+  unaffected.
+
+### Tests
+
+234 → **236 passing** (`wandb_missing_metric_lists_columns`,
+`mlflow_missing_metric_lists_columns`, `tsv_source_detects_csv_file`,
+`tsv_source_valid_tsv_still_works`; old `require_metric_*` tests removed —
+`require_metric` helper deleted). Clippy 0 warnings, fmt clean.
+
+---
+
 ## [0.15.0] — W&B and MLflow CSV import (2026-06-16)
 
 Extends `resman import` with a `--from <source>` selector supporting W&B and

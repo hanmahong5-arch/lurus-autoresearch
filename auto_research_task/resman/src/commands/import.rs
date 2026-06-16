@@ -57,9 +57,22 @@ pub fn cmd_import(
     });
 
     let experiments = match source {
-        ImportSource::Tsv => parse_tsv(&content)?,
-        ImportSource::Wandb => parse_wandb(&content, require_metric(&metric_col)?)?,
-        ImportSource::Mlflow => parse_mlflow(&content, require_metric(&metric_col)?)?,
+        ImportSource::Tsv => {
+            // Detect a CSV file passed to the default tsv path.
+            let first_nonempty = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+            if first_nonempty.contains(',') && !first_nonempty.contains('\t') {
+                return Err(Error::Import(
+                    "this file looks comma-separated, not tab-separated. \
+                     If it's a wandb or mlflow export, re-run with \
+                     `--from wandb --metric <column>` or `--from mlflow --metric <column>`. \
+                     A plain resman TSV must use tab separators."
+                        .to_string(),
+                ));
+            }
+            parse_tsv(&content)?
+        }
+        ImportSource::Wandb => parse_wandb(&content, metric_col.as_deref())?,
+        ImportSource::Mlflow => parse_mlflow(&content, metric_col.as_deref())?,
     };
 
     if experiments.is_empty() {
@@ -100,11 +113,6 @@ pub fn cmd_import(
     println!("  kept: {kept}  crashed: {crashed}");
     println!("  saved: {}", out_path.display());
     Ok(())
-}
-
-fn require_metric(col: &Option<String>) -> Result<&str> {
-    col.as_deref()
-        .ok_or_else(|| Error::Import("--from wandb/mlflow requires --metric <column>".to_string()))
 }
 
 fn parse_tsv(content: &str) -> Result<Vec<Experiment>> {
@@ -205,7 +213,37 @@ fn parse_metric_cell(cell: &str, row_idx: usize, col_name: &str) -> f64 {
     })
 }
 
-fn parse_wandb(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
+fn wandb_candidate_metrics(header: &[String], rows: &[Vec<String>]) -> Vec<String> {
+    let meta: std::collections::HashSet<&str> = ["id", "name", "state", "notes", "created"]
+        .iter()
+        .copied()
+        .collect();
+    let non_meta: Vec<(usize, &String)> = header
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| !meta.contains(h.to_ascii_lowercase().as_str()))
+        .collect();
+
+    // Prefer columns whose first non-empty data cell parses as f64.
+    let numeric: Vec<String> = non_meta
+        .iter()
+        .filter(|(ci, _)| {
+            rows.iter().skip(1).any(|row| {
+                let cell = row.get(*ci).map(|s| s.as_str()).unwrap_or("");
+                !cell.is_empty() && cell.parse::<f64>().is_ok()
+            })
+        })
+        .map(|(_, h)| (*h).clone())
+        .collect();
+
+    if !numeric.is_empty() {
+        numeric
+    } else {
+        non_meta.into_iter().map(|(_, h)| h.clone()).collect()
+    }
+}
+
+fn parse_wandb(content: &str, metric_col: Option<&str>) -> Result<Vec<Experiment>> {
     let rows = crate::csv::parse_csv(content);
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -213,6 +251,39 @@ fn parse_wandb(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
 
     let header = &rows[0];
     let map = header_map(header);
+
+    // If no --metric was given, detect candidates and error with guidance.
+    let metric_col = match metric_col {
+        None => {
+            let candidates = wandb_candidate_metrics(header, &rows);
+            const MAX_SHOWN: usize = 12;
+            let (shown, truncated) = if candidates.len() > MAX_SHOWN {
+                (candidates[..MAX_SHOWN].to_vec(), true)
+            } else {
+                (candidates.clone(), false)
+            };
+            let mut list = shown.join(", ");
+            if truncated {
+                list.push_str(" …");
+            }
+            let (label, example) = if candidates.is_empty() {
+                (
+                    format!("  available columns: {}", header.join(", ")),
+                    String::new(),
+                )
+            } else {
+                (
+                    format!("  detected metric columns: {list}"),
+                    format!("\n  re-run with e.g. --metric {}", candidates[0]),
+                )
+            };
+            return Err(Error::Import(format!(
+                "--from wandb needs --metric <column> — these tools log many metrics, \
+                 so resman won't guess your objective.\n{label}{example}"
+            )));
+        }
+        Some(c) => c,
+    };
 
     // Verify metric column exists
     let metric_idx = col_index(&map, metric_col).ok_or_else(|| {
@@ -306,7 +377,7 @@ fn parse_wandb(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
     Ok(experiments)
 }
 
-fn parse_mlflow(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
+fn parse_mlflow(content: &str, metric_col: Option<&str>) -> Result<Vec<Experiment>> {
     let rows = crate::csv::parse_csv(content);
     if rows.is_empty() {
         return Ok(Vec::new());
@@ -314,6 +385,51 @@ fn parse_mlflow(content: &str, metric_col: &str) -> Result<Vec<Experiment>> {
 
     let header = &rows[0];
     let map = header_map(header);
+
+    // If no --metric was given, detect candidates and error with guidance.
+    let metric_col = match metric_col {
+        None => {
+            // Candidates: columns starting with "metrics." (case-insensitive), prefix stripped
+            // using original-case suffix for display.
+            let candidates: Vec<String> = header
+                .iter()
+                .filter_map(|h| {
+                    if h.to_ascii_lowercase().starts_with("metrics.") {
+                        Some(h["metrics.".len()..].to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            const MAX_SHOWN: usize = 12;
+            let (shown, truncated) = if candidates.len() > MAX_SHOWN {
+                (candidates[..MAX_SHOWN].to_vec(), true)
+            } else {
+                (candidates.clone(), false)
+            };
+            let mut list = shown.join(", ");
+            if truncated {
+                list.push_str(" …");
+            }
+            let (label, example) = if candidates.is_empty() {
+                (
+                    format!("  available columns: {}", header.join(", ")),
+                    String::new(),
+                )
+            } else {
+                (
+                    format!("  detected metric columns: {list}"),
+                    format!("\n  re-run with e.g. --metric {}", candidates[0]),
+                )
+            };
+            return Err(Error::Import(format!(
+                "--from mlflow needs --metric <column> — these tools log many metrics, \
+                 so resman won't guess your objective.\n{label}{example}"
+            )));
+        }
+        Some(c) => c,
+    };
 
     // Accept metric_col verbatim or with metrics. prefix
     let resolved_metric_idx =
@@ -448,23 +564,6 @@ mod tests {
         assert_eq!(out[0].description, "has\ttabs\there");
     }
 
-    // ---- require_metric tests ----
-
-    #[test]
-    fn require_metric_returns_error_when_none() {
-        let result = require_metric(&None);
-        assert!(
-            matches!(result, Err(Error::Import(_))),
-            "expect ImportError when metric_col is None"
-        );
-    }
-
-    #[test]
-    fn require_metric_returns_str_when_some() {
-        let col = Some("eval/loss".to_string());
-        assert_eq!(require_metric(&col).unwrap(), "eval/loss");
-    }
-
     // ---- parse_wandb tests ----
 
     fn wandb_csv() -> &'static str {
@@ -476,7 +575,7 @@ mod tests {
 
     #[test]
     fn wandb_status_mapping() {
-        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        let exps = parse_wandb(wandb_csv(), Some("eval/loss")).unwrap();
         assert_eq!(exps.len(), 3);
         assert_eq!(exps[0].status, Status::Keep);
         assert_eq!(exps[1].status, Status::Crash);
@@ -485,26 +584,26 @@ mod tests {
 
     #[test]
     fn wandb_empty_metric_is_zero() {
-        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        let exps = parse_wandb(wandb_csv(), Some("eval/loss")).unwrap();
         assert_eq!(exps[1].val_bpb, 0.0);
     }
 
     #[test]
     fn wandb_commit_from_id() {
-        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        let exps = parse_wandb(wandb_csv(), Some("eval/loss")).unwrap();
         assert_eq!(exps[0].commit, "run001");
     }
 
     #[test]
     fn wandb_params_populated() {
-        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        let exps = parse_wandb(wandb_csv(), Some("eval/loss")).unwrap();
         // "lr" is not in excluded set for wandb
         assert_eq!(exps[0].params.get("lr"), Some(&"0.001".to_string()));
     }
 
     #[test]
     fn wandb_metric_col_not_found_error() {
-        let result = parse_wandb(wandb_csv(), "nonexistent_metric");
+        let result = parse_wandb(wandb_csv(), Some("nonexistent_metric"));
         assert!(
             matches!(result, Err(Error::Import(_))),
             "expect ImportError for missing metric column"
@@ -513,9 +612,21 @@ mod tests {
 
     #[test]
     fn wandb_quoted_field_with_comma() {
-        let exps = parse_wandb(wandb_csv(), "eval/loss").unwrap();
+        let exps = parse_wandb(wandb_csv(), Some("eval/loss")).unwrap();
         // run003 name has a comma in it
         assert_eq!(exps[2].commit, "run003");
+    }
+
+    #[test]
+    fn wandb_missing_metric_lists_columns() {
+        let result = parse_wandb(wandb_csv(), None);
+        match result {
+            Err(Error::Import(msg)) => {
+                assert!(msg.contains("needs --metric"), "msg: {msg}");
+                assert!(msg.contains("eval/loss"), "msg: {msg}");
+            }
+            other => panic!("expected Err(Import), got {other:?}"),
+        }
     }
 
     // ---- parse_mlflow tests ----
@@ -529,25 +640,25 @@ mod tests {
 
     #[test]
     fn mlflow_run_id_becomes_commit() {
-        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("loss")).unwrap();
         assert_eq!(exps[0].commit, "abc123");
     }
 
     #[test]
     fn mlflow_failed_becomes_crash() {
-        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("loss")).unwrap();
         assert_eq!(exps[1].status, Status::Crash);
     }
 
     #[test]
     fn mlflow_finished_becomes_keep() {
-        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("loss")).unwrap();
         assert_eq!(exps[0].status, Status::Keep);
     }
 
     #[test]
     fn mlflow_params_prefix_stripped() {
-        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("loss")).unwrap();
         assert_eq!(exps[0].params.get("lr"), Some(&"0.001".to_string()));
         assert_eq!(exps[0].params.get("optimizer"), Some(&"adam".to_string()));
         // Should NOT have "params.lr" key
@@ -557,25 +668,37 @@ mod tests {
     #[test]
     fn mlflow_accepts_metric_col_with_metrics_prefix() {
         // When user passes "metrics.loss", it should also work
-        let exps = parse_mlflow(mlflow_csv(), "metrics.loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("metrics.loss")).unwrap();
         assert_eq!(exps.len(), 3);
         assert!((exps[0].val_bpb - 0.543).abs() < 1e-9);
     }
 
     #[test]
     fn mlflow_accepts_metric_col_without_prefix() {
-        let exps = parse_mlflow(mlflow_csv(), "loss").unwrap();
+        let exps = parse_mlflow(mlflow_csv(), Some("loss")).unwrap();
         assert_eq!(exps.len(), 3);
         assert!((exps[0].val_bpb - 0.543).abs() < 1e-9);
     }
 
     #[test]
     fn mlflow_metric_col_not_found_error() {
-        let result = parse_mlflow(mlflow_csv(), "nonexistent");
+        let result = parse_mlflow(mlflow_csv(), Some("nonexistent"));
         assert!(
             matches!(result, Err(Error::Import(_))),
             "expect ImportError for missing metric column"
         );
+    }
+
+    #[test]
+    fn mlflow_missing_metric_lists_columns() {
+        let result = parse_mlflow(mlflow_csv(), None);
+        match result {
+            Err(Error::Import(msg)) => {
+                assert!(msg.contains("needs --metric"), "msg: {msg}");
+                assert!(msg.contains("loss"), "msg: {msg}");
+            }
+            other => panic!("expected Err(Import), got {other:?}"),
+        }
     }
 
     // ---- end-to-end cmd_import tests ----
@@ -583,6 +706,61 @@ mod tests {
     fn init_dir(tmp: &TempDir) {
         let runs_dir = tmp.path().join("runs");
         std::fs::create_dir_all(&runs_dir).unwrap();
+    }
+
+    #[test]
+    fn tsv_source_detects_csv_file() {
+        let tmp = TempDir::new().unwrap();
+        init_dir(&tmp);
+        let csv_path = tmp.path().join("looks.csv");
+        std::fs::write(
+            &csv_path,
+            "ID,Name,State,Created,eval/loss\nrun001,baseline,finished,2024-01-01,0.987\n",
+        )
+        .unwrap();
+        let result = cmd_import(
+            tmp.path(),
+            &csv_path,
+            Some("w".to_string()),
+            false,
+            None,
+            None,
+            ImportSource::Tsv,
+            None,
+        );
+        match result {
+            Err(Error::Import(msg)) => {
+                assert!(msg.contains("comma-separated"), "msg: {msg}");
+                assert!(msg.contains("--from"), "msg: {msg}");
+            }
+            other => panic!("expected Err(Import), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tsv_source_valid_tsv_still_works() {
+        let tmp = TempDir::new().unwrap();
+        init_dir(&tmp);
+        let tsv_path = tmp.path().join("valid.tsv");
+        std::fs::write(
+            &tsv_path,
+            "commit\tval_bpb\tmemory_gb\tstatus\tdescription\n\
+             abc1234\t0.9979\t44.0\tkeep\tbaseline\n",
+        )
+        .unwrap();
+        cmd_import(
+            tmp.path(),
+            &tsv_path,
+            Some("validtsv".to_string()),
+            false,
+            None,
+            None,
+            ImportSource::Tsv,
+            None,
+        )
+        .unwrap();
+        let run = load_run(tmp.path(), "validtsv").unwrap().unwrap();
+        assert_eq!(run.experiments.len(), 1);
     }
 
     #[test]
