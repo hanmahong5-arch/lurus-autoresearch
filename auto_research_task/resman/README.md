@@ -41,12 +41,12 @@ This is a *different product category* than cloud experiment trackers — not a 
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
-Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.15.0`. Each release also ships a `.sha256` the installer verifies automatically.
+Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.15.3`. Each release also ships a `.sha256` the installer verifies automatically.
 
-**From crates.io**:
+**From crates.io** _(once `resman-cli` is published — until then use the prebuilt binary above or build from source)_:
 
 ```bash
-cargo install resman-cli   # published as `resman-cli`; installs a `resman` command
+cargo install resman-cli   # installs a `resman` command
 ```
 
 **From source**:
