@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.13.1] — NaN-loss classifier fix (2026-06-15)
+
+Patch release fixing a signal-classification gap surfaced by dogfooding the
+`distill` pipeline on a realistic store.
+
+### Fixed
+
+- **`nan_loss` signal classifier** now matches two extremely common real-world
+  PyTorch NaN signatures that previously fell through to `unknown`:
+  space-separated `loss nan` (no "is"/colon) and the autograd anomaly
+  detector's `returned nan values in its Nth output`. Broadened the
+  `signals.rs::classify` regex and regression-tested with the exact strings
+  that slipped through. Improves `distill` failure-cluster accuracy and
+  `resman list --signal nan_loss` / `find_by_signal` recall.
+
+### Test counts
+
+**169 tests** (count unchanged; `detects_nan_loss` gained three real-world
+cases). Clippy 0 warnings.
+
+---
+
 ## [0.13.0] — Feedback loop + crates.io rename (2026-06-15)
 
 Closes the usage-data feedback loop that makes `distill` and the composite

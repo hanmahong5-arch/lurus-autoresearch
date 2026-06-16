@@ -94,7 +94,7 @@ pub fn classify(tail: &str) -> Vec<Signal> {
         re(r"(?i)(CUDA error[:\s]|RuntimeError:\s*CUDA|cuda runtime error|illegal memory access)")
     });
     let re_nan = RE_NAN.get_or_init(|| {
-        re(r"(?i)(loss is nan|loss:\s*nan|nan loss|detected nan|found inf or nan|loss=.*nan)")
+        re(r"(?i)(loss is nan|loss\s*[:=]\s*nan|loss\s+nan|loss=.*nan|\bnan loss|returned nan|\bnan values?|detected nan|\bnan detected|found inf or nan|\bnan in (the )?grad)")
     });
     let re_assert = RE_ASSERT.get_or_init(|| re(r"AssertionError"));
     let re_assert_loc = RE_ASSERT_LOC.get_or_init(|| re(r#"File "([^"]+)", line (\d+)"#));
@@ -203,7 +203,17 @@ mod tests {
 
     #[test]
     fn detects_nan_loss() {
-        for t in &["loss is nan", "loss: NaN", "found inf or nan in gradients"] {
+        for t in &[
+            "loss is nan",
+            "loss: NaN",
+            "found inf or nan in gradients",
+            // Real-world signatures found via dogfooding that previously fell
+            // through to Unknown: space-separated "loss nan" and PyTorch's
+            // anomaly-detector "returned nan values in its Nth output".
+            "iter 880/5000 | loss nan",
+            "RuntimeError: Function LayerNormBackward0 returned nan values in its 0th output.",
+            "nan detected in gradients",
+        ] {
             assert!(
                 classify(t).iter().any(|s| matches!(s, Signal::NanLoss)),
                 "failed on {t}"
