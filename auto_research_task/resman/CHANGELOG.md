@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.2] — CI green: clippy --all-targets (2026-06-16)
+
+Build-only fix; the shipped binary matches the v0.15.1 intent exactly.
+
+### Fixed
+
+- A **test-only** clippy lint (`unnecessary_get_then_check`:
+  `.get(k).is_none()` → `!contains_key(k)`) failed CI's
+  `cargo clippy --release --all-targets -- -D warnings` gate, which lints
+  test code. v0.15.0 and v0.15.1 passed `cargo clippy --release` locally
+  (that does *not* lint tests) but their release CI failed at clippy, so
+  neither published binaries. v0.15.2 is the first 0.15.x to publish.
+
+---
+
 ## [0.15.1] — import error UX (2026-06-16)
 
 Error-message-only patch; no happy-path behaviour change.

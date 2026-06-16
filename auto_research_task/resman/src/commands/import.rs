@@ -662,7 +662,7 @@ mod tests {
         assert_eq!(exps[0].params.get("lr"), Some(&"0.001".to_string()));
         assert_eq!(exps[0].params.get("optimizer"), Some(&"adam".to_string()));
         // Should NOT have "params.lr" key
-        assert!(exps[0].params.get("params.lr").is_none());
+        assert!(!exps[0].params.contains_key("params.lr"));
     }
 
     #[test]
