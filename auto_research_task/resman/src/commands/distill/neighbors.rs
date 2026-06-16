@@ -1,6 +1,6 @@
 //! Unexplored-neighbors computation for distill reports.
 
-use crate::model::{Direction, Experiment, RunLog, Status};
+use crate::model::{Direction, Experiment, RunLog};
 use crate::store::truncate;
 
 use super::NeighborEntry;
@@ -15,7 +15,7 @@ pub(super) fn build_neighbors(
     let mut candidates: Vec<&Experiment> = run
         .experiments
         .iter()
-        .filter(|e| e.status != Status::Best && e.val_bpb > 0.0)
+        .filter(|e| e.commit != best.commit && e.val_bpb > 0.0)
         .collect();
 
     // Sort by absolute distance to best value.

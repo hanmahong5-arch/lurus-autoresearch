@@ -30,6 +30,7 @@ pub struct DistillSummary {
     pub discard: usize,
     pub crash: usize,
     pub best: usize,
+    pub verified: usize,
     pub metric_name: String,
     pub direction: String,
 }
@@ -212,6 +213,11 @@ pub fn build_distill(
         .iter()
         .filter(|e| e.status == Status::Best)
         .count();
+    let verified = run
+        .experiments
+        .iter()
+        .filter(|e| e.status == Status::Verified)
+        .count();
 
     // Determine effective metric name and direction from run or first experiment.
     let direction = run
@@ -230,6 +236,7 @@ pub fn build_distill(
         discard,
         crash,
         best: best_count,
+        verified,
         metric_name: metric_name.clone(),
         direction: direction.as_str().to_string(),
     };

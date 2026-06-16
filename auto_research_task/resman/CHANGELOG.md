@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.15.3] — distill accuracy polish (2026-06-16)
+
+Found by dogfooding the flagship `distill` artifact against a realistic
+lineage + signals + verify store.
+
+### Fixed
+
+- **Header counts now sum to the total.** The single-tag distill header
+  omitted `verified` experiments — "5 experiments (2 crashes, 2 keep, 0
+  discard, 0 best)" summed to 4. Added a `verified` count to
+  `DistillSummary` and the header line. (The `--all` aggregate already
+  counted verified.)
+- **Unexplored neighbors no longer list the best experiment itself.**
+  The filter excluded `status == Best`, but the best is selected by
+  metric value and is usually `keep`/`verified`, so it appeared as its
+  own neighbor with Δ=0. Now excluded by commit identity.
+- **Footer version is no longer hard-coded `v0.6`** — it reflects the
+  actual crate version via `CARGO_PKG_VERSION`.
+
+---
+
 ## [0.15.2] — CI green: clippy --all-targets (2026-06-16)
 
 Build-only fix; the shipped binary matches the v0.15.1 intent exactly.

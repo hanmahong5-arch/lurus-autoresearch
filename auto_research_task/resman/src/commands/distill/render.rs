@@ -16,8 +16,8 @@ pub fn render_markdown(report: &DistillReport) -> String {
 
     out.push_str(&format!("# Distill: {}\n\n", report.tag));
     out.push_str(&format!(
-        "_Generated from {} experiments ({} crashes, {} keep, {} discard, {} best). Metric: {} ({})._\n",
-        s.total, s.crash, s.keep, s.discard, s.best, s.metric_name, s.direction
+        "_Generated from {} experiments ({} keep, {} verified, {} discard, {} crash, {} best). Metric: {} ({})._\n",
+        s.total, s.keep, s.verified, s.discard, s.crash, s.best, s.metric_name, s.direction
     ));
     if let Some(c) = &report.continues_from {
         out.push_str(&format!(
@@ -148,7 +148,8 @@ pub fn render_markdown(report: &DistillReport) -> String {
 
     out.push_str("---\n");
     out.push_str(&format!(
-        "_resman distill v0.6 — {}_\n",
+        "_resman distill v{} — {}_\n",
+        env!("CARGO_PKG_VERSION"),
         report.generated_at
     ));
 
