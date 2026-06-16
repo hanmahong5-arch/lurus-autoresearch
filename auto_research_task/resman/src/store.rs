@@ -20,7 +20,15 @@ pub fn default_data_dir() -> PathBuf {
     }
     let home = env::var("USERPROFILE")
         .or_else(|_| env::var("HOME"))
-        .unwrap_or_else(|_| ".".into());
+        .unwrap_or_else(|_| {
+            let fallback = ".".to_string();
+            let path = PathBuf::from(&fallback).join(".resman");
+            eprintln!(
+                "warning: no RESMAN_HOME/XDG_DATA_HOME/HOME set, using {}",
+                path.display()
+            );
+            fallback
+        });
     PathBuf::from(home).join(".resman")
 }
 

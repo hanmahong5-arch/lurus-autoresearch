@@ -125,7 +125,8 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     }
     if re_assert.is_match(tail) {
         let location = re_assert_loc
-            .captures(tail)
+            .captures_iter(tail)
+            .last()
             .map(|c| format!("{}:{}", &c[1], &c[2]))
             .unwrap_or_default();
         out.push(Signal::AssertFail { location });
@@ -229,6 +230,35 @@ mod tests {
             Some(Signal::AssertFail { location }) => {
                 assert!(location.contains("train.py"), "got location={location}");
                 assert!(location.contains("42"));
+            }
+            _ => panic!("expected AssertFail"),
+        }
+    }
+
+    #[test]
+    fn assert_fail_location_is_deepest_frame() {
+        // Multi-frame traceback: outer frame is train.py:10, inner (deepest) is model.py:99.
+        // The fix must capture model.py:99 (last File match), not train.py:10 (first).
+        let t = concat!(
+            "Traceback (most recent call last):\n",
+            "  File \"train.py\", line 10, in run\n",
+            "    model.forward(x)\n",
+            "  File \"model.py\", line 99, in forward\n",
+            "    assert x.shape[-1] == self.dim\n",
+            "AssertionError"
+        );
+        let sigs = classify(t);
+        match sigs.iter().find(|s| matches!(s, Signal::AssertFail { .. })) {
+            Some(Signal::AssertFail { location }) => {
+                assert!(
+                    location.contains("model.py"),
+                    "expected deepest frame model.py, got {location}"
+                );
+                assert!(location.contains("99"), "expected line 99, got {location}");
+                assert!(
+                    !location.contains("train.py"),
+                    "should not contain outer frame train.py, got {location}"
+                );
             }
             _ => panic!("expected AssertFail"),
         }

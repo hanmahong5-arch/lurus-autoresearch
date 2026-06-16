@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.13.2] — Audit hardening (2026-06-16)
+
+Fixes from a comprehensive 5-domain adversarial audit (MCP parity, correctness,
+signal/distill robustness, test rigor, docs/supply-chain). No schema changes —
+all prior stores load unchanged; the `best -f value` byte-stable API is untouched.
+
+### Fixed — MCP (the primary agent interface)
+
+- `resman_find_by_signal` now exposes all **8** signal kinds — it was missing
+  `diverged_loss` and `slow_mfu`, so agents in schema-validating harnesses could
+  not filter by them. The enum is now derived from `signals::ALL_KINDS` so it can
+  never silently drift from the implementation again.
+- `resman_add_experiment` returns **structured JSON**
+  (`{recorded, tag, commit, val_bpb, status, lineage_warning}`) instead of a prose
+  ack string — honoring the server's own "all tools return JSON" contract.
+- A malformed `tools/call` (missing tool name) now returns a proper JSON-RPC
+  `-32602` invalid-params error instead of an `isError` prose result.
+- The MCP serve loop exits cleanly on a client-disconnect write error instead of
+  spinning silently.
+
+### Fixed — correctness & robustness
+
+- **Reject non-finite `val_bpb`** (NaN / ±inf) at both CLI `add` and MCP add — a
+  stored NaN poisoned `best` selection (`partial_cmp` treats NaN as Equal).
+- `signals::classify` AssertFail location now reports the **deepest** traceback
+  frame (the actual assert site), not the outermost.
+- The `distill` reproducibility-gap suggestion no longer fires when a tag has only
+  crashes (nothing is verifiable) — removes false-positive noise.
+- `default_data_dir` no longer **silently** falls back to the cwd when no home env
+  is set — it now warns. `verify` replaced two non-test `.unwrap()`s with
+  propagated errors.
+
+### Packaging & docs
+
+- Removed the unused `anyhow` dependency; added `rust-version = "1.85"`.
+- Fixed MCP tool-count drift (MCP.md 10→13, AGENT_QUICKSTART 12→13, README
+  +`resman_tags`); refreshed the stale roadmap to v0.13.x; documented
+  `best --composite -f value` semantics.
+
+### Tests
+
+169 → **176 passing** (0 failed). New coverage: MCP enum/JSON/-32602/non-finite,
+assert-deepest-frame, distill all-crash suppression, NaN rejection,
+verify-not-found, data-dir precedence. Clippy 0 warnings.
+
+---
+
 ## [0.13.1] — NaN-loss classifier fix (2026-06-15)
 
 Patch release fixing a signal-classification gap surfaced by dogfooding the

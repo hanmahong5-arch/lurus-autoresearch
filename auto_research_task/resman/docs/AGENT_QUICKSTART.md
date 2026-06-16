@@ -56,7 +56,7 @@ to know which directions to avoid wasting a 5-minute slot on.
 
 Summarize what you learned to the user in 2-3 bullets before coding.
 
-## 2. The twelve MCP tools, by lifecycle moment
+## 2. The thirteen MCP tools, by lifecycle moment
 
 | Moment | Tool | Why |
 |---|---|---|
@@ -77,7 +77,7 @@ Summarize what you learned to the user in 2-3 bullets before coding.
 `resman_near` rounds it out: after a new result, "what else landed near
 this val_bpb?" — useful for grounding.
 
-**All twelve tools return structured JSON.** Parse, don't substring-match.
+**All thirteen tools return structured JSON.** Parse, don't substring-match.
 
 ## 3. Per-run write contract (`resman_add_experiment`)
 

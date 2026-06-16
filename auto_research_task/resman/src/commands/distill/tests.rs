@@ -897,6 +897,54 @@ fn tag_funnel_counts_for_correct_tag_only() {
     assert_eq!(f.distilled, 0, "distilled should be 0");
 }
 
+/// Reproducibility-gap suggestion must be SUPPRESSED when added>=10 & verified==0
+/// but every run is a crash (no verifiable runs exist).
+#[test]
+fn usage_suggestion_suppressed_when_all_crashes() {
+    let run = make_run(
+        "crashonly",
+        vec![
+            make_exp("c1", 9.9, Status::Crash, "run1", None, vec![]),
+            make_exp("c2", 9.9, Status::Crash, "run2", None, vec![]),
+        ],
+    );
+    let funnel = make_funnel(10, 0, 0);
+    let report = build_distill(&run, Some(&funnel));
+    let fires = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("added for this tag") && s.contains("resman verify"));
+    assert!(
+        !fires,
+        "usage suggestion must not fire when all runs are crashes; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Reproducibility-gap suggestion STILL FIRES when added>=10, verified==0, and at least
+/// one keeper (Keep status) exists.
+#[test]
+fn usage_suggestion_fires_when_keeper_exists() {
+    let run = make_run(
+        "withkeeper",
+        vec![
+            make_exp("c1", 9.9, Status::Crash, "run1", None, vec![]),
+            make_exp("c2", 0.9, Status::Keep, "run2", None, vec![]),
+        ],
+    );
+    let funnel = make_funnel(10, 0, 0);
+    let report = build_distill(&run, Some(&funnel));
+    let fires = report
+        .suggestions
+        .iter()
+        .any(|s| s.contains("10 experiments added for this tag") && s.contains("resman verify"));
+    assert!(
+        fires,
+        "usage suggestion must fire when keeper exists and added>=10, verified==0; got: {:?}",
+        report.suggestions
+    );
+}
+
 /// load_events on a missing file returns empty Vec (never panics).
 #[test]
 fn load_events_missing_file_returns_empty() {

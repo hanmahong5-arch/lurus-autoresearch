@@ -41,7 +41,7 @@ This is a *different product category* than cloud experiment trackers — not a 
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
-Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.3.0`.
+Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.13.1`.
 
 **From crates.io**:
 
@@ -164,7 +164,7 @@ parseable JSON (no substring match on English prose):
 - `resman_distill` — long-term-memory artifact (best, lineage, signals,
   unexplored neighbors, suggestions). Call at end of session.
 - `resman_best` — current baseline. `composite: true` for the multi-dim
-  resume-from-here score.
+  resume-from-here score. `resman best --composite -f value` prints the composite score (0–1); plain `best -f value` prints val_bpb.
 - `resman_search` — "has this idea been tried?" before wasting compute.
 - `resman_near` — neighbors of a target val_bpb for grounding.
 - `resman_find_by_signal` — failure triage by typed crash kind (oom,
@@ -173,6 +173,7 @@ parseable JSON (no substring match on English prose):
 - `resman_add_experiment` — log every run (keep, discard, crash).
   Returns `lineage chain broken` warning when `parent_commit` is missed
   on a non-fresh tag.
+- `resman_tags` — per-tag snapshot: count, best, metric, last_update per tag.
 - `resman_verify` / `resman_unverify` — promote a reproduced experiment
   to `status=verified`, and walk that label back when evidence disagrees.
 
@@ -212,8 +213,11 @@ out any time with `RESMAN_DISABLE_USAGE_LOG=1`.
 
 ## Roadmap
 
-Shipped in v0.9: `doctor`, `usage`, structured MCP JSON across all tools,
-typed signals `diverged_loss` / `slow_mfu`, schema_version, property tests.
+The project is at **v0.13.1**. Through v0.9–v0.13 the following shipped:
+`doctor`, `usage`, structured MCP JSON across all tools, typed signals
+(`diverged_loss`, `slow_mfu`), schema_version, property tests (v0.9–v0.11);
+usage-aware distill, composite best, verify/unverify, `resman_tags`,
+`resman_unverify`, `resman_doctor` MCP tools (v0.12–v0.13).
 See [CHANGELOG.md](CHANGELOG.md) and field-level decisions in
 [docs/SCHEMA.md](docs/SCHEMA.md).
 

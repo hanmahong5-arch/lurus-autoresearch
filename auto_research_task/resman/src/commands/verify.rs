@@ -56,11 +56,13 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
         let candidates: Vec<String> = matches
             .iter()
             .map(|(tag, idx)| {
-                let run = runs.iter().find(|r| r.run_tag == *tag).unwrap();
+                let run = runs.iter().find(|r| r.run_tag == *tag).ok_or_else(|| {
+                    Error::Custom(format!("tag `{tag}` not found in loaded runs"))
+                })?;
                 let exp = &run.experiments[*idx];
-                format!("  [{tag}] {}", exp.commit)
+                Ok(format!("  [{tag}] {}", exp.commit))
             })
-            .collect();
+            .collect::<Result<Vec<String>>>()?;
         return Err(Error::Custom(format!(
             "ambiguous commit `{}` — matches:\n{}",
             opts.commit,
@@ -68,7 +70,10 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
         )));
     }
 
-    let (ref_tag, ref_idx) = matches.into_iter().next().unwrap();
+    let (ref_tag, ref_idx) = matches
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
 
     let mut run = load_run(data_dir, &ref_tag)?
         .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
@@ -171,11 +176,13 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
         let candidates: Vec<String> = matches
             .iter()
             .map(|(tag, idx)| {
-                let run = runs.iter().find(|r| r.run_tag == *tag).unwrap();
+                let run = runs.iter().find(|r| r.run_tag == *tag).ok_or_else(|| {
+                    Error::Custom(format!("tag `{tag}` not found in loaded runs"))
+                })?;
                 let exp = &run.experiments[*idx];
-                format!("  [{tag}] {}", exp.commit)
+                Ok(format!("  [{tag}] {}", exp.commit))
             })
-            .collect();
+            .collect::<Result<Vec<String>>>()?;
         return Err(Error::Custom(format!(
             "ambiguous commit `{}` — matches:\n{}",
             opts.commit,
@@ -183,7 +190,10 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
         )));
     }
 
-    let (ref_tag, ref_idx) = matches.into_iter().next().unwrap();
+    let (ref_tag, ref_idx) = matches
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
 
     // Reload the specific run mutably.
     let mut run = load_run(data_dir, &ref_tag)?
@@ -296,11 +306,13 @@ fn locate_unverify_target(
         let candidates: Vec<String> = matches
             .iter()
             .map(|(tag, idx)| {
-                let run = runs.iter().find(|r| r.run_tag == *tag).unwrap();
+                let run = runs.iter().find(|r| r.run_tag == *tag).ok_or_else(|| {
+                    Error::Custom(format!("tag `{tag}` not found in loaded runs"))
+                })?;
                 let exp = &run.experiments[*idx];
-                format!("  [{tag}] {}", exp.commit)
+                Ok(format!("  [{tag}] {}", exp.commit))
             })
-            .collect();
+            .collect::<Result<Vec<String>>>()?;
         return Err(Error::Custom(format!(
             "ambiguous commit `{}` — matches:\n{}",
             opts.commit,
@@ -308,7 +320,10 @@ fn locate_unverify_target(
         )));
     }
 
-    let (ref_tag, ref_idx) = matches.into_iter().next().unwrap();
+    let (ref_tag, ref_idx) = matches
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
     let run = load_run(data_dir, &ref_tag)?
         .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
     Ok((ref_tag, ref_idx, run))

@@ -1,6 +1,6 @@
 # resman as an MCP server
 
-**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets ten tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill`, `resman_verify` — without ever seeing resman's CLI in its context window.
+**resman exposes its store to any agent harness that speaks [Model Context Protocol](https://modelcontextprotocol.io/).** The agent gets thirteen tools — `resman_best`, `resman_search`, `resman_near`, `resman_list_recent`, `resman_add_experiment`, `resman_diff_tags`, `resman_lineage`, `resman_find_by_signal`, `resman_distill`, `resman_verify`, `resman_unverify`, `resman_doctor`, `resman_tags` — without ever seeing resman's CLI in its context window.
 
 ## Why this matters
 
@@ -65,12 +65,15 @@ Expected client messages: `initialize` → `notifications/initialized` (no reply
 | `resman_search` | Before trying an idea, to check if it's been attempted. Avoids duplicate work. | (JSON) |
 | `resman_near` | After getting a new result, to ground it ("what else landed near 0.985?"). | (JSON) |
 | `resman_list_recent` | At session start, to remember what was tried last. | (JSON) |
-| `resman_add_experiment` | After every training run — keep, discard, or crash. | text ack |
+| `resman_add_experiment` | After every training run — keep, discard, or crash. | (JSON) |
 | `resman_diff_tags` *(v0.4)* | When branches diverge — "why did branch A beat B?" | (JSON) |
 | `resman_lineage` *(v0.4)* | When planning a new experiment — walks the `parent_commit` graph so the agent knows which chains converged vs. dead-ended. | (JSON) |
 | `resman_find_by_signal` *(v0.6)* | When triaging failures — "how many OOMs overnight?" Filters by typed crash signal (`oom`, `cuda_error`, `nan_loss`, `assert_fail`, `timeout`, `unknown`). | (JSON) |
 | `resman_distill` *(v0.6)* | End of session — "what did we learn last night?" Returns a structured Markdown (or JSON) summary: best, lineage, failure clusters, unexplored neighbors, heuristic suggestions. The preferred long-term-memory artifact. | (JSON via format=json) |
 | `resman_verify` *(v0.7)* | After re-running an experiment — pass `{commit, value, tolerance?}` to promote it to `status=verified` if the new measurement is within tolerance of the original (directional by metric direction). | (JSON) |
+| `resman_unverify` | When later evidence disagrees with a verified result — retracts the trust label back to `keep`; val_bpb is retained. Symmetric counterpart to `resman_verify`. | (JSON) |
+| `resman_doctor` | Session start health probe — runs six checks (data dir, env, runs present, usage telemetry, MCP wiring, store invariants). Read `summary.fail`; fix any failing check's `hint` before proceeding. | (JSON) |
+| `resman_tags` | Per-tag snapshot: one row per tag (count, best, metric, last_update). Use for "what tags do I have?" — complements `resman_list_recent` which is per-experiment. | (JSON) |
 
 `resman_best` also accepts `composite: true` *(v0.7)* to rank by a multi-dim score (metric + verification + lineage + description) rather than raw metric. Preferred when the agent asks "which experiment should I resume from?".
 

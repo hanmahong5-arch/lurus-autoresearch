@@ -36,6 +36,11 @@ pub fn cmd_add(data_dir: &Path, opts: AddOpts<'_>) -> Result<()> {
             "status 'verified' can only be set via `resman verify`".to_string(),
         ));
     }
+    if !opts.val_bpb.is_finite() {
+        return Err(crate::error::Error::Custom(
+            "val_bpb must be finite; crashes use 0.0".to_string(),
+        ));
+    }
 
     // Parse metric_direction early so we fail fast on bad input.
     let parsed_direction: Option<Direction> =

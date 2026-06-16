@@ -47,9 +47,12 @@ pub(super) fn build_suggestions(
     }
 
     // Usage-grounded verified-gap: MCP telemetry shows many adds but zero verifies.
+    // Guard: suppress when there are no verifiable runs (e.g. all crashes).
+    let has_verifiable = keep_best_count > 0 || verified_count > 0;
     if let Some(f) = usage
         && f.added >= 10
         && f.verified == 0
+        && has_verifiable
     {
         suggestions.push(format!(
             "Agent usage shows {} experiments added for this tag but zero verify calls \
