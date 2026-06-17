@@ -65,7 +65,9 @@ pub fn cmd_best(data_dir: &Path, tag: Option<&str>, format: &str, composite: boo
         "value" => println!("{:.6}", best.val_bpb),
         "json" => println!("{}", serde_json::to_string(best)?),
         _ => {
-            let w = label.len().max(9) + 1;
+            // Width must cover the longest fixed label ("description:" = 12) and
+            // count chars not bytes (multibyte metric names). max(11)+1 = 12 floor.
+            let w = label.chars().count().max(11) + 1;
             println!("{}", crate::term::section_header("best", None));
             println!("  {:<w$} {:.6}", format!("{}:", label), best.val_bpb);
             println!("  {:<w$} {:.1}", "memory_gb:", best.memory_gb);
@@ -274,7 +276,9 @@ fn cmd_best_composite(runs: &[RunLog], format: &str) -> Result<()> {
         }
         _ => {
             // table
-            let w = label.len().max(9) + 1;
+            // Width must cover the longest fixed label ("description:" = 12) and
+            // count chars not bytes (multibyte metric names). max(11)+1 = 12 floor.
+            let w = label.chars().count().max(11) + 1;
             println!("{}", crate::term::section_header("best", None));
             println!("  {:<w$} {:.6}", format!("{}:", label), best.val_bpb);
             println!("  {:<w$} {:.1}", "memory_gb:", best.memory_gb);

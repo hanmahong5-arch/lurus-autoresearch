@@ -133,11 +133,15 @@ pub fn status_cell(status: &crate::model::Status) -> String {
     use crate::model::Status;
     let glyph = status_glyph(status);
     let word = status.as_str();
+    // Pad the PLAIN word to a fixed visible width, THEN colorize. Padding the
+    // colored string would count the ANSI escape sequence toward the width and
+    // break column alignment whenever color is on (the interactive default).
+    let padded = format!("{word:<8}");
     let label = match status {
-        Status::Best => cyan(word),
-        _ => word.to_string(),
+        Status::Best => cyan(&padded),
+        _ => padded,
     };
-    format!("{} {:<8}", glyph, label)
+    format!("{glyph} {label}")
 }
 
 /// Standard muted rendering for an empty-state line (dim when color on).

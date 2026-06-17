@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.17.1] — code-review fixes (2026-06-17)
+
+Fixes from an extra-high-effort multi-angle review of the v0.16–v0.17 UI/UX work.
+
+### Fixed
+
+- **Table alignment with color on.** `term::status_cell` padded the *colored*
+  status label with `{:<8}`, which counts the ANSI escape sequence toward the
+  width — so `best`-status rows lost their padding and `list`/`compare`/`best`
+  tables went ragged whenever color was enabled (the interactive default). The
+  plain word is now padded first, then colored.
+- **`best` description-row alignment.** The key/value column width didn't cover
+  the longest label (`description:`, 12 chars), so the description value
+  misaligned for any metric name shorter than 11 chars (both the default and
+  `--composite` table paths). Width now floors at the longest label and counts
+  chars, not bytes.
+- **distill HTML `verified` badge undercount.** The HTML header counted verified
+  experiments from the best-lineage subset only, while every other badge — and
+  the Markdown — used the run-wide summary. Verified experiments off the best
+  path were silently missed. Now uses `summary.verified`, matching Markdown.
+- **Panic hardening (char-safe slicing).** `short_commit` and the `usage
+  --errors` arg preview truncated by byte index, which panics mid-codepoint on a
+  non-ASCII commit/arg value. Both now slice on char boundaries (the latter via
+  the shared `store::truncate`).
+
+### Tests
+
+255 (presentation/edge fixes; existing suite stays green). Clippy
+`--all-targets` clean, fmt clean. All `-o json`/`-o tsv`/`best -f value` output
+unchanged.
+
+---
+
 ## [0.17.0] — unified terminal presentation (2026-06-17)
 
 The second half of the comprehensive UI/UX pass: one consistent visual

@@ -529,12 +529,9 @@ fn render_errors(events: &[Event], opts: &UsageOpts) -> Result<()> {
             println!("{:<28} {:<26} {:>8}  args", "ts", "tool", "dur_ms");
             println!("{}", crate::term::rule());
             for e in &errors {
-                let args_str = e.args.to_string();
-                let args_short = if args_str.len() > 35 {
-                    format!("{}...", &args_str[..32])
-                } else {
-                    args_str
-                };
+                // Char-safe truncation (raw byte slicing panics on multibyte
+                // arg values); matches the ellipsis style of other columns.
+                let args_short = crate::store::truncate(&e.args.to_string(), 35);
                 println!(
                     "{:<28} {:<26} {:>8}  {}",
                     e.ts, e.tool, e.duration_ms, args_short

@@ -173,8 +173,12 @@ pub(super) fn status_glyph(s: Status) -> String {
 }
 
 pub(super) fn short_commit(c: &str) -> &str {
-    let len = c.len().min(8);
-    &c[..len]
+    // Char-safe: slice at the 8th char boundary, never mid-codepoint (a
+    // non-ASCII commit string would otherwise panic).
+    match c.char_indices().nth(8) {
+        Some((idx, _)) => &c[..idx],
+        None => c,
+    }
 }
 
 // Re-export render functions as public (used by mcp.rs and cmd_distill).

@@ -194,14 +194,9 @@ pub fn render_html(report: &DistillReport) -> String {
             BadgeKind::Discard,
         ));
     }
-    let verified_count = report
-        .lineage
-        .iter()
-        .filter(|e| e.status == "verified")
-        .count();
-    if verified_count > 0 {
+    if s.verified > 0 {
         header_badges.push_str(&badge(
-            &format!("{verified_count} verified"),
+            &format!("{} verified", s.verified),
             BadgeKind::Verified,
         ));
     }
