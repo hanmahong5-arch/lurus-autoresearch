@@ -9,6 +9,9 @@ readme = "README.md"
 repository = "https://github.com/hanmahong5-arch/lurus-autoresearch"
 keywords = ["ml", "experiment-tracking", "ai-agents", "cli", "training"]
 categories = ["command-line-utilities", "science"]
+# design/ is an internal HTML component-preview library (DesignSync source); it
+# is not compiled or referenced by the build, so keep it out of the published crate.
+exclude = ["design/**"]
 
 [[bin]]
 name = "resman"
