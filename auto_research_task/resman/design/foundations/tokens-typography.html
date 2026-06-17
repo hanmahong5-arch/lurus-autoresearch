@@ -1,0 +1,187 @@
+<!-- @dsCard group="Foundations/Tokens" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Typography Tokens — resman design system</title>
+<!-- TOKEN_BLOCK_START (synced from src/html.rs `CSS`; keep in sync) -->
+<style>
+/* ── DESIGN TOKENS ─────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light dark;
+  --bg:             #f7f8fa;
+  --surface:        #ffffff;
+  --surface-raised: #f0f2f5;
+  --border:         #e2e6ed;
+  --border-strong:  #c5ccd8;
+  --text:           #1a1d23;
+  --muted:          #6b7280;
+  --footer:         #9aa1ad;
+  --accent:         #2b7a8f;
+  --ok:             #3d7a46;
+  --warn:           #9c7a1a;
+  --err:            #a0373f;
+  --mauve:          #7d5b8a;
+  --steel:          #3a5a8a;
+  --badge-keep-bg:      #d9f0dc; --badge-keep-fg:      #2a6b35;
+  --badge-best-bg:      #d3e8f7; --badge-best-fg:      #1a4f80;
+  --badge-verified-bg:  #d5edd8; --badge-verified-fg:  #1e5c28;
+  --badge-crash-bg:     #fde0e0; --badge-crash-fg:     #8a2020;
+  --badge-discard-bg:   #e8eaed; --badge-discard-fg:   #5a6370;
+  --badge-neutral-bg:   #eaecf0; --badge-neutral-fg:   #5a6475;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", monospace;
+  --font-size-base: 14px;
+  --line-height:    1.5;
+  --space-1: 4px; --space-2: 8px; --space-3: 16px;
+  --space-4: 24px; --space-5: 32px; --space-6: 48px;
+  --radius-sm: 6px; --radius-md: 8px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg:#0b0d10; --surface:#13161b; --surface-raised:#1a1e24;
+    --border:#1f242c; --border-strong:#2e3440;
+    --text:#d8dee9; --muted:#6b7280; --footer:#4c566a;
+    --accent:#88c0d0; --ok:#a3be8c; --warn:#ebcb8b; --err:#bf616a;
+    --mauve:#b48ead; --steel:#81a1c1;
+    --badge-keep-bg:#2a3c2a; --badge-keep-fg:#a3be8c;
+    --badge-best-bg:#1e3040; --badge-best-fg:#88c0d0;
+    --badge-verified-bg:#1e3520; --badge-verified-fg:#a3be8c;
+    --badge-crash-bg:#3c1e1e; --badge-crash-fg:#bf616a;
+    --badge-discard-bg:#1c1e24; --badge-discard-fg:#4c566a;
+    --badge-neutral-bg:#1c1f27; --badge-neutral-fg:#616e88;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0b0d10; --surface:#13161b; --surface-raised:#1a1e24;
+  --border:#1f242c; --border-strong:#2e3440;
+  --text:#d8dee9; --muted:#6b7280; --footer:#4c566a;
+  --accent:#88c0d0; --ok:#a3be8c; --warn:#ebcb8b; --err:#bf616a;
+  --mauve:#b48ead; --steel:#81a1c1;
+  --badge-keep-bg:#2a3c2a; --badge-keep-fg:#a3be8c;
+  --badge-best-bg:#1e3040; --badge-best-fg:#88c0d0;
+  --badge-verified-bg:#1e3520; --badge-verified-fg:#a3be8c;
+  --badge-crash-bg:#3c1e1e; --badge-crash-fg:#bf616a;
+  --badge-discard-bg:#1c1e24; --badge-discard-fg:#4c566a;
+  --badge-neutral-bg:#1c1f27; --badge-neutral-fg:#616e88;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#f7f8fa; --surface:#ffffff; --surface-raised:#f0f2f5;
+  --border:#e2e6ed; --border-strong:#c5ccd8;
+  --text:#1a1d23; --muted:#6b7280; --footer:#9aa1ad;
+  --accent:#2b7a8f; --ok:#3d7a46; --warn:#9c7a1a; --err:#a0373f;
+  --mauve:#7d5b8a; --steel:#3a5a8a;
+  --badge-keep-bg:#d9f0dc; --badge-keep-fg:#2a6b35;
+  --badge-best-bg:#d3e8f7; --badge-best-fg:#1a4f80;
+  --badge-verified-bg:#d5edd8; --badge-verified-fg:#1e5c28;
+  --badge-crash-bg:#fde0e0; --badge-crash-fg:#8a2020;
+  --badge-discard-bg:#e8eaed; --badge-discard-fg:#5a6370;
+  --badge-neutral-bg:#eaecf0; --badge-neutral-fg:#5a6475;
+}
+body { font: var(--font-size-base)/var(--line-height) var(--font-sans); margin:0; padding:var(--space-5); background:var(--bg); color:var(--text); max-width:1100px; }
+h1 { color:var(--accent); margin:0 0 var(--space-1); font-weight:600; letter-spacing:-0.01em; }
+h2 { color:var(--ok); margin:36px 0 12px; font-weight:500; font-size:16px; text-transform:uppercase; letter-spacing:0.08em; }
+h3 { color:var(--mauve); margin:20px 0 8px; font-weight:500; font-size:14px; }
+.sub { color:var(--muted); font-size:13px; margin-bottom:var(--space-4); }
+.empty { color:var(--muted); font-style:italic; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:var(--space-3); margin:20px 0 8px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px; box-shadow:var(--shadow-sm); }
+.stat-val { font-size:22px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:600; }
+.stat-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:var(--space-1); }
+table { border-collapse:collapse; width:100%; margin:12px 0; font-variant-numeric:tabular-nums; }
+th { color:var(--mauve); text-align:left; padding:8px 10px; border-bottom:2px solid var(--border-strong); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
+td { padding:8px 10px; border-bottom:1px solid var(--border); }
+tr:hover td { background:var(--surface-raised); }
+code { font:13px var(--font-mono); color:var(--steel); }
+.chart { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:8px; box-shadow:var(--shadow-sm); }
+footer { margin-top:var(--space-6); color:var(--footer); font-size:12px; }
+.best-card { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:20px 24px; margin:16px 0; box-shadow:var(--shadow-sm); }
+.best-card .metric { font-size:28px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:700; }
+.best-card .commit-hash { font:13px var(--font-mono); color:var(--steel); margin:8px 0; }
+.best-card .desc { color:var(--text); margin-top:8px; }
+.best-card .gpu { color:var(--muted); font-size:12px; margin-top:var(--space-1); }
+.signal-cluster { margin:12px 0; }
+.signal-cluster details { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 14px; }
+.signal-cluster summary { cursor:pointer; color:var(--text); font-size:13px; }
+.signal-cluster ul { margin:8px 0 4px 16px; color:var(--text); font-size:13px; }
+.no-best { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:16px 20px; color:var(--muted); font-style:italic; margin:16px 0; }
+.detail { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; letter-spacing:0.03em; margin:0 3px; }
+.badge-keep { background:var(--badge-keep-bg); color:var(--badge-keep-fg); }
+.badge-best { background:var(--badge-best-bg); color:var(--badge-best-fg); }
+.badge-verified { background:var(--badge-verified-bg); color:var(--badge-verified-fg); font-weight:700; border:1px solid color-mix(in srgb, var(--badge-verified-fg) 30%, transparent); }
+.badge-crash { background:var(--badge-crash-bg); color:var(--badge-crash-fg); }
+.badge-discard { background:var(--badge-discard-bg); color:var(--badge-discard-fg); }
+.badge-neutral { background:var(--badge-neutral-bg); color:var(--badge-neutral-fg); }
+/* preview-only helpers */
+.demo-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0; }
+.theme-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.theme-split > div { padding:16px; border-radius:8px; }
+.type-row { display:grid; grid-template-columns:180px 1fr; align-items:baseline; gap:16px; padding:10px 0; border-bottom:1px solid var(--border); }
+.type-spec { font-size:11px; color:var(--muted); font-family:var(--font-mono); }
+</style>
+<!-- TOKEN_BLOCK_END -->
+</head>
+<body>
+<h1>Typography Tokens</h1>
+<p class="sub">resman design system · font sizes, weights, and text roles</p>
+
+<h2>Type scale</h2>
+<div class="type-row">
+  <span class="type-spec">h1 · 2em · weight 600 · --accent</span>
+  <h1 style="margin:0">resman experiment tracker</h1>
+</div>
+<div class="type-row">
+  <span class="type-spec">h2 · 16px · weight 500 · uppercase · --ok</span>
+  <h2 style="margin:0">Best run</h2>
+</div>
+<div class="type-row">
+  <span class="type-spec">h3 · 14px · weight 500 · --mauve</span>
+  <h3 style="margin:0">Lineage</h3>
+</div>
+<div class="type-row">
+  <span class="type-spec">body · 14px · weight 400 · --text</span>
+  <span>Experiment with cosine LR schedule, lr=3e-4, batch=32</span>
+</div>
+<div class="type-row">
+  <span class="type-spec">.sub · 13px · --muted</span>
+  <p class="sub" style="margin:0">resman design system · local-first experiment tracker</p>
+</div>
+<div class="type-row">
+  <span class="type-spec">code · 13px · --font-mono · --steel</span>
+  <code>a3f8c12d9e1b5074</code>
+</div>
+<div class="type-row">
+  <span class="type-spec">.stat-val · 22px · weight 600 · --warn · tabular-nums</span>
+  <span class="stat-val">1.4823</span>
+</div>
+<div class="type-row">
+  <span class="type-spec">.stat-label · 11px · uppercase · --muted</span>
+  <span class="stat-label">best val_bpb</span>
+</div>
+<div class="type-row">
+  <span class="type-spec">.badge · 11px · weight 600 · border-radius 10px</span>
+  <div class="demo-row">
+    <span class="badge badge-keep">keep</span>
+    <span class="badge badge-best">best</span>
+    <span class="badge badge-verified">verified</span>
+    <span class="badge badge-crash">crash</span>
+    <span class="badge badge-discard">discard</span>
+    <span class="badge badge-neutral">neutral</span>
+  </div>
+</div>
+<div class="type-row">
+  <span class="type-spec">th · 11px · uppercase · letter-spacing 0.06em · --mauve</span>
+  <table style="width:auto;margin:0"><thead><tr><th>val_bpb</th><th>commit</th><th>status</th></tr></thead></table>
+</div>
+<div class="type-row">
+  <span class="type-spec">footer · 12px · --footer</span>
+  <footer style="margin:0">generated by resman &middot; local-first experiment tracker</footer>
+</div>
+</body>
+</html>
