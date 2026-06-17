@@ -47,7 +47,12 @@ pub fn render_report_html(runs: &[crate::model::RunLog], title: &str) -> String 
     let svg = if metric_points.is_empty() {
         crate::html::empty("no data")
     } else {
-        trend_svg(&metric_points, 1040, 280)
+        let label_strings: Vec<String> = kept
+            .iter()
+            .map(|e| e.commit.chars().take(8).collect())
+            .collect();
+        let labels: Vec<&str> = label_strings.iter().map(|s| s.as_str()).collect();
+        trend_svg(&metric_points, &labels, 1040, 280)
     };
 
     let rows = kept

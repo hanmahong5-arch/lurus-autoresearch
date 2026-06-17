@@ -220,15 +220,20 @@ pub fn render_html(report: &DistillReport) -> String {
     );
 
     // --- sparkline ---
-    let kept_points: Vec<(usize, f64)> = report
+    let kept_entries: Vec<_> = report
         .lineage
         .iter()
         .enumerate()
         .filter(|(_, e)| e.metric > 0.0)
-        .map(|(i, e)| (i, e.metric))
         .collect();
+    let kept_points: Vec<(usize, f64)> = kept_entries.iter().map(|(i, e)| (*i, e.metric)).collect();
     if kept_points.len() >= 2 {
-        let svg = trend_svg(&kept_points, 1040, 280);
+        let label_strings: Vec<String> = kept_entries
+            .iter()
+            .map(|(_, e)| short_commit(&e.commit).to_string())
+            .collect();
+        let labels: Vec<&str> = label_strings.iter().map(|s| s.as_str()).collect();
+        let svg = trend_svg(&kept_points, &labels, 1040, 280);
         body.push_str(&section(
             "Metric trajectory",
             &format!("<div class=\"chart\">{svg}</div>"),

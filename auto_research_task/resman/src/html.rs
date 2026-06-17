@@ -175,12 +175,21 @@ pub fn badge(label: &str, kind: BadgeKind) -> String {
 // ---------------------------------------------------------------------------
 
 /// Build a trend SVG from `(index, value)` pairs.
-/// Returns an empty `<svg>` placeholder when the slice is empty.
-pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) -> String {
+/// `labels` is parallel to `points` (same length) OR empty.
+/// When `labels.len() == points.len()`, point i's tooltip is `"{labels[i]}: {value:.6}"`;
+/// otherwise just `"{value:.6}"`.
+/// Returns a themed empty-state `<svg>` when the slice is empty.
+pub fn trend_svg(
+    metric_points: &[(usize, f64)],
+    labels: &[&str],
+    width: usize,
+    height: usize,
+) -> String {
     if metric_points.is_empty() {
         return format!(
-            "<svg viewBox='0 0 {width} {height}' \
-             width='100%' style='max-width:{width}px'></svg>"
+            "<svg viewBox='0 0 {width} {height}' width='100%' style='max-width:{width}px'>\
+             <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle' \
+             fill='var(--muted)' font-size='13'>no data</text></svg>"
         );
     }
 
@@ -201,6 +210,7 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
     let pad_b: f64 = 32.0;
     let plot_w = w - pad_l - pad_r;
     let plot_h = h - pad_t - pad_b;
+    let plot_bottom = h - pad_b;
     let n = bpbs.len() as f64;
 
     let xy = |i: usize, v: f64| {
@@ -213,7 +223,7 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
         (x, y)
     };
 
-    let points: String = bpbs
+    let line_points: String = bpbs
         .iter()
         .enumerate()
         .map(|(i, v)| {
@@ -223,12 +233,42 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
         .collect::<Vec<_>>()
         .join(" ");
 
+    // Area fill polygon: close down to plot baseline
+    let area_fill = if bpbs.len() >= 2 {
+        let (x0, _) = xy(0, bpbs[0]);
+        let (xn, _) = xy(bpbs.len() - 1, bpbs[bpbs.len() - 1]);
+        let interior: String = bpbs
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let (x, y) = xy(i, *v);
+                format!("{x:.1},{y:.1}")
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "<polygon points='{x0:.1},{plot_bottom:.1} {interior} {xn:.1},{plot_bottom:.1}' \
+             fill='var(--accent)' fill-opacity='0.08' stroke='none'/>",
+        )
+    } else {
+        String::new()
+    };
+
+    let with_labels = labels.len() == bpbs.len();
     let dots: String = bpbs
         .iter()
         .enumerate()
         .map(|(i, v)| {
             let (x, y) = xy(i, *v);
-            format!("<circle cx='{x:.1}' cy='{y:.1}' r='3.5' fill='#88c0d0'/>")
+            let tip = if with_labels {
+                format!("{}: {:.6}", html_escape(labels[i]), v)
+            } else {
+                format!("{:.6}", v)
+            };
+            format!(
+                "<g><circle cx='{x:.1}' cy='{y:.1}' r='3.5' fill='var(--accent)'/>\
+                 <title>{tip}</title></g>"
+            )
         })
         .collect();
 
@@ -237,8 +277,10 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
             let val = min + range * (i as f64 / 4.0);
             let y = pad_t + plot_h - (i as f64 / 4.0) * plot_h;
             format!(
-                "<line x1='{pad_l}' y1='{y:.0}' x2='{:.0}' y2='{y:.0}' stroke='#1f242c' stroke-width='1'/>\
-                 <text x='{:.0}' y='{:.0}' fill='#6b7280' font-size='10' text-anchor='end'>{val:.4}</text>",
+                "<line x1='{pad_l}' y1='{y:.0}' x2='{:.0}' y2='{y:.0}' \
+                 stroke='var(--border)' stroke-width='1'/>\
+                 <text x='{:.0}' y='{:.0}' fill='var(--muted)' font-size='10' \
+                 text-anchor='end'>{val:.4}</text>",
                 pad_l + plot_w,
                 pad_l - 6.0,
                 y + 3.0,
@@ -249,9 +291,12 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
     format!(
         "<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px'>\
            {y_axis}\
-           <polyline points='{points}' fill='none' stroke='#88c0d0' stroke-width='2' stroke-linejoin='round'/>\
+           {area_fill}\
+           <polyline points='{line_points}' fill='none' stroke='var(--accent)' \
+           stroke-width='2' stroke-linejoin='round'/>\
            {dots}\
-           <text x='{tx:.0}' y='{ty:.0}' fill='#6b7280' font-size='10' text-anchor='middle'>experiment #</text>\
+           <text x='{tx:.0}' y='{ty:.0}' fill='var(--muted)' font-size='10' \
+           text-anchor='middle'>experiment #</text>\
          </svg>",
         tx = pad_l + plot_w / 2.0,
         ty = h - 8.0,
@@ -373,7 +418,7 @@ mod tests {
 
     #[test]
     fn trend_svg_empty_returns_placeholder() {
-        let svg = trend_svg(&[], 800, 200);
+        let svg = trend_svg(&[], &[], 800, 200);
         assert!(svg.contains("<svg"));
         assert!(svg.contains("</svg>"));
         // No polyline when empty
@@ -382,15 +427,31 @@ mod tests {
 
     #[test]
     fn trend_svg_single_point() {
-        let svg = trend_svg(&[(0, 1.23)], 800, 200);
+        let svg = trend_svg(&[(0, 1.23)], &[], 800, 200);
         assert!(svg.contains("circle"));
     }
 
     #[test]
     fn trend_svg_no_external_refs() {
-        let svg = trend_svg(&[(0, 1.0), (1, 0.9)], 1040, 280);
+        let svg = trend_svg(&[(0, 1.0), (1, 0.9)], &[], 1040, 280);
         assert!(!svg.contains("http://"));
         assert!(!svg.contains("https://"));
+    }
+
+    #[test]
+    fn trend_svg_two_points_with_labels() {
+        let points = &[(0usize, 1.0f64), (1, 0.9)];
+        let labels: &[&str] = &["abc12345", "def67890"];
+        let svg = trend_svg(points, labels, 1040, 280);
+        // has tooltip elements
+        assert!(svg.contains("<title>"), "missing <title>");
+        assert!(svg.contains("abc12345"), "missing label text");
+        // has area fill polygon
+        assert!(svg.contains("<polygon"), "missing <polygon>");
+        // uses CSS variable for accent color
+        assert!(svg.contains("var(--accent)"), "missing var(--accent)");
+        // no hardcoded hex color
+        assert!(!svg.contains("#88c0d0"), "found hardcoded #88c0d0");
     }
 
     #[test]

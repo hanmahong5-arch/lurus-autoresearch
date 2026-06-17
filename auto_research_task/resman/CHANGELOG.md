@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.16.1] — themed trend chart (2026-06-16)
+
+### Changed
+
+- `trend_svg` (the chart in `resman report` and `resman distill --html`) now
+  draws with the design tokens — `var(--accent)` line/points, `var(--border)`
+  grid, `var(--muted)` axis labels — so it themes with the page (light / dark /
+  system) instead of being locked to dark Nord. Added a subtle area fill under
+  the line, per-point `<title>` hover tooltips (commit + value), and a themed
+  "no data" empty state. This removes the last hardcoded hex from HTML output.
+
+### Tests
+
+247 → **248** (a labels+area-fill chart test). Clippy `--all-targets` clean,
+fmt clean. `trend_svg` stays JS-free and self-contained (no external refs).
+
+---
+
 ## [0.16.0] — dual-theme HTML design system (2026-06-16)
 
 Visual overhaul of the self-contained HTML artifacts (`resman report`,
