@@ -3,57 +3,121 @@
 //! Used by both `commands/report.rs` and `commands/distill.rs`.
 
 // ---------------------------------------------------------------------------
-// Dark-mode CSS
+// Dual-theme CSS
 // ---------------------------------------------------------------------------
 
-pub const CSS_DARK: &str = r#"
-  :root { color-scheme: dark; }
-  body { font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-         margin: 0; padding: 32px; background: #0b0d10; color: #d8dee9; max-width: 1100px; }
-  h1 { color: #88c0d0; margin: 0 0 4px; font-weight: 600; letter-spacing: -0.01em; }
-  h2 { color: #a3be8c; margin: 36px 0 12px; font-weight: 500; font-size: 16px;
-        text-transform: uppercase; letter-spacing: 0.08em; }
-  h3 { color: #b48ead; margin: 20px 0 8px; font-weight: 500; font-size: 14px; }
-  .sub { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 16px; margin: 20px 0 8px; }
-  .stat { background: #13161b; border: 1px solid #1f242c; border-radius: 8px; padding: 14px 16px; }
-  .stat-val { font-size: 22px; color: #ebcb8b; font-variant-numeric: tabular-nums; font-weight: 600; }
-  .stat-label { font-size: 11px; color: #6b7280; text-transform: uppercase;
-                 letter-spacing: 0.08em; margin-top: 4px; }
-  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-variant-numeric: tabular-nums; }
-  th { color: #b48ead; text-align: left; padding: 8px 10px; border-bottom: 2px solid #2e3440;
-        font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-  td { padding: 8px 10px; border-bottom: 1px solid #1f242c; }
-  tr:hover td { background: #13161b; }
-  code { font: 13px ui-monospace, "Cascadia Code", monospace; color: #81a1c1; }
-  .chart { background: #13161b; border: 1px solid #1f242c; border-radius: 8px; padding: 8px; }
-  footer { margin-top: 48px; color: #4c566a; font-size: 12px; }
-  /* distill-specific */
-  .best-card { background: #13161b; border: 1px solid #2e3440; border-radius: 8px;
-               padding: 20px 24px; margin: 16px 0; }
-  .best-card .metric { font-size: 28px; color: #ebcb8b; font-variant-numeric: tabular-nums;
-                        font-weight: 700; }
-  .best-card .commit-hash { font: 13px ui-monospace, "Cascadia Code", monospace;
-                              color: #81a1c1; margin: 8px 0; }
-  .best-card .desc { color: #d8dee9; margin-top: 8px; }
-  .best-card .gpu { color: #6b7280; font-size: 12px; margin-top: 4px; }
-  .signal-cluster { margin: 12px 0; }
-  .signal-cluster details { background: #13161b; border: 1px solid #1f242c;
-                              border-radius: 6px; padding: 8px 14px; }
-  .signal-cluster summary { cursor: pointer; color: #d8dee9; font-size: 13px; }
-  .signal-cluster ul { margin: 8px 0 4px 16px; color: #d8dee9; font-size: 13px; }
-  .no-best { background: #13161b; border: 1px solid #2e3440; border-radius: 8px;
-              padding: 16px 20px; color: #6b7280; font-style: italic; margin: 16px 0; }
-  /* badges */
-  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px;
-            font-weight: 600; letter-spacing: 0.03em; margin: 0 3px; }
-  .badge-keep    { background: #2a3c2a; color: #a3be8c; }
-  .badge-best    { background: #1e3040; color: #88c0d0; }
-  .badge-verified { background: #1e3520; color: #a3be8c; font-weight: 700; border: 1px solid #a3be8c44; }
-  .badge-crash   { background: #3c1e1e; color: #bf616a; }
-  .badge-discard { background: #1c1e24; color: #4c566a; }
-  .badge-neutral { background: #1c1f27; color: #616e88; }
+pub const CSS: &str = r#"
+/* ── DESIGN TOKENS ─────────────────────────────────────────────────────── */
+:root {
+  color-scheme: light dark;
+  --bg:             #f7f8fa;
+  --surface:        #ffffff;
+  --surface-raised: #f0f2f5;
+  --border:         #e2e6ed;
+  --border-strong:  #c5ccd8;
+  --text:           #1a1d23;
+  --muted:          #6b7280;
+  --footer:         #9aa1ad;
+  --accent:         #2b7a8f;
+  --ok:             #3d7a46;
+  --warn:           #9c7a1a;
+  --err:            #a0373f;
+  --mauve:          #7d5b8a;
+  --steel:          #3a5a8a;
+  --badge-keep-bg:      #d9f0dc; --badge-keep-fg:      #2a6b35;
+  --badge-best-bg:      #d3e8f7; --badge-best-fg:      #1a4f80;
+  --badge-verified-bg:  #d5edd8; --badge-verified-fg:  #1e5c28;
+  --badge-crash-bg:     #fde0e0; --badge-crash-fg:     #8a2020;
+  --badge-discard-bg:   #e8eaed; --badge-discard-fg:   #5a6370;
+  --badge-neutral-bg:   #eaecf0; --badge-neutral-fg:   #5a6475;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", monospace;
+  --font-size-base: 14px;
+  --line-height:    1.5;
+  --space-1: 4px; --space-2: 8px; --space-3: 16px;
+  --space-4: 24px; --space-5: 32px; --space-6: 48px;
+  --radius-sm: 6px; --radius-md: 8px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg:#0b0d10; --surface:#13161b; --surface-raised:#1a1e24;
+    --border:#1f242c; --border-strong:#2e3440;
+    --text:#d8dee9; --muted:#6b7280; --footer:#4c566a;
+    --accent:#88c0d0; --ok:#a3be8c; --warn:#ebcb8b; --err:#bf616a;
+    --mauve:#b48ead; --steel:#81a1c1;
+    --badge-keep-bg:#2a3c2a; --badge-keep-fg:#a3be8c;
+    --badge-best-bg:#1e3040; --badge-best-fg:#88c0d0;
+    --badge-verified-bg:#1e3520; --badge-verified-fg:#a3be8c;
+    --badge-crash-bg:#3c1e1e; --badge-crash-fg:#bf616a;
+    --badge-discard-bg:#1c1e24; --badge-discard-fg:#4c566a;
+    --badge-neutral-bg:#1c1f27; --badge-neutral-fg:#616e88;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0b0d10; --surface:#13161b; --surface-raised:#1a1e24;
+  --border:#1f242c; --border-strong:#2e3440;
+  --text:#d8dee9; --muted:#6b7280; --footer:#4c566a;
+  --accent:#88c0d0; --ok:#a3be8c; --warn:#ebcb8b; --err:#bf616a;
+  --mauve:#b48ead; --steel:#81a1c1;
+  --badge-keep-bg:#2a3c2a; --badge-keep-fg:#a3be8c;
+  --badge-best-bg:#1e3040; --badge-best-fg:#88c0d0;
+  --badge-verified-bg:#1e3520; --badge-verified-fg:#a3be8c;
+  --badge-crash-bg:#3c1e1e; --badge-crash-fg:#bf616a;
+  --badge-discard-bg:#1c1e24; --badge-discard-fg:#4c566a;
+  --badge-neutral-bg:#1c1f27; --badge-neutral-fg:#616e88;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#f7f8fa; --surface:#ffffff; --surface-raised:#f0f2f5;
+  --border:#e2e6ed; --border-strong:#c5ccd8;
+  --text:#1a1d23; --muted:#6b7280; --footer:#9aa1ad;
+  --accent:#2b7a8f; --ok:#3d7a46; --warn:#9c7a1a; --err:#a0373f;
+  --mauve:#7d5b8a; --steel:#3a5a8a;
+  --badge-keep-bg:#d9f0dc; --badge-keep-fg:#2a6b35;
+  --badge-best-bg:#d3e8f7; --badge-best-fg:#1a4f80;
+  --badge-verified-bg:#d5edd8; --badge-verified-fg:#1e5c28;
+  --badge-crash-bg:#fde0e0; --badge-crash-fg:#8a2020;
+  --badge-discard-bg:#e8eaed; --badge-discard-fg:#5a6370;
+  --badge-neutral-bg:#eaecf0; --badge-neutral-fg:#5a6475;
+}
+body { font: var(--font-size-base)/var(--line-height) var(--font-sans); margin:0; padding:var(--space-5); background:var(--bg); color:var(--text); max-width:1100px; }
+h1 { color:var(--accent); margin:0 0 var(--space-1); font-weight:600; letter-spacing:-0.01em; }
+h2 { color:var(--ok); margin:36px 0 12px; font-weight:500; font-size:16px; text-transform:uppercase; letter-spacing:0.08em; }
+h3 { color:var(--mauve); margin:20px 0 8px; font-weight:500; font-size:14px; }
+.sub { color:var(--muted); font-size:13px; margin-bottom:var(--space-4); }
+.empty { color:var(--muted); font-style:italic; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:var(--space-3); margin:20px 0 8px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px; box-shadow:var(--shadow-sm); }
+.stat-val { font-size:22px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:600; }
+.stat-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:var(--space-1); }
+table { border-collapse:collapse; width:100%; margin:12px 0; font-variant-numeric:tabular-nums; }
+th { color:var(--mauve); text-align:left; padding:8px 10px; border-bottom:2px solid var(--border-strong); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
+td { padding:8px 10px; border-bottom:1px solid var(--border); }
+tr:hover td { background:var(--surface-raised); }
+code { font:13px var(--font-mono); color:var(--steel); }
+.chart { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:8px; box-shadow:var(--shadow-sm); }
+footer { margin-top:var(--space-6); color:var(--footer); font-size:12px; }
+.best-card { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:20px 24px; margin:16px 0; box-shadow:var(--shadow-sm); }
+.best-card .metric { font-size:28px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:700; }
+.best-card .commit-hash { font:13px var(--font-mono); color:var(--steel); margin:8px 0; }
+.best-card .desc { color:var(--text); margin-top:8px; }
+.best-card .gpu { color:var(--muted); font-size:12px; margin-top:var(--space-1); }
+.signal-cluster { margin:12px 0; }
+.signal-cluster details { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 14px; }
+.signal-cluster summary { cursor:pointer; color:var(--text); font-size:13px; }
+.signal-cluster ul { margin:8px 0 4px 16px; color:var(--text); font-size:13px; }
+.no-best { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:16px 20px; color:var(--muted); font-style:italic; margin:16px 0; }
+.detail { color:var(--muted); font-size:12px; }
+.badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; letter-spacing:0.03em; margin:0 3px; }
+.badge-keep { background:var(--badge-keep-bg); color:var(--badge-keep-fg); }
+.badge-best { background:var(--badge-best-bg); color:var(--badge-best-fg); }
+.badge-verified { background:var(--badge-verified-bg); color:var(--badge-verified-fg); font-weight:700; border:1px solid color-mix(in srgb, var(--badge-verified-fg) 30%, transparent); }
+.badge-crash { background:var(--badge-crash-bg); color:var(--badge-crash-fg); }
+.badge-discard { background:var(--badge-discard-bg); color:var(--badge-discard-fg); }
+.badge-neutral { background:var(--badge-neutral-bg); color:var(--badge-neutral-fg); }
 "#;
 
 // ---------------------------------------------------------------------------
@@ -64,6 +128,11 @@ pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Muted italic empty-state line. Replaces ad-hoc inline `style="color:#..."`.
+pub fn empty(msg: &str) -> String {
+    format!("<p class=\"empty\"><em>{}</em></p>", html_escape(msg))
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +259,36 @@ pub fn trend_svg(metric_points: &[(usize, f64)], width: usize, height: usize) ->
 }
 
 // ---------------------------------------------------------------------------
+// Component builders
+// ---------------------------------------------------------------------------
+
+/// One stat tile. Label is shown uppercase via CSS (.stat-label) — pass it lowercase.
+pub fn stat_card(value: &str, label: &str) -> String {
+    format!(
+        "<div class=\"stat\"><div class=\"stat-val\">{}</div><div class=\"stat-label\">{}</div></div>",
+        html_escape(value),
+        html_escape(label)
+    )
+}
+
+/// Wrap stat_card()s in the .stats grid.
+pub fn stats_grid(cards: &[String]) -> String {
+    format!("<div class=\"stats\">{}</div>", cards.concat())
+}
+
+/// An <h2> section: heading + body HTML (body is trusted pre-built HTML).
+pub fn section(title: &str, body: &str) -> String {
+    format!("<h2>{}</h2>\n{}", html_escape(title), body)
+}
+
+/// A full-width table. headers are static literals emitted verbatim (NOT escaped);
+/// rows is pre-built <tr>… HTML emitted verbatim.
+pub fn data_table(headers: &[&str], rows: &str) -> String {
+    let th: String = headers.iter().map(|h| format!("<th>{h}</th>")).collect();
+    format!("<table><thead><tr>{th}</tr></thead><tbody>{rows}</tbody></table>")
+}
+
+// ---------------------------------------------------------------------------
 // Page wrapper
 // ---------------------------------------------------------------------------
 
@@ -208,7 +307,7 @@ pub fn page(title: &str, body: &str) -> String {
 <footer>generated by resman &middot; local-first experiment tracker</footer>
 </body></html>"#,
         escaped_title = html_escape(title),
-        css = CSS_DARK,
+        css = CSS,
         body = body,
     )
 }
@@ -225,6 +324,15 @@ mod tests {
     fn html_escape_basic() {
         assert_eq!(html_escape("<script>&"), "&lt;script&gt;&amp;");
         assert_eq!(html_escape("hello"), "hello");
+    }
+
+    #[test]
+    fn empty_helper_escapes_and_has_class() {
+        let out = empty("<script>alert(1)</script>");
+        assert!(out.contains("class=\"empty\""));
+        assert!(out.contains("&lt;script&gt;"));
+        assert!(!out.contains("<script>"));
+        assert!(!out.contains("</script>"));
     }
 
     #[test]
@@ -283,6 +391,46 @@ mod tests {
         let svg = trend_svg(&[(0, 1.0), (1, 0.9)], 1040, 280);
         assert!(!svg.contains("http://"));
         assert!(!svg.contains("https://"));
+    }
+
+    #[test]
+    fn stat_card_contains_stat_val_and_escaped_value() {
+        let card = stat_card("<42>", "total");
+        assert!(card.contains("stat-val"));
+        assert!(card.contains("stat-label"));
+        assert!(card.contains("&lt;42&gt;"));
+        assert!(!card.contains("<42>"));
+    }
+
+    #[test]
+    fn stats_grid_wraps_cards() {
+        let cards = vec![stat_card("5", "total"), stat_card("3", "kept")];
+        let grid = stats_grid(&cards);
+        assert!(grid.contains("class=\"stats\""));
+        assert!(grid.contains("stat-val"));
+    }
+
+    #[test]
+    fn section_contains_h2() {
+        let s = section("My Title", "<p>body</p>");
+        assert!(s.contains("<h2>My Title</h2>"));
+        assert!(s.contains("<p>body</p>"));
+    }
+
+    #[test]
+    fn section_escapes_title() {
+        let s = section("<script>", "<p>body</p>");
+        assert!(s.contains("&lt;script&gt;"));
+        assert!(!s.contains("<script>"));
+    }
+
+    #[test]
+    fn data_table_contains_headers_and_tbody() {
+        let t = data_table(&["col1", "col2"], "<tr><td>r1</td></tr>");
+        assert!(t.contains("<th>col1</th>"));
+        assert!(t.contains("<th>col2</th>"));
+        assert!(t.contains("<tbody>"));
+        assert!(t.contains("<tr><td>r1</td></tr>"));
     }
 
     #[test]

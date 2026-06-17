@@ -1,6 +1,6 @@
 //! Output rendering (Markdown, JSON, HTML) for distill reports.
 
-use crate::html::{BadgeKind, badge, html_escape, trend_svg};
+use crate::html::{BadgeKind, badge, data_table, html_escape, section, trend_svg};
 use crate::model::Status;
 use crate::store::truncate;
 
@@ -229,61 +229,69 @@ pub fn render_html(report: &DistillReport) -> String {
         .collect();
     if kept_points.len() >= 2 {
         let svg = trend_svg(&kept_points, 1040, 280);
-        body.push_str("<h2>Metric trajectory</h2>\n");
-        body.push_str(&format!("<div class=\"chart\">{svg}</div>\n"));
+        body.push_str(&section(
+            "Metric trajectory",
+            &format!("<div class=\"chart\">{svg}</div>"),
+        ));
+        body.push('\n');
     }
 
     // --- best card ---
-    body.push_str("<h2>Best result</h2>\n");
-    match &report.best {
-        None => {
-            body.push_str("<div class=\"no-best\">No best experiment in this run.</div>\n");
-        }
-        Some(b) => {
-            let gpu_line = if b.gpu.is_empty() {
-                String::new()
-            } else {
-                format!("<div class=\"gpu\">GPU: {}</div>", html_escape(&b.gpu))
-            };
-            body.push_str(&format!(
-                "<section class=\"best-card\">\
-                   <div class=\"metric\">{metric_name}: {value:.6}</div>\
-                   <div class=\"commit-hash\"><code>{commit}</code></div>\
-                   <div class=\"desc\">{desc}</div>\
-                   {gpu_line}\
-                 </section>\n",
-                metric_name = html_escape(&s.metric_name),
-                value = b.value,
-                commit = html_escape(&b.commit),
-                desc = html_escape(&b.description),
-            ));
-        }
+    {
+        let best_content = match &report.best {
+            None => "<div class=\"no-best\">No best experiment in this run.</div>\n".to_string(),
+            Some(b) => {
+                let gpu_line = if b.gpu.is_empty() {
+                    String::new()
+                } else {
+                    format!("<div class=\"gpu\">GPU: {}</div>", html_escape(&b.gpu))
+                };
+                format!(
+                    "<section class=\"best-card\">\
+                       <div class=\"metric\">{metric_name}: {value:.6}</div>\
+                       <div class=\"commit-hash\"><code>{commit}</code></div>\
+                       <div class=\"desc\">{desc}</div>\
+                       {gpu_line}\
+                     </section>\n",
+                    metric_name = html_escape(&s.metric_name),
+                    value = b.value,
+                    commit = html_escape(&b.commit),
+                    desc = html_escape(&b.description),
+                )
+            }
+        };
+        body.push_str(&section("Best result", &best_content));
+        body.push('\n');
     }
 
     // --- lineage ---
-    body.push_str("<h2>Lineage to best</h2>\n");
-    if report.lineage.is_empty() {
-        body.push_str("<p style=\"color:#6b7280\"><em>no lineage recorded</em></p>\n");
-    } else {
-        body.push_str("<ol>\n");
-        for entry in &report.lineage {
-            let sc = short_commit(&entry.commit);
-            body.push_str(&format!(
-                "<li>{status_badge} <code>{commit}</code> &mdash; \
-                 {metric_name}={value:.6} &mdash; {desc}</li>\n",
-                status_badge = status_badge(&entry.status),
-                commit = html_escape(sc),
-                metric_name = html_escape(&s.metric_name),
-                value = entry.metric,
-                desc = html_escape(&truncate(&entry.description, 80)),
-            ));
-        }
-        body.push_str("</ol>\n");
+    {
+        let lineage_content = if report.lineage.is_empty() {
+            crate::html::empty("no lineage recorded")
+        } else {
+            let mut ol = "<ol>\n".to_string();
+            for entry in &report.lineage {
+                let sc = short_commit(&entry.commit);
+                ol.push_str(&format!(
+                    "<li>{status_badge} <code>{commit}</code> &mdash; \
+                     {metric_name}={value:.6} &mdash; {desc}</li>\n",
+                    status_badge = status_badge(&entry.status),
+                    commit = html_escape(sc),
+                    metric_name = html_escape(&s.metric_name),
+                    value = entry.metric,
+                    desc = html_escape(&truncate(&entry.description, 80)),
+                ));
+            }
+            ol.push_str("</ol>\n");
+            ol
+        };
+        body.push_str(&section("Lineage to best", &lineage_content));
+        body.push('\n');
     }
 
     // --- other branches (non-best roots with verdict labels) ---
     if !report.branch_verdicts.is_empty() {
-        body.push_str("<h2>Other branches</h2>\n<ul>\n");
+        let mut ul = "<ul>\n".to_string();
         for v in &report.branch_verdicts {
             let badge_kind = match v.verdict.as_str() {
                 "converged" => BadgeKind::Keep,
@@ -295,7 +303,7 @@ pub fn render_html(report: &DistillReport) -> String {
                 Some(n) => format!(" <span class=\"detail\">({})</span>", html_escape(n)),
                 None => String::new(),
             };
-            body.push_str(&format!(
+            ul.push_str(&format!(
                 "<li><code>{root}</code> → … → <code>{term}</code> [{status}]  depth={depth}  {badge}{note}</li>\n",
                 root = html_escape(short_commit(&v.root_commit)),
                 term = html_escape(short_commit(&v.terminal_commit)),
@@ -305,87 +313,98 @@ pub fn render_html(report: &DistillReport) -> String {
                 note = note_html,
             ));
         }
-        body.push_str("</ul>\n");
+        ul.push_str("</ul>\n");
+        body.push_str(&section("Other branches", &ul));
+        body.push('\n');
     }
 
     // --- failure signals ---
-    body.push_str("<h2>Failure signals</h2>\n");
-    let any_signals = report.failure_signals.values().any(|v| !v.is_empty());
-    if !any_signals {
-        body.push_str(
-            "<p style=\"color:#6b7280\"><em>no crash signals recorded in this run</em></p>\n",
-        );
-    } else {
-        // Sort kinds by count desc.
-        let mut kinds: Vec<(&String, &Vec<super::FailureSignalEntry>)> = report
-            .failure_signals
-            .iter()
-            .filter(|(_, v)| !v.is_empty())
-            .collect();
-        kinds.sort_by_key(|x| std::cmp::Reverse(x.1.len()));
+    {
+        let any_signals = report.failure_signals.values().any(|v| !v.is_empty());
+        let signals_content = if !any_signals {
+            crate::html::empty("no crash signals recorded in this run")
+        } else {
+            // Sort kinds by count desc.
+            let mut kinds: Vec<(&String, &Vec<super::FailureSignalEntry>)> = report
+                .failure_signals
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .collect();
+            kinds.sort_by_key(|x| std::cmp::Reverse(x.1.len()));
 
-        for (kind, entries) in &kinds {
-            let mut items = String::new();
-            for e in *entries {
-                let detail = if e.detail.is_empty() {
-                    String::new()
-                } else {
-                    format!(" &mdash; {}", html_escape(&e.detail))
-                };
-                items.push_str(&format!(
-                    "<li><code>{commit}</code> &mdash; {desc}{detail}</li>\n",
-                    commit = html_escape(short_commit(&e.commit)),
-                    desc = html_escape(&e.description),
+            let mut clusters = String::new();
+            for (kind, entries) in &kinds {
+                let mut items = String::new();
+                for e in *entries {
+                    let detail = if e.detail.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" &mdash; {}", html_escape(&e.detail))
+                    };
+                    items.push_str(&format!(
+                        "<li><code>{commit}</code> &mdash; {desc}{detail}</li>\n",
+                        commit = html_escape(short_commit(&e.commit)),
+                        desc = html_escape(&e.description),
+                    ));
+                }
+                clusters.push_str(&format!(
+                    "<div class=\"signal-cluster\">\
+                       <details>\
+                         <summary>{kind} &times; {count}</summary>\
+                         <ul>{items}</ul>\
+                       </details>\
+                     </div>\n",
+                    kind = html_escape(kind),
+                    count = entries.len(),
                 ));
             }
-            body.push_str(&format!(
-                "<div class=\"signal-cluster\">\
-                   <details>\
-                     <summary>{kind} &times; {count}</summary>\
-                     <ul>{items}</ul>\
-                   </details>\
-                 </div>\n",
-                kind = html_escape(kind),
-                count = entries.len(),
-            ));
-        }
+            clusters
+        };
+        body.push_str(&section("Failure signals", &signals_content));
+        body.push('\n');
     }
 
     // --- unexplored neighbors ---
-    body.push_str("<h2>Unexplored neighbors</h2>\n");
-    if report.unexplored_neighbors.is_empty() {
-        body.push_str("<p style=\"color:#6b7280\"><em>no neighbors found</em></p>\n");
-    } else {
-        body.push_str(
-            "<table><thead><tr>\
-               <th>commit</th><th>value</th><th>&Delta;</th><th>description</th>\
-             </tr></thead><tbody>\n",
-        );
-        for n in &report.unexplored_neighbors {
-            body.push_str(&format!(
-                "<tr><td><code>{commit}</code></td>\
-                     <td>{value:.6}</td>\
-                     <td>{delta:+.4}</td>\
-                     <td>{desc}</td></tr>\n",
-                commit = html_escape(short_commit(&n.commit)),
-                value = n.value,
-                delta = n.delta,
-                desc = html_escape(&n.description),
-            ));
-        }
-        body.push_str("</tbody></table>\n");
+    {
+        let neighbors_content = if report.unexplored_neighbors.is_empty() {
+            crate::html::empty("no neighbors found")
+        } else {
+            let neighbor_rows: String = report
+                .unexplored_neighbors
+                .iter()
+                .map(|n| {
+                    format!(
+                        "<tr><td><code>{commit}</code></td>\
+                             <td>{value:.6}</td>\
+                             <td>{delta:+.4}</td>\
+                             <td>{desc}</td></tr>\n",
+                        commit = html_escape(short_commit(&n.commit)),
+                        value = n.value,
+                        delta = n.delta,
+                        desc = html_escape(&n.description),
+                    )
+                })
+                .collect();
+            data_table(&["commit", "value", "Δ", "description"], &neighbor_rows)
+        };
+        body.push_str(&section("Unexplored neighbors", &neighbors_content));
+        body.push('\n');
     }
 
     // --- suggestions ---
-    body.push_str("<h2>Suggestions</h2>\n");
-    if report.suggestions.is_empty() {
-        body.push_str("<p style=\"color:#6b7280\"><em>no mechanical suggestions — run looks healthy.</em></p>\n");
-    } else {
-        body.push_str("<ul>\n");
-        for sug in &report.suggestions {
-            body.push_str(&format!("<li>{}</li>\n", html_escape(sug)));
-        }
-        body.push_str("</ul>\n");
+    {
+        let suggestions_content = if report.suggestions.is_empty() {
+            crate::html::empty("no mechanical suggestions — run looks healthy.")
+        } else {
+            let mut ul = "<ul>\n".to_string();
+            for sug in &report.suggestions {
+                ul.push_str(&format!("<li>{}</li>\n", html_escape(sug)));
+            }
+            ul.push_str("</ul>\n");
+            ul
+        };
+        body.push_str(&section("Suggestions", &suggestions_content));
+        body.push('\n');
     }
 
     let page_title = format!("resman distill — {}", &report.tag);

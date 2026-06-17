@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.16.0] — dual-theme HTML design system (2026-06-16)
+
+Visual overhaul of the self-contained HTML artifacts (`resman report`,
+`resman distill --html`) — the first slice of a comprehensive UI/UX pass.
+
+### Added
+
+- **Dual-theme design tokens.** `src/html.rs` now defines a full set of CSS
+  custom properties driving **light + dark + follow-system**
+  (`prefers-color-scheme`), with `:root[data-theme="dark"|"light"]` override
+  hooks reserved for a future `--theme` flag. Dark Nord stays the default
+  brand; the light palette meets WCAG AA on white.
+- **Reusable component builders** in `src/html.rs`: `stat_card`, `stats_grid`,
+  `section`, `data_table`, `empty` — `report` and `distill --html` now share one
+  structural vocabulary instead of duplicated inline markup.
+
+### Changed
+
+- `resman report` is rendered via the shared `page()` shell (was a hand-rolled
+  duplicate) — guarantees a single `<style>`/`<footer>` and drops the stray
+  `·`-vs-`&middot;` footer mismatch. The HTML builder is extracted as the pure
+  `render_report_html()` for testability.
+- `CSS_DARK` renamed `CSS` (it now carries both themes).
+
+### Fixed
+
+- The `.detail` CSS class (referenced by distill branch verdicts) was undefined;
+  it is now styled. Empty states use a `.empty` class instead of inline `style=`.
+
+### Tests
+
+237 → **247** (5 component-builder tests + 4 `render_report_html` smoke tests,
+which `report` previously had zero of). Clippy `--all-targets` clean, fmt clean.
+All HTML self-containment invariants (single `<style>`, no external refs,
+escaping, DOCTYPE) preserved; `best -f value` and json/tsv byte-stable.
+
+---
+
 ## [0.15.4] — doctor path display on Windows (2026-06-16)
 
 Found by dogfooding `resman doctor` on a Windows host.
