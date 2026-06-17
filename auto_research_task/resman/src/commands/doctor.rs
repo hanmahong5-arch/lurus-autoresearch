@@ -512,9 +512,10 @@ pub fn cmd_doctor(data_dir: &Path, format: &OutputFormat) -> Result<()> {
             }
         }
         OutputFormat::Table => {
-            println!("=== resman doctor ===\n");
+            println!("{}", crate::term::section_header("doctor", None));
             // Column widths: status=6, check=18, detail=dynamic
             println!("{:<6}  {:<18}  detail", "status", "check");
+            println!("{}", crate::term::rule());
             for c in &checks {
                 println!("{:<6}  {:<18}  {}", c.status.as_str(), c.name, c.detail);
                 if let Some(hint) = &c.hint {

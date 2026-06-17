@@ -65,13 +65,17 @@ pub fn cmd_best(data_dir: &Path, tag: Option<&str>, format: &str, composite: boo
         "value" => println!("{:.6}", best.val_bpb),
         "json" => println!("{}", serde_json::to_string(best)?),
         _ => {
-            let glyph = crate::term::status_glyph(&best.status);
-            println!("best experiment:");
-            println!("  {}:     {:.6}", label, best.val_bpb);
-            println!("  memory_gb:   {:.1}", best.memory_gb);
-            println!("  commit:      {}", best.commit);
-            println!("  status:      {} {}", glyph, best.status);
-            println!("  description: {}", best.description);
+            let w = label.len().max(9) + 1;
+            println!("{}", crate::term::section_header("best", None));
+            println!("  {:<w$} {:.6}", format!("{}:", label), best.val_bpb);
+            println!("  {:<w$} {:.1}", "memory_gb:", best.memory_gb);
+            println!("  {:<w$} {}", "commit:", best.commit);
+            println!(
+                "  {:<w$} {}",
+                "status:",
+                crate::term::status_cell(&best.status)
+            );
+            println!("  {:<w$} {}", "description:", best.description);
         }
     }
     Ok(())
@@ -270,13 +274,17 @@ fn cmd_best_composite(runs: &[RunLog], format: &str) -> Result<()> {
         }
         _ => {
             // table
-            let glyph = crate::term::status_glyph(&best.status);
-            println!("best experiment:");
-            println!("  {}:     {:.6}", label, best.val_bpb);
-            println!("  memory_gb:   {:.1}", best.memory_gb);
-            println!("  commit:      {}", best.commit);
-            println!("  status:      {} {}", glyph, best.status);
-            println!("  description: {}", best.description);
+            let w = label.len().max(9) + 1;
+            println!("{}", crate::term::section_header("best", None));
+            println!("  {:<w$} {:.6}", format!("{}:", label), best.val_bpb);
+            println!("  {:<w$} {:.1}", "memory_gb:", best.memory_gb);
+            println!("  {:<w$} {}", "commit:", best.commit);
+            println!(
+                "  {:<w$} {}",
+                "status:",
+                crate::term::status_cell(&best.status)
+            );
+            println!("  {:<w$} {}", "description:", best.description);
             println!("composite score: {:.3}", scores.score);
             println!(
                 "  metric:    {:.3} × 0.5 = {:.3}",

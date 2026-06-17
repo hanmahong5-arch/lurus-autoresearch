@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.17.0] — unified terminal presentation (2026-06-17)
+
+The second half of the comprehensive UI/UX pass: one consistent visual
+language across every command's human/table output, via a shared `term.rs`
+vocabulary.
+
+### Changed
+
+- **All 7 table commands** (`list`, `compare`, `stats`, `best`, `tags`,
+  `doctor`, `usage`) now share: a uniform `=== resman <cmd> (<context>) ===`
+  header (carrying useful context — experiment / run / tag / event counts), a
+  single 80-char rule, consistent glyph+label status cells, one empty-state
+  tone, and shared description-truncation widths (`DESC_TRUNC` 48 /
+  `DESC_TRUNC_NARROW` 30). Previously each command invented its own header
+  style, separator width (96/97/72/90/70/52/none), status rendering, and
+  empty-state phrasing.
+- `best` key/value labels now align for ANY metric name (alignment was
+  hardcoded for the 7-char `val_bpb`).
+
+### Fixed
+
+- Error tag-quoting unified to backticks (`TagNotFound` used single quotes).
+- `distill --all` markdown footer showed a hardcoded `v0.8`; now reports the
+  real crate version (the single-run path was already fixed in v0.15.3).
+
+### Added
+
+- `--help` examples for `near` / `diff` / `tree` / `verify` / `tags` /
+  `unverify` (previously example-less).
+
+### Internal
+
+- Dead ANSI color helpers removed; the reserved colors are now wired
+  (`bold`→headers, `cyan`→status) or deleted. Zero `#[allow(dead_code)]` in
+  `term.rs`.
+
+### Tests
+
+250 → **255**. Clippy `--all-targets` clean, fmt clean. Every `-o json` /
+`-o tsv` output and `best -f value` remain byte-stable (only the human/table
+branches changed).
+
+---
+
 ## [0.16.2] — cross-run distill HTML (2026-06-17)
 
 ### Added

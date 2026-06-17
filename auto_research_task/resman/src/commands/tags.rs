@@ -80,7 +80,12 @@ pub fn cmd_tags(data_dir: &Path, format: &OutputFormat) -> Result<()> {
             OutputFormat::Json => println!("[]"),
             OutputFormat::Tsv => println!("tag\tn\tbest_value\tbest_commit\tmetric\tlast_update"),
             OutputFormat::Table => {
-                println!("(no tags in this store — run `resman init` then `resman add`)")
+                println!(
+                    "{}",
+                    crate::term::empty_state(
+                        "(no tags in this store — run `resman init` then `resman add`)"
+                    )
+                )
             }
         }
         return Ok(());
@@ -106,11 +111,16 @@ pub fn cmd_tags(data_dir: &Path, format: &OutputFormat) -> Result<()> {
             }
         }
         OutputFormat::Table => {
-            println!("=== resman tags ({} total) ===\n", snaps.len());
+            let n = snaps.len();
+            println!(
+                "{}",
+                crate::term::section_header("tags", Some(&format!("{n} tag(s)")))
+            );
             println!(
                 "{:<20}  {:>4}  {:>11}  {:<11}  {:<10}  last_update",
                 "tag", "n", "best_value", "best_commit", "metric"
             );
+            println!("{}", crate::term::rule());
             for s in &snaps {
                 let bv = s
                     .best_value

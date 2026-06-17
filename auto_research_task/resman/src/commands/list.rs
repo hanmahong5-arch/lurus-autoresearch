@@ -104,7 +104,12 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
         None => load_all_runs(data_dir)?,
     };
     if runs.is_empty() {
-        println!("no experiments found. try `resman import <results.tsv>` first.");
+        println!(
+            "{}",
+            crate::term::empty_state(
+                "no experiments found. try `resman import <results.tsv>` first."
+            )
+        );
         return Ok(());
     }
 
@@ -130,7 +135,10 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
     )?;
 
     if tagged.is_empty() {
-        println!("no experiments matched filters.");
+        println!(
+            "{}",
+            crate::term::empty_state("no experiments matched filters.")
+        );
         return Ok(());
     }
 
@@ -156,25 +164,27 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
             }
         }
         OutputFormat::Table => {
+            let n = tagged.len();
             println!(
-                "{:>4}  {:>10}  {:>7}  {:>8}  {:>8}  description",
+                "{}",
+                crate::term::section_header("list", Some(&format!("{n} experiment(s)")))
+            );
+            println!(
+                "{:>4}  {:>10}  {:>7}  {:>8}  {:<10}  description",
                 "#", col_label, "mem_gb", "commit", "status"
             );
-            println!("{}", "-".repeat(96));
+            println!("{}", crate::term::rule());
             for (i, (e, _)) in tagged.iter().enumerate() {
-                let glyph = crate::term::status_glyph(&e.status);
                 println!(
-                    "{:>4}  {:>10.6}  {:>7.1}  {:>8}  {} {:<6}  {}",
+                    "{:>4}  {:>10.6}  {:>7.1}  {:>8}  {}  {}",
                     i + 1,
                     e.val_bpb,
                     e.memory_gb,
                     e.commit,
-                    glyph,
-                    e.status,
-                    truncate(&e.description, 50)
+                    crate::term::status_cell(&e.status),
+                    truncate(&e.description, crate::term::DESC_TRUNC)
                 );
             }
-            println!("\n{} experiment(s) shown", tagged.len());
         }
     }
     Ok(())

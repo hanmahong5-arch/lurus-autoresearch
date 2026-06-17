@@ -1,6 +1,6 @@
 [package]
 name = "resman-cli"
-version = "0.16.2"
+version = "0.17.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Local-first experiment tracker for autonomous AI training agents"

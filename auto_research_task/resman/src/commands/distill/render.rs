@@ -610,7 +610,8 @@ pub fn render_cross_markdown(report: &CrossDistillReport) -> String {
 
     out.push_str("---\n");
     out.push_str(&format!(
-        "_resman distill --all v0.8 — {}_\n",
+        "_resman distill --all v{} — {}_\n",
+        env!("CARGO_PKG_VERSION"),
         report.generated_at
     ));
     out

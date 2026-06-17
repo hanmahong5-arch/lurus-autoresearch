@@ -104,17 +104,17 @@ pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
 
     if experiments.is_empty() {
         println!(
-            "no experiments to summarize yet — add or import some first (`resman add ...` or `resman import <file>`)."
+            "{}",
+            crate::term::empty_state(
+                "no experiments to summarize yet — add or import some first (`resman add ...` or `resman import <file>`)."
+            )
         );
         return Ok(());
     }
 
     let s = compute_stats(&experiments);
 
-    println!(
-        "=== experiment statistics{} ===\n",
-        tag.map(|t| format!(" ({t})")).unwrap_or_default()
-    );
+    println!("{}\n", crate::term::section_header("stats", tag));
     println!("total:       {}", s.total);
     println!("kept:        {}  ({:.1}%)", s.kept, pct(s.kept, s.total));
     println!(

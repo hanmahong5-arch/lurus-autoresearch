@@ -44,7 +44,10 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
 
     if filtered.is_empty() {
         println!(
-            "no runs to compare yet — add or import experiments first (`resman add ...` or `resman import <file>`)."
+            "{}",
+            crate::term::empty_state(
+                "no runs to compare yet — add or import experiments first (`resman add ...` or `resman import <file>`)."
+            )
         );
         return Ok(());
     }
@@ -94,16 +97,21 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
             }
         }
         OutputFormat::Table => {
+            let n = filtered.len();
             println!(
-                "{:<20}  {:>10}  {:>7}  {:>5}  {:>7}  st  top_description",
-                "run", col_label, "mem_gb", "kept", "crashed"
+                "{}",
+                crate::term::section_header("compare", Some(&format!("{n} run(s)")))
             );
-            println!("{}", "-".repeat(97));
+            println!(
+                "{:<20}  {:>10}  {:>7}  {:>5}  {:>7}  {:<10}  top_description",
+                "run", col_label, "mem_gb", "kept", "crashed", "status"
+            );
+            println!("{}", crate::term::rule());
             for r in &filtered {
                 let best = r.best();
-                let glyph = best
-                    .map(|e| crate::term::status_glyph(&e.status))
-                    .unwrap_or_else(|| "  ".to_string());
+                let status_col = best
+                    .map(|e| crate::term::status_cell(&e.status))
+                    .unwrap_or_else(|| "          ".to_string());
                 println!(
                     "{:<20}  {:>10.6}  {:>7.1}  {:>5}  {:>7}  {}  {}",
                     truncate(&r.run_tag, 20),
@@ -114,8 +122,11 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
                         .iter()
                         .filter(|e| e.status == Status::Crash)
                         .count(),
-                    glyph,
-                    truncate(best.map(|e| e.description.as_str()).unwrap_or("—"), 30)
+                    status_col,
+                    truncate(
+                        best.map(|e| e.description.as_str()).unwrap_or("—"),
+                        crate::term::DESC_TRUNC_NARROW
+                    )
                 );
             }
         }

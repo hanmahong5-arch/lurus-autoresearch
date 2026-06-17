@@ -159,6 +159,8 @@ pub enum Commands {
     },
 
     /// Find experiments with val_bpb closest to a target
+    ///
+    /// Example: `resman near 0.985 -n 3`
     Near {
         /// Target val_bpb
         val_bpb: f64,
@@ -296,6 +298,8 @@ pub enum Commands {
     /// Show the config/metric diff between the representative experiment of two runs.
     ///
     /// Useful for "why did this branch win?" analysis after overnight agent runs.
+    ///
+    /// Example: `resman diff apr17 apr18`
     Diff {
         /// First run tag
         tag_a: String,
@@ -312,6 +316,8 @@ pub enum Commands {
     /// Render the lineage tree of a run via `parent_commit` links.
     ///
     /// Root nodes have no parent or point to a commit not in this run.
+    ///
+    /// Example: `resman tree --tag apr17 --highlight-best`
     Tree {
         /// Run tag to render
         #[arg(short, long)]
@@ -405,6 +411,8 @@ pub enum Commands {
     /// the experiment is promoted to status `verified` and val_bpb is updated.
     /// Does NOT orchestrate training — you run the experiment yourself and pass
     /// the result in via --value.
+    ///
+    /// Example: `resman verify abc1234 -v 0.983 --tag apr17`
     Verify {
         /// Full or short commit hash to verify (prefix match)
         commit: String,
@@ -425,6 +433,8 @@ pub enum Commands {
     /// best metric + commit, last update timestamp, schema_version. The
     /// "what tags do I have?" answer that complements `resman stats`
     /// (aggregate) and `resman list` (per-experiment).
+    ///
+    /// Example: `resman tags -o table`
     Tags {
         /// Output format
         #[arg(short = 'o', long, default_value = "table")]
@@ -439,6 +449,8 @@ pub enum Commands {
     /// the retraction is about trust, not metric value.
     ///
     /// Refuses to unverify experiments not currently in `verified` status.
+    ///
+    /// Example: `resman unverify abc1234 --tag apr17`
     Unverify {
         /// Full or short commit hash to unverify (prefix match)
         commit: String,

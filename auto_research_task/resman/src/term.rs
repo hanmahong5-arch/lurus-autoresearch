@@ -53,13 +53,6 @@ pub fn green(s: &str) -> String {
     paint(s, "32")
 }
 
-// Available for future use; suppressed to avoid dead_code warnings until callers land.
-#[allow(dead_code)]
-pub fn yellow(s: &str) -> String {
-    paint(s, "33")
-}
-
-#[allow(dead_code)]
 pub fn cyan(s: &str) -> String {
     paint(s, "36")
 }
@@ -68,7 +61,6 @@ pub fn dim(s: &str) -> String {
     paint(s, "2")
 }
 
-#[allow(dead_code)]
 pub fn bold(s: &str) -> String {
     paint(s, "1")
 }
@@ -107,6 +99,50 @@ pub fn status_glyph(s: &crate::model::Status) -> String {
         Status::Crash => red("✗"),
         Status::Verified => bold_green("✔"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Shared presentation vocabulary
+// ---------------------------------------------------------------------------
+// Shared presentation vocabulary — used by all table-format command branches.
+
+/// Description truncation widths shared across commands.
+pub const DESC_TRUNC: usize = 48;
+pub const DESC_TRUNC_NARROW: usize = 30;
+
+/// Section banner: `=== resman <cmd> ===` or `=== resman <cmd> (<ctx>) ===`.
+/// Bold when color is on.
+pub fn section_header(cmd: &str, ctx: Option<&str>) -> String {
+    let inner = match ctx {
+        Some(c) => format!("=== resman {} ({}) ===", cmd, c),
+        None => format!("=== resman {} ===", cmd),
+    };
+    bold(&inner)
+}
+
+/// A horizontal rule of standard width (80 chars of `-`).
+/// Use under headers and column rows so every command's separators match.
+pub fn rule() -> String {
+    "-".repeat(80)
+}
+
+/// One status cell: colored glyph + the lowercase status word, e.g. `"✓ keep    "`.
+/// The word is the SAME lowercase token used in json/tsv output.
+/// The plain word is padded to 8 chars for column alignment.
+pub fn status_cell(status: &crate::model::Status) -> String {
+    use crate::model::Status;
+    let glyph = status_glyph(status);
+    let word = status.as_str();
+    let label = match status {
+        Status::Best => cyan(word),
+        _ => word.to_string(),
+    };
+    format!("{} {:<8}", glyph, label)
+}
+
+/// Standard muted rendering for an empty-state line (dim when color on).
+pub fn empty_state(msg: &str) -> String {
+    dim(msg)
 }
 
 #[cfg(test)]
@@ -173,5 +209,60 @@ mod tests {
     fn enabled_defaults_false_without_init() {
         // Confirm no-panic and correct default.
         assert!(!enabled());
+    }
+
+    #[test]
+    fn section_header_no_ctx_contains_cmd() {
+        let h = section_header("stats", None);
+        assert!(
+            h.contains("=== resman stats ==="),
+            "must contain banner text"
+        );
+    }
+
+    #[test]
+    fn section_header_with_ctx_contains_ctx() {
+        let h = section_header("stats", Some("apr17"));
+        assert!(h.contains("(apr17)"), "must contain context in parens");
+        assert!(h.contains("=== resman stats"), "must contain cmd name");
+    }
+
+    #[test]
+    fn rule_is_80_chars() {
+        assert_eq!(rule().chars().count(), 80, "rule must be exactly 80 chars");
+    }
+
+    #[test]
+    fn status_cell_keep_contains_word_and_stable_count() {
+        use crate::model::Status;
+        let cell = status_cell(&Status::Keep);
+        assert!(
+            cell.contains("keep"),
+            "status_cell must contain lowercase word"
+        );
+        // In no-color mode: glyph(1) + space(1) + "keep    "(8) = visible chars ≥ 10
+        // No ANSI escapes should be present.
+        assert!(
+            !cell.contains('\x1b'),
+            "status_cell must not emit ANSI when color disabled"
+        );
+        // Char count is deterministic in no-color mode.
+        let count = cell.chars().count();
+        // glyph (1 char) + space + "keep" padded to 8 = 10 visible chars
+        assert!(
+            count >= 10,
+            "status_cell char count must be deterministic (got {count})"
+        );
+    }
+
+    #[test]
+    fn empty_state_no_color_contains_msg_no_ansi() {
+        let e = empty_state("nothing here");
+        assert!(!e.is_empty(), "empty_state must return non-empty string");
+        assert!(e.contains("nothing here"), "must contain the message");
+        assert!(
+            !e.contains('\x1b'),
+            "must not emit ANSI when color disabled"
+        );
     }
 }

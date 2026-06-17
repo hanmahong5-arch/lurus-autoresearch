@@ -236,18 +236,28 @@ fn render_summary(events: &[Event], opts: &UsageOpts) -> Result<()> {
         }
         OutputFormat::Table => {
             if n == 0 {
-                println!("no usage events recorded yet");
-                println!("(run `resman mcp` and make some tool calls to populate usage.jsonl)");
+                println!(
+                    "{}",
+                    crate::term::empty_state(
+                        "no usage events recorded yet (run `resman mcp` and make some tool calls to populate usage.jsonl)"
+                    )
+                );
                 return Ok(());
             }
             let (first_date, last_date) = date_range(events);
             let total_ok = events.iter().filter(|e| e.ok).count();
             let err_count = n - total_ok;
             println!(
-                "=== resman usage ({} events, {} → {}) ===",
-                comma(n),
-                first_date,
-                last_date
+                "{}",
+                crate::term::section_header(
+                    "usage",
+                    Some(&format!(
+                        "{} events, {} → {}",
+                        comma(n),
+                        first_date,
+                        last_date
+                    ))
+                )
             );
             println!();
             println!("total calls : {}", comma(n));
@@ -271,7 +281,7 @@ fn render_summary(events: &[Event], opts: &UsageOpts) -> Result<()> {
                     "  {:<20} {:>8} {:>10} {:>10}",
                     "tag", "added", "verified", "distilled"
                 );
-                println!("  {}", "-".repeat(52));
+                println!("  {}", crate::term::rule());
                 for entry in &funnel {
                     println!(
                         "  {:<20} {:>8} {:>10} {:>10}",
@@ -430,14 +440,18 @@ fn render_by_tool(events: &[Event], opts: &UsageOpts) -> Result<()> {
         }
         OutputFormat::Table => {
             if stats.is_empty() {
-                println!("no usage events recorded yet");
+                println!(
+                    "{}",
+                    crate::term::empty_state("no usage events recorded yet")
+                );
                 return Ok(());
             }
+            println!("{}", crate::term::section_header("usage", Some("by tool")));
             println!(
                 "{:<30} {:>6} {:>7} {:>7} {:>7} {:>10}",
                 "tool", "n", "ok%", "p50ms", "p95ms", "avg_chars"
             );
-            println!("{}", "-".repeat(72));
+            println!("{}", crate::term::rule());
             for s in &stats {
                 let p50 = percentile(&s.durations, 50);
                 let p95 = percentile(&s.durations, 95);
@@ -508,11 +522,12 @@ fn render_errors(events: &[Event], opts: &UsageOpts) -> Result<()> {
         }
         OutputFormat::Table => {
             if errors.is_empty() {
-                println!("no error events found");
+                println!("{}", crate::term::empty_state("no error events found"));
                 return Ok(());
             }
+            println!("{}", crate::term::section_header("usage", Some("errors")));
             println!("{:<28} {:<26} {:>8}  args", "ts", "tool", "dur_ms");
-            println!("{}", "-".repeat(90));
+            println!("{}", crate::term::rule());
             for e in &errors {
                 let args_str = e.args.to_string();
                 let args_short = if args_str.len() > 35 {
@@ -559,11 +574,20 @@ fn render_sequences(events: &[Event], opts: &UsageOpts) -> Result<()> {
         }
         OutputFormat::Table => {
             if pairs.is_empty() {
-                println!("no transition sequences found (need at least 2 events)");
+                println!(
+                    "{}",
+                    crate::term::empty_state(
+                        "no transition sequences found (need at least 2 events)"
+                    )
+                );
                 return Ok(());
             }
+            println!(
+                "{}",
+                crate::term::section_header("usage", Some("sequences"))
+            );
             println!("{:<60} {:>8}", "sequence", "count");
-            println!("{}", "-".repeat(70));
+            println!("{}", crate::term::rule());
             for (seq, cnt) in &pairs {
                 println!("{:<60} {:>8}", seq, cnt);
             }
