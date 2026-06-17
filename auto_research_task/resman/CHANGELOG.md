@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.17.2] — scorecard hardening (2026-06-17)
+
+Follow-ups from an industrial-grade audit: an installer security fix, a
+supply-chain CI gate, and an error-variant correctness fix. No change to any
+`-o json` / `-o tsv` / `best -f value` output.
+
+### Fixed
+
+- **`Direction::from_str` reported through the wrong error variant.** A bad
+  metric direction surfaced as `Error::InvalidStatus`, mislabeling it as a status
+  parse error. Added a dedicated `Error::InvalidDirection`; the message is now
+  `invalid direction: <value> (expected min|max)`.
+
+### Security
+
+- **`install.sh` no longer silently downgrades to an unverified install.** A
+  failed checksum fetch previously fell through to "older release; skipping
+  integrity check", so a transient network error — or a tampered mirror dropping
+  the `.sha256` — would install an unverified binary. Now only a definitive HTTP
+  404 (a release that genuinely predates checksums) skips; any other failure
+  (network/TLS/5xx) aborts unless `RESMAN_ALLOW_UNVERIFIED=1` is set. An
+  empty/malformed checksum file, or a missing sha256 tool, also aborts.
+
+### CI
+
+- **New `resman-audit` workflow** runs `cargo audit` on dependency changes and
+  weekly, surfacing RustSec advisories. Deliberately decoupled from the release
+  workflow so an externally-timed advisory can never block shipping a fix.
+
+### Tests
+
+255, unchanged (the Direction fix swaps an error variant; no assertion covered
+the old text). Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.1] — code-review fixes (2026-06-17)
 
 Fixes from an extra-high-effort multi-angle review of the v0.16–v0.17 UI/UX work.

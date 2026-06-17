@@ -1,0 +1,37 @@
+name: resman-audit
+
+# Security advisories are externally-timed: dependencies don't change but new
+# RustSec advisories drop against already-pinned versions. Run on dependency
+# changes and on a weekly schedule. Kept SEPARATE from resman.yml so a transitive
+# advisory surfaces as a red check without ever blocking the binary release
+# pipeline (which must stay shippable precisely when a fix is urgent).
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'auto_research_task/resman/Cargo.toml'
+      - 'auto_research_task/resman/Cargo.lock'
+      - '.github/workflows/resman-audit.yml'
+  pull_request:
+    paths:
+      - 'auto_research_task/resman/Cargo.toml'
+      - 'auto_research_task/resman/Cargo.lock'
+      - '.github/workflows/resman-audit.yml'
+  schedule:
+    - cron: '0 7 * * 1'   # Monday 07:00 UTC
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auto_research_task/resman
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit

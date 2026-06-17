@@ -70,25 +70,43 @@ have tar  || die "tar is required"
 curl -fsSL "$url" -o "$tmpdir/$asset" \
     || die "download failed. see https://github.com/$REPO/releases for manual install."
 
-# --- integrity check (optional; absent checksum = older release = skip) -----
+# --- integrity check --------------------------------------------------------
+# Every release since v0.6.1 ships a `.sha256` next to each asset. Distinguish a
+# genuinely-absent checksum (HTTP 404 → a release predating checksums → warn and
+# continue) from any other fetch failure (network/TLS/5xx → suspicious, possible
+# tampering → abort). This avoids silently downgrading to an unverified install
+# on a transient or malicious error. Override with RESMAN_ALLOW_UNVERIFIED=1.
 checksum_url="${url}.sha256"
 checksum_file="$tmpdir/${asset}.sha256"
-if curl -fsSL "$checksum_url" -o "$checksum_file" 2>/dev/null; then
-    # Rewrite checksum file so the path matches the local tmpdir location.
-    expected_hash=$(awk '{print $1}' "$checksum_file")
-    printf '%s  %s\n' "$expected_hash" "$tmpdir/$asset" > "$checksum_file"
-    if have sha256sum; then
-        sha256sum -c "$checksum_file" >/dev/null 2>&1 \
-            || die "checksum verification failed for $asset — aborting install."
-    elif have shasum; then
-        shasum -a 256 -c "$checksum_file" >/dev/null 2>&1 \
-            || die "checksum verification failed for $asset — aborting install."
-    else
-        printf 'warning: no sha256 tool available; skipping integrity check\n' >&2
-    fi
-else
-    printf 'warning: checksum file not found for %s (older release); skipping integrity check\n' "$asset" >&2
-fi
+http_code=$(curl -sSL -w '%{http_code}' -o "$checksum_file" "$checksum_url" 2>/dev/null) || http_code="000"
+case "$http_code" in
+    200)
+        expected_hash=$(awk '{print $1}' "$checksum_file")
+        [ -n "$expected_hash" ] || die "checksum file for $asset is empty or malformed — aborting install."
+        # Rewrite checksum file so the path matches the local tmpdir location.
+        printf '%s  %s\n' "$expected_hash" "$tmpdir/$asset" > "$checksum_file"
+        if have sha256sum; then
+            sha256sum -c "$checksum_file" >/dev/null 2>&1 \
+                || die "checksum verification failed for $asset — aborting install."
+        elif have shasum; then
+            shasum -a 256 -c "$checksum_file" >/dev/null 2>&1 \
+                || die "checksum verification failed for $asset — aborting install."
+        else
+            die "no sha256 tool (sha256sum/shasum) found to verify $asset. Install one, or set RESMAN_ALLOW_UNVERIFIED=1 to skip."
+        fi
+        printf 'integrity: sha256 verified\n'
+        ;;
+    404)
+        printf 'warning: no checksum published for %s (release predates checksums); skipping integrity check\n' "$asset" >&2
+        ;;
+    *)
+        if [ "${RESMAN_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+            printf 'warning: could not fetch checksum (HTTP %s); proceeding unverified per RESMAN_ALLOW_UNVERIFIED=1\n' "$http_code" >&2
+        else
+            die "could not fetch checksum for $asset (HTTP $http_code). Refusing an unverified install; set RESMAN_ALLOW_UNVERIFIED=1 to override."
+        fi
+        ;;
+esac
 
 tar -xzf "$tmpdir/$asset" -C "$tmpdir" \
     || die "extract failed"

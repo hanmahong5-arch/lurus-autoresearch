@@ -5,6 +5,9 @@ pub enum Error {
     #[error("invalid status: {0} (expected keep|discard|crash|best)")]
     InvalidStatus(String),
 
+    #[error("invalid direction: {0} (expected min|max)")]
+    InvalidDirection(String),
+
     #[error("file not found: {0}")]
     NotFound(PathBuf),
 

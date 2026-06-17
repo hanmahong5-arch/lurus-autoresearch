@@ -72,9 +72,7 @@ impl FromStr for Direction {
         match s.trim().to_ascii_lowercase().as_str() {
             "min" | "minimize" | "lower" => Ok(Direction::Minimize),
             "max" | "maximize" | "higher" => Ok(Direction::Maximize),
-            other => Err(crate::error::Error::InvalidStatus(format!(
-                "unknown direction `{other}` (expected min|max)"
-            ))),
+            other => Err(crate::error::Error::InvalidDirection(other.to_string())),
         }
     }
 }
