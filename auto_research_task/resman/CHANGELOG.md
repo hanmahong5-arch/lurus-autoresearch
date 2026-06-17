@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.17.3] — JSON wire-format guards (2026-06-17)
+
+Locks the agent-facing JSON output contracts so a refactor can't silently rename
+or drop a field. No behavior change — binary output is byte-identical to 0.17.2;
+this release is test coverage only.
+
+### Tests
+
+- **6 new integration tests** in `tests/cli.rs` (Test 10–15) pin the JSON shape
+  of `best -f json`, `list -o json`, `compare -o json`, `tags -o json`,
+  `doctor -o json`, and `distill -o json`. They assert key presence + type
+  (never values), so they fire only on a genuine wire-format break, not on data
+  changes. Closes the "JSON shapes not pinned" gap from the 0.17.2 audit and is
+  groundwork for the v1.0 schema freeze. 261 total (246 unit + 15 integration).
+  Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.2] — scorecard hardening (2026-06-17)
 
 Follow-ups from an industrial-grade audit: an installer security fix, a

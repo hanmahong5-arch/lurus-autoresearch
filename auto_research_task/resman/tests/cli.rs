@@ -307,3 +307,402 @@ fn add_respects_disable_usage_log_env() {
         "usage.jsonl must NOT be created when RESMAN_DISABLE_USAGE_LOG=1"
     );
 }
+
+// ── Test 10 ──────────────────────────────────────────────────────────────────
+/// `best -f json` output object must contain all stable agent-facing keys.
+#[test]
+fn best_json_has_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["best", "-f", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("best -f json must be valid JSON");
+
+    assert!(
+        v.get("commit").and_then(|x| x.as_str()).is_some(),
+        "commit must be a string"
+    );
+    assert!(
+        v.get("val_bpb").and_then(|x| x.as_f64()).is_some(),
+        "val_bpb must be a number"
+    );
+    assert!(
+        v.get("memory_gb").and_then(|x| x.as_f64()).is_some(),
+        "memory_gb must be a number"
+    );
+    assert!(
+        v.get("status").and_then(|x| x.as_str()).is_some(),
+        "status must be a string"
+    );
+    assert!(
+        v.get("description").and_then(|x| x.as_str()).is_some(),
+        "description must be a string"
+    );
+    assert!(
+        v.get("timestamp").is_some(),
+        "timestamp key must be present"
+    );
+    assert!(v.get("params").is_some(), "params key must be present");
+}
+
+// ── Test 11 ──────────────────────────────────────────────────────────────────
+/// `list -o json` array elements must contain all stable agent-facing keys.
+#[test]
+fn list_json_elements_have_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["list", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("list -o json must be valid JSON");
+
+    let arr = v.as_array().expect("list -o json must be a JSON array");
+    assert!(!arr.is_empty(), "array must have at least one element");
+    let elem = &arr[0];
+
+    assert!(
+        elem.get("commit").and_then(|x| x.as_str()).is_some(),
+        "commit must be a string"
+    );
+    assert!(
+        elem.get("val_bpb").and_then(|x| x.as_f64()).is_some(),
+        "val_bpb must be a number"
+    );
+    assert!(
+        elem.get("memory_gb").and_then(|x| x.as_f64()).is_some(),
+        "memory_gb must be a number"
+    );
+    assert!(
+        elem.get("status").and_then(|x| x.as_str()).is_some(),
+        "status must be a string"
+    );
+    assert!(
+        elem.get("description").is_some(),
+        "description key must be present"
+    );
+}
+
+// ── Test 12 ──────────────────────────────────────────────────────────────────
+/// `compare -o json` array elements must contain all stable per-tag summary keys.
+#[test]
+fn compare_json_has_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["compare", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("compare -o json must be valid JSON");
+
+    let arr = v.as_array().expect("compare -o json must be a JSON array");
+    assert!(!arr.is_empty(), "array must have at least one element");
+    let elem = &arr[0];
+
+    assert!(
+        elem.get("best_bpb").and_then(|x| x.as_f64()).is_some(),
+        "best_bpb must be a number"
+    );
+    assert!(
+        elem.get("best_commit").and_then(|x| x.as_str()).is_some(),
+        "best_commit must be a string"
+    );
+    assert!(
+        elem.get("best_description").is_some(),
+        "best_description key must be present"
+    );
+    assert!(
+        elem.get("crashed").and_then(|x| x.as_f64()).is_some(),
+        "crashed must be a number"
+    );
+    assert!(
+        elem.get("direction").and_then(|x| x.as_str()).is_some(),
+        "direction must be a string"
+    );
+    assert!(
+        elem.get("kept").and_then(|x| x.as_f64()).is_some(),
+        "kept must be a number"
+    );
+    assert!(
+        elem.get("metric_name").and_then(|x| x.as_str()).is_some(),
+        "metric_name must be a string"
+    );
+    assert!(
+        elem.get("run").and_then(|x| x.as_str()).is_some(),
+        "run must be a string"
+    );
+    assert!(
+        elem.get("total").and_then(|x| x.as_f64()).is_some(),
+        "total must be a number"
+    );
+}
+
+// ── Test 13 ──────────────────────────────────────────────────────────────────
+/// `tags -o json` array elements must contain all stable per-tag listing keys.
+#[test]
+fn tags_json_has_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["tags", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("tags -o json must be valid JSON");
+
+    let arr = v.as_array().expect("tags -o json must be a JSON array");
+    assert!(!arr.is_empty(), "array must have at least one element");
+    let elem = &arr[0];
+
+    assert!(
+        elem.get("tag").and_then(|x| x.as_str()).is_some(),
+        "tag must be a string"
+    );
+    assert!(
+        elem.get("experiment_count")
+            .and_then(|x| x.as_f64())
+            .is_some(),
+        "experiment_count must be a number"
+    );
+    assert!(
+        elem.get("best_commit").and_then(|x| x.as_str()).is_some(),
+        "best_commit must be a string"
+    );
+    assert!(
+        elem.get("best_value").and_then(|x| x.as_f64()).is_some(),
+        "best_value must be a number"
+    );
+    assert!(
+        elem.get("metric_name").and_then(|x| x.as_str()).is_some(),
+        "metric_name must be a string"
+    );
+    assert!(
+        elem.get("direction").and_then(|x| x.as_str()).is_some(),
+        "direction must be a string"
+    );
+    assert!(
+        elem.get("last_update").is_some(),
+        "last_update key must be present"
+    );
+    assert!(
+        elem.get("schema_version")
+            .and_then(|x| x.as_f64())
+            .is_some(),
+        "schema_version must be a number"
+    );
+}
+
+// ── Test 14 ──────────────────────────────────────────────────────────────────
+/// `doctor -o json` output object must contain stable summary and checks keys.
+#[test]
+fn doctor_json_has_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["doctor", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("doctor -o json must be valid JSON");
+
+    let summary = v
+        .get("summary")
+        .and_then(|x| x.as_object())
+        .expect("summary must be an object");
+    assert!(
+        summary.get("ok").and_then(|x| x.as_f64()).is_some(),
+        "summary.ok must be a number"
+    );
+    assert!(
+        summary.get("warn").and_then(|x| x.as_f64()).is_some(),
+        "summary.warn must be a number"
+    );
+    assert!(
+        summary.get("fresh").and_then(|x| x.as_f64()).is_some(),
+        "summary.fresh must be a number"
+    );
+    assert!(
+        summary.get("fail").and_then(|x| x.as_f64()).is_some(),
+        "summary.fail must be a number"
+    );
+
+    let checks = v
+        .get("checks")
+        .and_then(|x| x.as_array())
+        .expect("checks must be an array");
+    assert!(
+        !checks.is_empty(),
+        "checks array must have at least one element"
+    );
+    let check = &checks[0];
+
+    assert!(
+        check.get("name").and_then(|x| x.as_str()).is_some(),
+        "checks[0].name must be a string"
+    );
+    assert!(
+        check.get("status").and_then(|x| x.as_str()).is_some(),
+        "checks[0].status must be a string"
+    );
+    assert!(
+        check.get("detail").is_some(),
+        "checks[0].detail key must be present"
+    );
+    assert!(
+        check.get("hint").is_some(),
+        "checks[0].hint key must be present"
+    );
+}
+
+// ── Test 15 ──────────────────────────────────────────────────────────────────
+/// `distill -t smoke -o json` output object must contain all stable top-level and nested keys.
+#[test]
+fn distill_json_has_stable_shape() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["distill", "-t", "smoke", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(text.trim()).expect("distill -o json must be valid JSON");
+
+    assert!(
+        v.get("tag").and_then(|x| x.as_str()).is_some(),
+        "tag must be a string"
+    );
+    assert!(
+        v.get("generated_at").and_then(|x| x.as_str()).is_some(),
+        "generated_at must be a string"
+    );
+    assert!(
+        v.get("summary").and_then(|x| x.as_object()).is_some(),
+        "summary must be an object"
+    );
+    assert!(
+        v.get("best").and_then(|x| x.as_object()).is_some(),
+        "best must be an object"
+    );
+    assert!(
+        v.get("lineage").and_then(|x| x.as_array()).is_some(),
+        "lineage must be an array"
+    );
+    assert!(
+        v.get("branch_verdicts")
+            .and_then(|x| x.as_array())
+            .is_some(),
+        "branch_verdicts must be an array"
+    );
+    assert!(
+        v.get("failure_signals")
+            .and_then(|x| x.as_object())
+            .is_some(),
+        "failure_signals must be an object"
+    );
+    assert!(
+        v.get("unexplored_neighbors")
+            .and_then(|x| x.as_array())
+            .is_some(),
+        "unexplored_neighbors must be an array"
+    );
+    assert!(
+        v.get("suggestions").and_then(|x| x.as_array()).is_some(),
+        "suggestions must be an array"
+    );
+    assert!(
+        v.get("continues_from").is_some(),
+        "continues_from key must be present"
+    );
+
+    let summary = v["summary"].as_object().unwrap();
+    assert!(
+        summary.get("total").and_then(|x| x.as_f64()).is_some(),
+        "summary.total must be a number"
+    );
+    assert!(
+        summary.get("keep").and_then(|x| x.as_f64()).is_some(),
+        "summary.keep must be a number"
+    );
+    assert!(
+        summary.get("discard").and_then(|x| x.as_f64()).is_some(),
+        "summary.discard must be a number"
+    );
+    assert!(
+        summary.get("crash").and_then(|x| x.as_f64()).is_some(),
+        "summary.crash must be a number"
+    );
+    assert!(
+        summary.get("best").and_then(|x| x.as_f64()).is_some(),
+        "summary.best must be a number"
+    );
+    assert!(
+        summary.get("verified").and_then(|x| x.as_f64()).is_some(),
+        "summary.verified must be a number"
+    );
+    assert!(
+        summary
+            .get("metric_name")
+            .and_then(|x| x.as_str())
+            .is_some(),
+        "summary.metric_name must be a string"
+    );
+    assert!(
+        summary.get("direction").and_then(|x| x.as_str()).is_some(),
+        "summary.direction must be a string"
+    );
+
+    let best = v["best"].as_object().unwrap();
+    assert!(
+        best.get("commit").and_then(|x| x.as_str()).is_some(),
+        "best.commit must be a string"
+    );
+    assert!(
+        best.get("value").and_then(|x| x.as_f64()).is_some(),
+        "best.value must be a number"
+    );
+    assert!(
+        best.get("description").is_some(),
+        "best.description key must be present"
+    );
+}
