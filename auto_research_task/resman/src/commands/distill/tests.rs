@@ -945,6 +945,48 @@ fn usage_suggestion_fires_when_keeper_exists() {
     );
 }
 
+/// Cross HTML Test 1: self-contained page with tag name, signal, DOCTYPE, one <style>, no http.
+#[test]
+fn render_cross_html_self_contained() {
+    let run = make_run(
+        "alpha-tag",
+        vec![
+            make_exp("h1", 0.88, Status::Keep, "good run", None, vec![]),
+            make_exp("h2", 0.0, Status::Crash, "oom run", None, vec![Signal::Oom]),
+        ],
+    );
+    let report = build_cross_distill(&[run]);
+    let html = super::render::render_cross_html(&report);
+    assert!(html.contains("<!DOCTYPE html>"), "missing DOCTYPE");
+    assert!(html.contains("</html>"), "missing closing </html>");
+    let style_count = html.matches("<style>").count();
+    assert_eq!(
+        style_count, 1,
+        "expected exactly 1 <style> block, got {style_count}"
+    );
+    assert!(!html.contains("http://"), "must not contain http://");
+    assert!(!html.contains("https://"), "must not contain https://");
+    assert!(html.contains("alpha-tag"), "tag name must appear in HTML");
+    assert!(html.contains("var(--"), "must use CSS custom properties");
+}
+
+/// Cross HTML Test 2: empty report renders without panic, produces valid HTML envelope.
+#[test]
+fn render_cross_html_empty() {
+    let report = build_cross_distill(&[]);
+    let html = super::render::render_cross_html(&report);
+    assert!(
+        html.contains("<!DOCTYPE html>"),
+        "missing DOCTYPE for empty report"
+    );
+    assert!(html.contains("</html>"), "missing </html> for empty report");
+    // Must show some empty-state text (no panics, well-formed output).
+    assert!(
+        html.contains("class=\"empty\""),
+        "must render empty-state element"
+    );
+}
+
 /// load_events on a missing file returns empty Vec (never panics).
 #[test]
 fn load_events_missing_file_returns_empty() {

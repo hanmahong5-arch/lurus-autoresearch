@@ -417,6 +417,133 @@ pub fn render_html(report: &DistillReport) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-run HTML rendering
+// ---------------------------------------------------------------------------
+
+/// Render the cross-run distill report as a self-contained HTML page.
+/// Mirrors `render_html` in structure: same CSS, same helpers, no external refs.
+pub fn render_cross_html(report: &CrossDistillReport) -> String {
+    use crate::html::{BadgeKind, badge, data_table, empty, html_escape, section};
+
+    // --- header badges ---
+    let mut header_badges = String::new();
+    if report.total_keep > 0 {
+        header_badges.push_str(&badge(
+            &format!("{} keep", report.total_keep),
+            BadgeKind::Keep,
+        ));
+    }
+    if report.total_verified > 0 {
+        header_badges.push_str(&badge(
+            &format!("{} verified", report.total_verified),
+            BadgeKind::Verified,
+        ));
+    }
+    if report.total_crash > 0 {
+        header_badges.push_str(&badge(
+            &format!("{} crash", report.total_crash),
+            BadgeKind::Crash,
+        ));
+    }
+    if report.total_discard > 0 {
+        header_badges.push_str(&badge(
+            &format!("{} discard", report.total_discard),
+            BadgeKind::Discard,
+        ));
+    }
+
+    let mut body = format!(
+        "<h1>Distill &mdash; cross-run summary</h1>\n\
+         <div class=\"sub\">{gen} &middot; {runs} runs &middot; {exps} experiments total {badges}</div>\n",
+        gen = html_escape(&report.generated_at),
+        runs = report.total_runs,
+        exps = report.total_experiments,
+        badges = header_badges,
+    );
+
+    // --- top tags by best metric ---
+    {
+        let tags_content = if report.top_tags.is_empty() {
+            empty("no kept experiments across all runs")
+        } else {
+            let rows: String = report
+                .top_tags
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    format!(
+                        "<tr><td>{rank}</td>\
+                             <td>{tag}</td>\
+                             <td>{best:.6}</td>\
+                             <td>{dir}</td>\
+                             <td>{exps}</td></tr>\n",
+                        rank = i + 1,
+                        tag = html_escape(&t.tag),
+                        best = t.best_value,
+                        dir = html_escape(&t.direction),
+                        exps = t.experiment_count,
+                    )
+                })
+                .collect();
+            data_table(&["#", "tag", "best", "direction", "experiments"], &rows)
+        };
+        body.push_str(&section("Top tags by best metric", &tags_content));
+        body.push('\n');
+    }
+
+    // --- top failure signals ---
+    {
+        let signals_content = if report.top_failure_signals.is_empty() {
+            empty("no failure signals recorded")
+        } else {
+            let mut clusters = String::new();
+            for sig in &report.top_failure_signals {
+                let mut items = String::new();
+                for ex in &sig.examples {
+                    items.push_str(&format!(
+                        "<li><code>{commit}</code> [{tag}] &mdash; {desc}</li>\n",
+                        commit = html_escape(&ex.commit),
+                        tag = html_escape(&ex.tag),
+                        desc = html_escape(&ex.description),
+                    ));
+                }
+                clusters.push_str(&format!(
+                    "<div class=\"signal-cluster\">\
+                       <details>\
+                         <summary>{kind} ({count})</summary>\
+                         <ul>{items}</ul>\
+                       </details>\
+                     </div>\n",
+                    kind = html_escape(&sig.kind),
+                    count = sig.count,
+                ));
+            }
+            clusters
+        };
+        body.push_str(&section("Top failure signals", &signals_content));
+        body.push('\n');
+    }
+
+    // --- suggestions ---
+    {
+        let suggestions_content = if report.suggestions.is_empty() {
+            empty("no mechanical suggestions — runs look healthy.")
+        } else {
+            let mut ul = "<ul>\n".to_string();
+            for sug in &report.suggestions {
+                ul.push_str(&format!("<li>{}</li>\n", html_escape(sug)));
+            }
+            ul.push_str("</ul>\n");
+            ul
+        };
+        body.push_str(&section("Suggestions", &suggestions_content));
+        body.push('\n');
+    }
+
+    crate::html::page("resman distill — cross-run", &body)
+}
+
+// ---------------------------------------------------------------------------
 // Cross-run Markdown rendering
 // ---------------------------------------------------------------------------
 

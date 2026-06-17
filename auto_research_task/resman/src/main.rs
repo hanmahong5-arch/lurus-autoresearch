@@ -171,7 +171,12 @@ fn main() -> ExitCode {
             all,
         } => {
             if all {
-                commands::distill::cmd_cross_distill(&data_dir, out.as_deref(), &format)
+                commands::distill::cmd_cross_distill(
+                    &data_dir,
+                    out.as_deref(),
+                    &format,
+                    html.as_deref(),
+                )
             } else {
                 let t = tag.expect("tag is required when --all is not set");
                 commands::distill::cmd_distill(

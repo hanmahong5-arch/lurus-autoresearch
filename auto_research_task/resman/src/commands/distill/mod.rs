@@ -178,7 +178,7 @@ pub(super) fn short_commit(c: &str) -> &str {
 }
 
 // Re-export render functions as public (used by mcp.rs and cmd_distill).
-pub use render::{render_cross_markdown, render_html, render_markdown};
+pub use render::{render_cross_html, render_cross_markdown, render_html, render_markdown};
 
 // ---------------------------------------------------------------------------
 // Builder — single-run
@@ -665,12 +665,21 @@ pub fn cmd_cross_distill(
     data_dir: &Path,
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
+    html_path: Option<&std::path::Path>,
 ) -> Result<()> {
     let runs = load_all_runs(data_dir)?;
     if runs.is_empty() {
         eprintln!("warning: no runs found in data directory");
     }
     let report = build_cross_distill(&runs);
+
+    // Write HTML artifact if requested (additive — text output still emitted).
+    if let Some(hp) = html_path {
+        let html = render_cross_html(&report);
+        std::fs::write(hp, &html)?;
+        eprintln!("wrote HTML to {}", hp.display());
+    }
+
     let rendered = match format {
         DistillFormat::Markdown => render_cross_markdown(&report),
         DistillFormat::Json => serde_json::to_string_pretty(&report)?,

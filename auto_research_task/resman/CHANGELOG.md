@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.16.2] — cross-run distill HTML (2026-06-17)
+
+### Added
+
+- **`resman distill --all --html <file>`** now emits a self-contained, themed
+  HTML page for the cross-run summary — previously `--html` was silently ignored
+  in `--all` mode. It mirrors the single-run HTML via the shared
+  `page()`/`section()`/`data_table()`/`badge()` components: status-count badges,
+  a "Top tags by best metric" table, failure-signal clusters (`<details>`), and
+  suggestions — all dual-theme. Plain `distill --all` (markdown/JSON) is
+  unchanged.
+
+### Tests
+
+248 → **250** (`render_cross_html_self_contained` + `_empty`). Clippy
+`--all-targets` clean, fmt clean.
+
+---
+
 ## [0.16.1] — themed trend chart (2026-06-16)
 
 ### Changed
