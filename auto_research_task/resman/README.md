@@ -41,7 +41,7 @@ This is a *different product category* than cloud experiment trackers — not a 
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
-Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.15.3`. Each release also ships a `.sha256` the installer verifies automatically.
+Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.17.0`. Each release also ships a `.sha256` the installer verifies automatically.
 
 **From crates.io** _(once `resman-cli` is published — until then use the prebuilt binary above or build from source)_:
 
@@ -238,15 +238,34 @@ to its baseline output, so there is **zero noise before an agent has any
 history**, and the advice compounds as real usage accumulates. Local-only; opt
 out any time with `RESMAN_DISABLE_USAGE_LOG=1`.
 
+## Design system
+
+The HTML artifacts (`resman report`, `resman distill --html`) are **dual-theme** —
+light, dark, and follow-system (`prefers-color-scheme`) — driven by CSS design
+tokens defined in one place (`src/html.rs`), with `[data-theme]` override hooks.
+The trend chart themes with the page and has hover tooltips; reports and distills
+share the same components (stat cards, badges, tables, the best-card).
+
+A versioned component library lives in [`design/`](design/) — 14 self-contained
+previews (token swatches, the six status badges, stat cards, the trend chart,
+data tables, lineage, signal clusters, and the full report + distill pages),
+each tagged for sync to a claude.ai/design project via `/design-sync`.
+
+The **terminal** shares one vocabulary too: every command opens with
+`=== resman <cmd> (<context>) ===`, a uniform 80-col rule, consistent
+glyph+label status cells, and one empty-state tone — light/dark/system in HTML,
+`NO_COLOR`-aware ANSI in the terminal.
+
 ## Roadmap
 
-The project is at **v0.15.0**. Through v0.9–v0.15 the following shipped:
+The project is at **v0.17.0**. Through v0.9–v0.17 the following shipped:
 `doctor`, `usage`, structured MCP JSON across all tools, typed signals
 (`diverged_loss`, `slow_mfu`), schema_version, property tests (v0.9–v0.11);
 usage-aware distill, composite best, verify/unverify, `resman_tags`,
 `resman_unverify`, `resman_doctor` MCP tools (v0.12–v0.13); full MCP parity
-for the query commands — `resman_list`, `resman_compare`, `resman_stats`,
-`resman_usage` (v0.14); wandb/mlflow CSV import (v0.15).
+for the query commands (v0.14); wandb/mlflow CSV import (v0.15); a **dual-theme
+HTML design system** with a synced `design/` component library (v0.16); and
+**unified terminal presentation** across every command (v0.17).
 See [CHANGELOG.md](CHANGELOG.md) and field-level decisions in
 [docs/SCHEMA.md](docs/SCHEMA.md).
 
