@@ -434,7 +434,7 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
 }
 
 fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
-    use crate::commands::best::{CompositeScores, composite_candidates, lineage_depth};
+    use crate::commands::best::{composite_winner, lineage_depth};
     use crate::model::Direction;
 
     let tag = args.get("tag").and_then(|v| v.as_str());
@@ -459,49 +459,10 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
     }
 
     if composite {
-        let candidates = composite_candidates(&runs);
-        if candidates.is_empty() {
-            return serde_json::to_string(&json!({
-                "empty": true,
-                "reason": "no kept experiments yet; start with a baseline."
-            }))
-            .map_err(|e| e.to_string());
-        }
-        let first_dir = {
-            let (r, e) = candidates[0];
-            e.effective_direction(r)
-        };
-        let values: Vec<f64> = candidates.iter().map(|(_, e)| e.val_bpb).collect();
-        let run_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let run_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-        let scored: Vec<(
-            CompositeScores,
-            &crate::model::RunLog,
-            &crate::model::Experiment,
-        )> = candidates
-            .iter()
-            .map(|(r, e)| {
-                let s = CompositeScores::compute(e, r, run_min, run_max, first_dir);
-                (s, *r, *e)
-            })
-            .collect();
-
-        let winner = scored
-            .iter()
-            .enumerate()
-            .max_by(|(i, (sa, _, _)), (j, (sb, _, _))| {
-                sa.score
-                    .partial_cmp(&sb.score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| {
-                        sa.metric
-                            .partial_cmp(&sb.metric)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .then_with(|| j.cmp(i))
-            })
-            .map(|(_, triple)| triple);
+        // Reuse the CLI's per-run-normalized scorer so the MCP composite winner
+        // never diverges from `resman best --composite` (each candidate is scored
+        // within its own run's range + direction, not on one global scale).
+        let winner = composite_winner(&runs);
 
         return match winner {
             Some((scores, run, e)) => {

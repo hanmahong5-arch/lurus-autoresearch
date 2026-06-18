@@ -189,8 +189,10 @@ fn is_composite_candidate(e: &Experiment, direction: Direction) -> bool {
         && !(direction == Direction::Minimize && e.val_bpb <= 0.0)
 }
 
-/// Collect valid candidate (run, experiment) pairs for composite scoring.
-pub fn composite_candidates(runs: &[RunLog]) -> Vec<(&RunLog, &Experiment)> {
+/// Collect valid candidate (run, experiment) pairs — test-only; production code
+/// uses `composite_winner` (which applies the same filter inline, per run).
+#[cfg(test)]
+fn composite_candidates(runs: &[RunLog]) -> Vec<(&RunLog, &Experiment)> {
     let mut out = Vec::new();
     for r in runs {
         let direction = run_direction(r);
@@ -213,7 +215,7 @@ pub fn composite_candidates(runs: &[RunLog]) -> Vec<(&RunLog, &Experiment)> {
 /// so e.g. the *worst* experiment of a maximize run could score as the global
 /// best. Each candidate must first become a [0,1] "how good within its run"
 /// value before cross-run comparison is meaningful.
-fn composite_winner(runs: &[RunLog]) -> Option<(CompositeScores, &RunLog, &Experiment)> {
+pub(crate) fn composite_winner(runs: &[RunLog]) -> Option<(CompositeScores, &RunLog, &Experiment)> {
     let mut scored: Vec<(CompositeScores, &RunLog, &Experiment)> = Vec::new();
     for r in runs {
         let direction = run_direction(r);

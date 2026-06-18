@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.17.9] — MCP composite parity (2026-06-18)
+
+A final audit round found the last instance of the recurring "fixed the CLI,
+missed the MCP mirror" pattern. No schema change; `best -f value` unchanged.
+
+### Fixed
+
+- **`resman_best` MCP tool composite scoring diverged from the CLI.** The MCP
+  `tool_best` composite path still used a single global min/max + the first
+  candidate's direction (the pre-0.17.4 logic), so in a multi-run workspace with
+  mixed metrics/directions it could pick a different — wrong — winner than
+  `resman best --composite`. It now calls the same `composite_winner` the CLI
+  uses (per-run normalization), so the two cannot diverge again.
+
+### Tests
+
+295 (unchanged): the MCP path now delegates to the already-tested
+`composite_winner`; the now-internal `composite_candidates` is `#[cfg(test)]`.
+Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.8] — maximize fixes in report / near / distill chart (2026-06-18)
 
 A second completeness audit found three more spots still assuming "lower is
