@@ -215,11 +215,12 @@ pub fn render_html(report: &DistillReport) -> String {
     );
 
     // --- sparkline ---
+    let is_maximize = s.direction == "maximize";
     let kept_entries: Vec<_> = report
         .lineage
         .iter()
         .enumerate()
-        .filter(|(_, e)| e.metric > 0.0)
+        .filter(|(_, e)| e.metric.is_finite() && (is_maximize || e.metric > 0.0))
         .collect();
     let kept_points: Vec<(usize, f64)> = kept_entries.iter().map(|(i, e)| (*i, e.metric)).collect();
     if kept_points.len() >= 2 {

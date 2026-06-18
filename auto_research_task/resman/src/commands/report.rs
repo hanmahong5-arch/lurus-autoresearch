@@ -5,7 +5,7 @@ use chrono::Local;
 
 use crate::error::Result;
 use crate::html::{data_table, html_escape, section, stat_card, stats_grid, trend_svg};
-use crate::model::Status;
+use crate::model::{Direction, Status};
 use crate::store::load_all_runs;
 
 /// Pure function — builds the full HTML string for the report.
@@ -15,15 +15,29 @@ pub fn render_report_html(runs: &[crate::model::RunLog], title: &str) -> String 
     let kept: Vec<_> = all.iter().filter(|e| e.status.is_kept()).collect();
     let crashed = all.iter().filter(|e| e.status == Status::Crash).count();
 
+    // Effective direction (run → first-experiment → Minimize); first run for a
+    // cross-run report. Keeps the summary correct for maximize metrics.
+    let direction = runs
+        .first()
+        .map(|r| {
+            r.metric_direction
+                .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+                .unwrap_or(Direction::Minimize)
+        })
+        .unwrap_or(Direction::Minimize);
     let bpbs: Vec<f64> = kept
         .iter()
         .map(|e| e.val_bpb)
-        .filter(|v| *v > 0.0)
+        .filter(|v| v.is_finite() && (direction == Direction::Maximize || *v > 0.0))
         .collect();
-    let best = bpbs.iter().copied().fold(f64::INFINITY, f64::min);
-    let worst = bpbs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let improvement = if worst.is_finite() && best.is_finite() {
-        worst - best
+    let lo = bpbs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = bpbs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let (best, worst) = match direction {
+        Direction::Minimize => (lo, hi),
+        Direction::Maximize => (hi, lo),
+    };
+    let improvement = if best.is_finite() && worst.is_finite() {
+        (best - worst).abs()
     } else {
         0.0
     };

@@ -647,8 +647,20 @@ fn tool_near(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
     let runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
     let mut all: Vec<(String, &crate::model::Experiment)> = runs
         .iter()
-        .flat_map(|r| r.experiments.iter().map(move |e| (r.run_tag.clone(), e)))
-        .filter(|(_, e)| e.val_bpb > 0.0)
+        .flat_map(|r| {
+            // Per-run direction: keep 0.0 for maximize, drop <=0 only for minimize.
+            let dir = r
+                .metric_direction
+                .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+                .unwrap_or(crate::model::Direction::Minimize);
+            r.experiments
+                .iter()
+                .filter(move |e| {
+                    e.val_bpb.is_finite()
+                        && (dir == crate::model::Direction::Maximize || e.val_bpb > 0.0)
+                })
+                .map(move |e| (r.run_tag.clone(), e))
+        })
         .collect();
     all.sort_by(|a, b| {
         (a.1.val_bpb - target)

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.17.8] — maximize fixes in report / near / distill chart (2026-06-18)
+
+A second completeness audit found three more spots still assuming "lower is
+better", all in code the first audit didn't cover. `-o json`/`-o tsv` schema and
+`best -f value` unchanged.
+
+### Fixed
+
+- **HTML report (`resman report`) was direction-blind.** It filtered `val_bpb > 0`
+  and computed `improvement = worst - best` (negative for maximize → shown as
+  "—"). It now uses the run's effective direction: keeps 0.0 for maximize, reports
+  the positive `(best - worst)` magnitude, and shows the correct best.
+- **`resman_near` MCP tool dropped maximize zero-values.** It filtered
+  `val_bpb > 0` unconditionally — the CLI `near` was fixed in 0.17.5 but its MCP
+  mirror was missed. Now applies the `> 0` guard only for minimize, per run.
+- **distill HTML sparkline dropped maximize zero-points.** Same `> 0` guard, now
+  direction-aware.
+
+### Tests
+
+295 (was 293): +2 (sparkline maximize/minimize). The report/near fixes mirror
+already-tested siblings (stats/near). Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.7] — closeout fixes: maximize stats + unverify TOCTOU (2026-06-18)
 
 A completeness audit after the v0.17.4–v0.17.6 hardening surfaced four real bugs

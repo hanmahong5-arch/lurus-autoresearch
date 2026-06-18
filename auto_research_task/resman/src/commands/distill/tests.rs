@@ -1053,6 +1053,78 @@ fn neighbors_maximize_includes_zero_value() {
     );
 }
 
+/// Regression: sparkline filter must keep metric=0.0 for Maximize direction.
+/// A Maximize lineage entry with val_bpb=0.0 must appear in the rendered HTML
+/// sparkline data; it must not be silently dropped by the `> 0.0` direction-blind guard.
+#[test]
+fn render_html_sparkline_includes_zero_for_maximize() {
+    use crate::model::Direction;
+
+    // Build a 2-entry lineage: root at 0.0, best at 0.9 (Maximize).
+    // render_html only draws the sparkline when kept_points.len() >= 2, so both
+    // entries must survive the filter for the chart to appear at all.
+    let mut run = make_run(
+        "max_sparkline",
+        vec![
+            make_exp(
+                "root1111",
+                0.0,
+                Status::Keep,
+                "epoch0 accuracy",
+                None,
+                vec![],
+            ),
+            make_exp(
+                "best2222",
+                0.9,
+                Status::Best,
+                "trained",
+                Some("root1111"),
+                vec![],
+            ),
+        ],
+    );
+    run.metric_direction = Some(Direction::Maximize);
+
+    let report = build_distill(&run, None);
+    let html = render_html(&report);
+    // The chart section only appears when kept_points.len() >= 2.
+    // If the 0.0 entry were dropped we'd have 1 point and no chart.
+    assert!(
+        html.contains("Metric trajectory"),
+        "Maximize sparkline must include the 0.0-metric entry so the chart renders; \
+         chart section missing — the zero-value point was wrongly filtered out"
+    );
+}
+
+/// Minimize direction is byte-identical: a 0.0-metric entry is still excluded.
+#[test]
+fn render_html_sparkline_excludes_zero_for_minimize() {
+    // 2-entry lineage where root is 0.0 (invalid sentinel in Minimize) and best is 0.9.
+    // The 0.0 entry must be filtered; only 1 finite positive point remains, so no chart.
+    let run = make_run(
+        "min_sparkline",
+        vec![
+            make_exp("root1111", 0.0, Status::Keep, "sentinel zero", None, vec![]),
+            make_exp(
+                "best2222",
+                0.9,
+                Status::Best,
+                "trained",
+                Some("root1111"),
+                vec![],
+            ),
+        ],
+    );
+    // metric_direction is None → defaults to Minimize.
+    let report = build_distill(&run, None);
+    let html = render_html(&report);
+    assert!(
+        !html.contains("Metric trajectory"),
+        "Minimize sparkline must still drop 0.0-metric entries; chart should not appear"
+    );
+}
+
 /// load_events on a missing file returns empty Vec (never panics).
 #[test]
 fn load_events_missing_file_returns_empty() {
