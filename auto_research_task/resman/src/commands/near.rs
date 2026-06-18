@@ -52,7 +52,7 @@ pub fn cmd_near(data_dir: &Path, target: f64, n: usize, format: &OutputFormat) -
                     e.val_bpb,
                     e.val_bpb - target,
                     e.status,
-                    e.description
+                    crate::store::tsv_field(&e.description)
                 );
             }
         }

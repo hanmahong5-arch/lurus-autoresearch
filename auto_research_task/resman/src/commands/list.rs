@@ -159,7 +159,11 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
             for (e, _) in &tagged {
                 println!(
                     "{}\t{:.6}\t{:.1}\t{}\t{}",
-                    e.commit, e.val_bpb, e.memory_gb, e.status, e.description
+                    e.commit,
+                    e.val_bpb,
+                    e.memory_gb,
+                    e.status,
+                    crate::store::tsv_field(&e.description)
                 );
             }
         }

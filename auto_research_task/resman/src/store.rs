@@ -204,6 +204,13 @@ fn levenshtein(a: &str, b: &str) -> usize {
     dp[m][n]
 }
 
+/// Sanitize a free-text field for single-line TSV output: replace tab, newline,
+/// and carriage-return with a single space so a value can't inject extra columns
+/// or rows. (TSV has no field-quoting convention.)
+pub fn tsv_field(s: &str) -> String {
+    s.replace(['\t', '\n', '\r'], " ")
+}
+
 /// Truncate a string to `max_len` display columns, appending "…" if cut.
 /// UTF-8 safe.
 pub fn truncate(s: &str, max_len: usize) -> String {
@@ -220,6 +227,24 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tsv_field_sanitizes_control_chars() {
+        // Tab and newlines become spaces; plain text is byte-identical.
+        assert_eq!(tsv_field("hello\tworld"), "hello world");
+        assert_eq!(tsv_field("line1\nline2"), "line1 line2");
+        assert_eq!(tsv_field("cr\rhere"), "cr here");
+        assert_eq!(tsv_field("no controls"), "no controls");
+        // A description with embedded tab+newline must produce exactly one field
+        // (no extra tab-stops, no extra lines).
+        let dirty = "desc\twith\ttabs\nand newline";
+        let clean = tsv_field(dirty);
+        assert_eq!(clean.matches('\t').count(), 0);
+        assert_eq!(clean.matches('\n').count(), 0);
+        // A TSV line built from such a field has exactly 4 tab separators (5 columns).
+        let line = format!("commit\t1.0\t40.0\tkeep\t{clean}");
+        assert_eq!(line.split('\t').count(), 5);
+    }
 
     #[test]
     fn truncate_short_passthrough() {

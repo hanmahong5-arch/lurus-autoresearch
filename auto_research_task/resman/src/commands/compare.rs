@@ -92,7 +92,8 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
                         .iter()
                         .filter(|e| e.status == Status::Crash)
                         .count(),
-                    best.map(|e| e.description.as_str()).unwrap_or("")
+                    best.map(|e| crate::store::tsv_field(&e.description))
+                        .unwrap_or_default()
                 );
             }
         }

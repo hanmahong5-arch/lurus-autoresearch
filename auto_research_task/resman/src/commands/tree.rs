@@ -309,7 +309,7 @@ pub fn cmd_tree(
                     short_commit,
                     node.exp.val_bpb,
                     node.exp.status.as_str(),
-                    node.exp.description,
+                    crate::store::tsv_field(&node.exp.description),
                     node.on_best_lineage,
                 );
                 for child in &node.children {

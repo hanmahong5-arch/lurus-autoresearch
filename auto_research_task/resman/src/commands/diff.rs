@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::cli::OutputFormat;
 use crate::error::{Error, Result};
-use crate::model::{Experiment, RunLog};
+use crate::model::{Direction, Experiment, RunLog};
 use crate::store::load_run_or_suggest;
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,16 @@ pub(crate) struct ParamDiff {
 // ---------------------------------------------------------------------------
 // Pure logic helpers (exposed for tests)
 // ---------------------------------------------------------------------------
+
+/// Direction-aware regression check. A delta of exactly 0.0 is never a regression.
+/// - Minimize (lower is better): a positive delta (b > a) is a regression.
+/// - Maximize (higher is better): a negative delta (b < a) is a regression.
+pub(crate) fn is_regression(delta: f64, dir: Direction) -> bool {
+    match dir {
+        Direction::Minimize => delta > 0.0,
+        Direction::Maximize => delta < 0.0,
+    }
+}
 
 pub(crate) fn compute_param_diff(
     a: &HashMap<String, String>,
@@ -103,7 +113,8 @@ pub fn diff_summary_text(
 
     let diffs = compute_param_diff(&exp_a.params, &exp_b.params);
     let delta = exp_b.val_bpb - exp_a.val_bpb;
-    let regression = delta > 0.0;
+    let dir = exp_b.effective_direction(&run_b);
+    let regression = is_regression(delta, dir);
 
     // Compute column widths
     let key_w = diffs.iter().map(|d| d.key.len()).max().unwrap_or(3).max(3);
@@ -308,7 +319,8 @@ pub fn cmd_diff(
         OutputFormat::Json => {
             let diffs = compute_param_diff(&exp_a.params, &exp_b.params);
             let delta = exp_b.val_bpb - exp_a.val_bpb;
-            let regression = delta > 0.0;
+            let dir = exp_b.effective_direction(&run_b);
+            let regression = is_regression(delta, dir);
 
             let params_json: Vec<_> = diffs
                 .iter()
@@ -380,7 +392,7 @@ pub fn cmd_diff(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{RunLog, Status};
+    use crate::model::{Direction, RunLog, Status};
     use std::collections::HashMap;
 
     fn make_experiment(
@@ -475,6 +487,25 @@ mod tests {
         assert!(matches!(result, Err(Error::Empty)));
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    /// `is_regression` must be direction-aware: a positive delta (b > a) under
+    /// Maximize is an *improvement*, not a regression. Minimize behavior is unchanged.
+    #[test]
+    fn is_regression_direction_aware() {
+        // Maximize: b > a → delta positive → improvement (not regression)
+        assert!(!is_regression(0.05, Direction::Maximize));
+        // Maximize: b < a → delta negative → regression
+        assert!(is_regression(-0.05, Direction::Maximize));
+        // Maximize: exact tie → not a regression
+        assert!(!is_regression(0.0, Direction::Maximize));
+
+        // Minimize: b > a → delta positive → regression (unchanged)
+        assert!(is_regression(0.05, Direction::Minimize));
+        // Minimize: b < a → delta negative → improvement (unchanged)
+        assert!(!is_regression(-0.05, Direction::Minimize));
+        // Minimize: exact tie → not a regression
+        assert!(!is_regression(0.0, Direction::Minimize));
     }
 
     #[test]

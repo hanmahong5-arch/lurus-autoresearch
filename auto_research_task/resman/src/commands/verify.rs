@@ -70,15 +70,37 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
         )));
     }
 
-    let (ref_tag, ref_idx) = matches
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
+    let (ref_tag, ref_commit) = {
+        let (tag, idx) = matches
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
+        let commit = runs
+            .iter()
+            .find(|r| r.run_tag == tag)
+            .and_then(|r| r.experiments.get(idx))
+            .map(|e| e.commit.clone())
+            .ok_or_else(|| Error::Custom("internal: snapshot experiment vanished".to_string()))?;
+        (tag, commit)
+    };
 
+    // Reload the run mutably. Re-locate by commit string to avoid a TOCTOU
+    // index-out-of-bounds if a concurrent writer changed the run between the
+    // load_all_runs snapshot above and this reload.
     let mut run = load_run(data_dir, &ref_tag)?
         .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
 
-    let exp = &run.experiments[ref_idx];
+    let fresh_idx = run
+        .experiments
+        .iter()
+        .position(|e| e.commit == ref_commit)
+        .ok_or_else(|| {
+            Error::Custom(format!(
+                "experiment {ref_commit} no longer present after reload"
+            ))
+        })?;
+
+    let exp = &run.experiments[fresh_idx];
 
     if exp.status == Status::Crash {
         return Err(Error::Custom(format!(
@@ -101,8 +123,8 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
 
     if passes {
         let re_verify = old_status == Status::Verified;
-        run.experiments[ref_idx].status = Status::Verified;
-        run.experiments[ref_idx].val_bpb = opts.new_value;
+        run.experiments[fresh_idx].status = Status::Verified;
+        run.experiments[fresh_idx].val_bpb = opts.new_value;
         save_run(data_dir, &run)?;
 
         let action = if re_verify { "re-verified" } else { "verified" };
@@ -190,16 +212,37 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
         )));
     }
 
-    let (ref_tag, ref_idx) = matches
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
+    let (ref_tag, ref_commit) = {
+        let (tag, idx) = matches
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
+        let commit = runs
+            .iter()
+            .find(|r| r.run_tag == tag)
+            .and_then(|r| r.experiments.get(idx))
+            .map(|e| e.commit.clone())
+            .ok_or_else(|| Error::Custom("internal: snapshot experiment vanished".to_string()))?;
+        (tag, commit)
+    };
 
-    // Reload the specific run mutably.
+    // Reload the specific run mutably. Re-locate by commit string to avoid a
+    // TOCTOU index-out-of-bounds if a concurrent writer changed the run between
+    // the load_all_runs snapshot above and this reload.
     let mut run = load_run(data_dir, &ref_tag)?
         .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
 
-    let exp = &run.experiments[ref_idx];
+    let fresh_idx = run
+        .experiments
+        .iter()
+        .position(|e| e.commit == ref_commit)
+        .ok_or_else(|| {
+            Error::Custom(format!(
+                "experiment {ref_commit} no longer present after reload"
+            ))
+        })?;
+
+    let exp = &run.experiments[fresh_idx];
 
     // Gate on status.
     if exp.status == Status::Crash {
@@ -223,8 +266,8 @@ pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
 
     if passes {
         let re_verify = old_status == Status::Verified;
-        run.experiments[ref_idx].status = Status::Verified;
-        run.experiments[ref_idx].val_bpb = opts.new_value;
+        run.experiments[fresh_idx].status = Status::Verified;
+        run.experiments[fresh_idx].val_bpb = opts.new_value;
         save_run(data_dir, &run)?;
 
         let dir_str = direction.as_str();
@@ -722,6 +765,111 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("ambiguous"), "expected ambiguous error: {msg}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // TOCTOU regression: re-find by commit after reload, not stale index
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn verify_relocates_by_commit_not_stale_index() {
+        // Simulate what happens when a concurrent writer prepends a new
+        // experiment to the run between the initial snapshot and the reload:
+        // the saved run has the target experiment at index 1, while the
+        // snapshot found it at index 0.  The fix must still locate it cleanly.
+        let dir = setup_dir("resman_verify_toctou");
+
+        // Step 1: save the initial run with ONE experiment so verify_inner
+        // finds it at snapshot-index 0.
+        let run_initial = make_run("toc", vec![make_exp("deadbeef", 0.90, Status::Keep, None)]);
+        save_run(&dir, &run_initial).unwrap();
+
+        // Step 2: before verify_inner does its reload, a "concurrent writer"
+        // prepends a new experiment — the target is now at index 1 on disk.
+        let run_modified = make_run(
+            "toc",
+            vec![
+                make_exp("aabbccdd", 0.88, Status::Keep, None), // new entry at 0
+                make_exp("deadbeef", 0.90, Status::Keep, None), // target pushed to 1
+            ],
+        );
+        save_run(&dir, &run_modified).unwrap();
+
+        // verify_inner must find "deadbeef" at fresh index 1, not panic at 0.
+        let result = verify_inner(
+            &dir,
+            &VerifyOpts {
+                commit: "deadbeef",
+                new_value: 0.895,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+        let msg = result.unwrap();
+        assert!(msg.starts_with("verified"), "expected verified, got: {msg}");
+
+        let saved = load_run(&dir, "toc").unwrap().unwrap();
+        // The correct experiment (now at index 1) must be promoted.
+        let target = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "deadbeef")
+            .expect("deadbeef must still be present");
+        assert_eq!(target.status, Status::Verified);
+        assert!((target.val_bpb - 0.895).abs() < f64::EPSILON);
+
+        // The unrelated experiment at index 0 must be untouched.
+        let other = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "aabbccdd")
+            .expect("aabbccdd must still be present");
+        assert_eq!(other.status, Status::Keep);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_inner_json_relocates_by_commit_not_stale_index() {
+        // Same TOCTOU scenario for the JSON path.
+        let dir = setup_dir("resman_verify_toctou_json");
+
+        let run_initial = make_run("tocj", vec![make_exp("deadbeef", 0.90, Status::Keep, None)]);
+        save_run(&dir, &run_initial).unwrap();
+
+        let run_modified = make_run(
+            "tocj",
+            vec![
+                make_exp("aabbccdd", 0.88, Status::Keep, None),
+                make_exp("deadbeef", 0.90, Status::Keep, None),
+            ],
+        );
+        save_run(&dir, &run_modified).unwrap();
+
+        let result = verify_inner_json(
+            &dir,
+            &VerifyOpts {
+                commit: "deadbeef",
+                new_value: 0.895,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+        let v: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(v["verified"], true);
+        assert_eq!(v["commit"], "deadbeef");
+
+        let saved = load_run(&dir, "tocj").unwrap().unwrap();
+        let target = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "deadbeef")
+            .expect("deadbeef must still be present");
+        assert_eq!(target.status, Status::Verified);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

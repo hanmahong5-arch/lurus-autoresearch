@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.17.4] — reliability hardening (2026-06-18)
+
+A correctness + robustness pass from a three-angle reliability audit (panic
+paths, wrong-output bugs, edge-case robustness). No change to `-o json` /
+`-o tsv` schema, table layout, or `best -f value`; the one behavior change is
+that `best --composite` now ranks mixed-direction stores correctly (below).
+
+### Fixed
+
+- **`best --composite` mis-ranked stores that mix metrics/directions.** It
+  normalized every candidate on a single global min/max using the first
+  candidate's direction, so e.g. the *worst* experiment of a maximize-accuracy
+  run could score as the global best against a minimize-bpb run. Each candidate
+  is now normalized within its OWN run (own [min,max] + own direction), making
+  the metric component a comparable [0,1] "how good within its run" score. The
+  scoring + selection is extracted to a testable `composite_winner`.
+- **`diff` reported improvements as regressions for maximize metrics.** The
+  `regression` flag (table label + JSON field) hardcoded "delta > 0 = worse";
+  it is now direction-aware (for Maximize, a lower value is the regression).
+- **`RunLog::best()` could select a non-finite metric.** A `NaN`/`±inf`
+  `val_bpb` (e.g. a hand-edited or pre-guard store) compares as Equal under
+  `partial_cmp` and could win — especially for Maximize, which has no `> 0`
+  filter. Non-finite metrics are now excluded from selection.
+- **`verify` could panic under concurrent writes (TOCTOU).** The experiment
+  index was computed from one store snapshot, then the run was reloaded; a
+  concurrent `add` between the two reads left the stale index pointing out of
+  bounds. `verify` now re-locates the target by commit after reload and errors
+  cleanly if it has vanished.
+- **TSV output could be corrupted by embedded tabs/newlines.** Descriptions
+  (which `import` preserves verbatim) are now sanitized in every `-o tsv` field
+  (tab/newline/CR → space) so a value can't inject extra columns or rows. JSON,
+  table, the TSV header, and `best -f value` are unchanged.
+
+### Tests
+
+267 (was 261): +6 regression tests, one per fix above. Clippy `--all-targets`
+clean, fmt clean.
+
+---
+
 ## [0.17.3] — JSON wire-format guards (2026-06-17)
 
 Locks the agent-facing JSON output contracts so a refactor can't silently rename

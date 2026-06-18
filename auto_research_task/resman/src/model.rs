@@ -177,6 +177,11 @@ impl RunLog {
             .experiments
             .iter()
             .filter(|e| e.status.is_kept())
+            // Exclude non-finite metrics (NaN/±inf): a NaN compares as Equal under
+            // partial_cmp and could otherwise be selected as "best". Minimize's
+            // >0.0 filter already drops NaN/-inf, but this also covers +inf and
+            // protects Maximize, which has no value filter.
+            .filter(|e| e.val_bpb.is_finite())
             // Preserve v0.4 behavior: when minimizing, also reject val_bpb <= 0
             // as a safety for "crash that wasn't marked crash". For Maximize,
             // 0 is a legitimate value (e.g. accuracy=0), so no filter.
@@ -276,6 +281,24 @@ mod model_tests {
         assert_eq!(exp_none.effective_direction(&run_max), Direction::Maximize);
         // Default Minimize when both are None
         assert_eq!(exp_none.effective_direction(&run_none), Direction::Minimize);
+    }
+
+    #[test]
+    fn best_excludes_non_finite_metrics() {
+        // Maximize has no >0.0 filter, so a NaN/inf could otherwise be selected
+        // as "best". best() must skip non-finite values and pick the finite max.
+        let mut run = make_run(Some(Direction::Maximize), None);
+        run.experiments = vec![
+            make_exp(None, None, 0.80, Status::Keep),
+            make_exp(None, None, f64::NAN, Status::Keep),
+            make_exp(None, None, 0.95, Status::Keep), // the true finite maximum
+            make_exp(None, None, f64::INFINITY, Status::Keep),
+        ];
+        let best = run.best().expect("a finite best exists");
+        assert_eq!(
+            best.val_bpb, 0.95,
+            "best() must skip NaN/inf and pick the finite maximum"
+        );
     }
 
     #[test]

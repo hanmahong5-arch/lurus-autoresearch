@@ -172,61 +172,74 @@ fn lineage_score(exp: &Experiment, run: &RunLog) -> f64 {
     (lineage_depth(exp, run) as f64 / 5.0).min(1.0)
 }
 
+/// Effective metric direction for a run: the run's own direction, else the
+/// first experiment's, else Minimize.
+fn run_direction(r: &RunLog) -> Direction {
+    r.metric_direction
+        .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+        .unwrap_or(Direction::Minimize)
+}
+
+/// Whether an experiment is a valid composite-scoring candidate. Applies the
+/// same filter as `RunLog::best()`: kept status, a finite metric, and (for
+/// Minimize) a positive value.
+fn is_composite_candidate(e: &Experiment, direction: Direction) -> bool {
+    e.status.is_kept()
+        && e.val_bpb.is_finite()
+        && !(direction == Direction::Minimize && e.val_bpb <= 0.0)
+}
+
 /// Collect valid candidate (run, experiment) pairs for composite scoring.
-/// Applies the same filter as `RunLog::best()`: kept status, and for Minimize,
-/// val_bpb > 0.0 and finite.
 pub fn composite_candidates(runs: &[RunLog]) -> Vec<(&RunLog, &Experiment)> {
     let mut out = Vec::new();
     for r in runs {
-        let direction = r
-            .metric_direction
-            .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
-            .unwrap_or(Direction::Minimize);
+        let direction = run_direction(r);
         for e in &r.experiments {
-            if !e.status.is_kept() {
-                continue;
+            if is_composite_candidate(e, direction) {
+                out.push((r, e));
             }
-            if !e.val_bpb.is_finite() {
-                continue;
-            }
-            if direction == Direction::Minimize && e.val_bpb <= 0.0 {
-                continue;
-            }
-            out.push((r, e));
         }
     }
     out
 }
 
-fn cmd_best_composite(runs: &[RunLog], format: &str) -> Result<()> {
-    let candidates = composite_candidates(runs);
-    if candidates.is_empty() {
-        return Err(Error::Empty);
+/// Score every candidate — each normalized WITHIN ITS OWN RUN (that run's
+/// [min,max] over its own candidates, and its own direction) — and return the
+/// winner by composite score, then metric score, then insertion order.
+///
+/// Per-run normalization is what makes the metric component comparable across
+/// runs. A single global range + the first candidate's direction (the pre-0.17.4
+/// behavior) squashed runs with different metrics or directions onto one scale,
+/// so e.g. the *worst* experiment of a maximize run could score as the global
+/// best. Each candidate must first become a [0,1] "how good within its run"
+/// value before cross-run comparison is meaningful.
+fn composite_winner(runs: &[RunLog]) -> Option<(CompositeScores, &RunLog, &Experiment)> {
+    let mut scored: Vec<(CompositeScores, &RunLog, &Experiment)> = Vec::new();
+    for r in runs {
+        let direction = run_direction(r);
+        let vals: Vec<f64> = r
+            .experiments
+            .iter()
+            .filter(|e| is_composite_candidate(e, direction))
+            .map(|e| e.val_bpb)
+            .collect();
+        if vals.is_empty() {
+            continue;
+        }
+        let run_min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let run_max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        for e in &r.experiments {
+            if !is_composite_candidate(e, direction) {
+                continue;
+            }
+            let s = CompositeScores::compute(e, r, run_min, run_max, e.effective_direction(r));
+            scored.push((s, r, e));
+        }
     }
 
-    // Determine range over all candidates from all runs.
-    // For simplicity when mixing runs use the first run's direction (matches
-    // existing cross-run direction logic).
-    let first_dir = {
-        let (r, e) = candidates[0];
-        e.effective_direction(r)
-    };
-    let values: Vec<f64> = candidates.iter().map(|(_, e)| e.val_bpb).collect();
-    let run_min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-    let run_max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-    // Score every candidate; stable iteration → ties broken by insertion order.
-    let scored: Vec<(CompositeScores, &RunLog, &Experiment)> = candidates
-        .iter()
-        .map(|(r, e)| {
-            let s = CompositeScores::compute(e, r, run_min, run_max, first_dir);
-            (s, *r, *e)
-        })
-        .collect();
-
-    // Pick best: highest composite score, then highest metric_score, then first.
-    let winner = scored
-        .iter()
+    // Highest composite score, then highest metric score, then earliest insertion.
+    scored
+        .into_iter()
         .enumerate()
         .max_by(|(i, (sa, _, _)), (j, (sb, _, _))| {
             sa.score
@@ -241,9 +254,10 @@ fn cmd_best_composite(runs: &[RunLog], format: &str) -> Result<()> {
                 .then_with(|| j.cmp(i))
         })
         .map(|(_, triple)| triple)
-        .ok_or(Error::Empty)?;
+}
 
-    let (scores, run, best) = winner;
+fn cmd_best_composite(runs: &[RunLog], format: &str) -> Result<()> {
+    let (scores, run, best) = composite_winner(runs).ok_or(Error::Empty)?;
     let label = best.effective_metric_name(run);
 
     match format {
@@ -569,6 +583,42 @@ mod tests {
         assert!(
             (ls - 1.0).abs() < f64::EPSILON,
             "lineage_score should be capped at 1.0, got {ls}"
+        );
+    }
+
+    // 5. Mixed-direction store: composite must normalize each candidate within
+    //    its OWN run (own scale + direction), not on a single global range +
+    //    the first run's direction. Exercises the real `composite_winner`.
+    #[test]
+    fn composite_normalizes_within_each_run_for_mixed_directions() {
+        // Run A: minimize val_bpb. In-run best = lowest = 0.50.
+        let run_a = make_run(
+            Some(Direction::Minimize),
+            vec![
+                make_exp("aaa1", 0.50, Status::Keep, "low bpb", None),
+                make_exp("aaa2", 0.90, Status::Keep, "high bpb", None),
+            ],
+        );
+        // Run B: maximize accuracy. In-run best = highest = 0.95, and it is the
+        // genuinely strongest candidate (verified + lineage + rich description).
+        let desc_b = "b".repeat(90);
+        let run_b = make_run(
+            Some(Direction::Maximize),
+            vec![
+                make_exp("bbb1", 0.95, Status::Verified, &desc_b, Some("bbb2")),
+                make_exp("bbb2", 0.10, Status::Keep, "worst accuracy", None),
+            ],
+        );
+
+        let store = [run_a, run_b];
+        let (_, _, best) = composite_winner(&store).expect("a winner exists");
+
+        // Correct winner: bbb1 (best-in-run under Maximize, verified, lineage,
+        // rich desc). The old global-range + first-direction logic scored bbb1's
+        // high accuracy as if minimizing and wrongly picked bbb2 (worst maximize).
+        assert_eq!(
+            best.commit, "bbb1",
+            "composite must normalize each run on its own scale and direction"
         );
     }
 }
