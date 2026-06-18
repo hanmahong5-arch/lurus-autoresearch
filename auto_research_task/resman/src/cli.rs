@@ -11,6 +11,10 @@ use clap_complete::Shell;
                   \n\
                   Built for the era of AI agents that run 100 experiments overnight.\n\
                   Zero config, no account, no cloud. One binary. Git-native. Machine-readable.",
+    after_help = "QUICKSTART:\n  \
+                  resman init\n  \
+                  resman add -t my-run -c $(git rev-parse --short HEAD) -v 0.99 -s keep -d \"baseline\"\n  \
+                  resman best -f value",
     author,
     version
 )]

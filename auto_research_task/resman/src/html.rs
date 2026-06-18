@@ -128,6 +128,8 @@ pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Muted italic empty-state line. Replaces ad-hoc inline `style="color:#..."`.
@@ -369,6 +371,14 @@ mod tests {
     fn html_escape_basic() {
         assert_eq!(html_escape("<script>&"), "&lt;script&gt;&amp;");
         assert_eq!(html_escape("hello"), "hello");
+        // Attribute-unsafe characters must also be escaped.
+        assert_eq!(html_escape("say \"hi\""), "say &quot;hi&quot;");
+        assert_eq!(html_escape("it's"), "it&#39;s");
+        // Verify & is escaped first so subsequent entity sequences aren't double-escaped.
+        assert_eq!(
+            html_escape("a&b<c>d\"e'f"),
+            "a&amp;b&lt;c&gt;d&quot;e&#39;f"
+        );
     }
 
     #[test]

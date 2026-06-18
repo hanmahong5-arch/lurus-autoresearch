@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.17.6] — usability & robustness polish (2026-06-18)
+
+Onboarding, error guidance, and defensive hardening from the audit's usability
+findings. No change to `-o json`/`-o tsv` schema or `best -f value`.
+
+### Added
+
+- **First-run quickstart.** Bare `resman` now ends its help with an `init → add
+  → best -f value` quickstart so a new user knows `init` comes first.
+- **`doctor` flags leftover temp files.** A crash mid-write can leave a
+  `<tag>.json.tmp`; `doctor` now counts them and warns (safe to delete) instead
+  of leaving them invisible.
+
+### Changed
+
+- **Actionable error messages.** `Error::Empty` and `Error::NotFound` now point
+  at `resman init` for the fresh-store case (previously a dead end).
+- **Mixed-metric aggregation warning.** `stats` and `compare` without `--tag`
+  aggregate across all runs; when those runs use different metric names or
+  directions they now print a one-line stderr warning that the cross-run numbers
+  may not be comparable (use `--tag` to scope). Stdout is unchanged.
+- **Complete HTML escaping (defense-in-depth).** `html_escape` now also escapes
+  `"` and `'`. No user text currently lands in an HTML attribute, so this is not
+  an active fix — it makes the helper correct for future attribute use; the
+  rendered page is unchanged.
+
+### Tests
+
+289 (was 281): +8. Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.5] — direction-aware correctness sweep (2026-06-18)
 
 The metric generalization (v0.5) left several paths still assuming "lower is

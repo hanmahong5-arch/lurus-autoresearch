@@ -1,9 +1,26 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::cli::OutputFormat;
 use crate::error::Result;
 use crate::model::{RunLog, Status};
 use crate::store::{load_all_runs, truncate};
+
+/// Returns `true` when the runs span more than one distinct effective metric
+/// name OR more than one distinct direction, meaning cross-run aggregation
+/// would mix incompatible quantities.  Runs with no best experiment are
+/// skipped because they contribute nothing to the aggregate.
+pub(crate) fn runs_are_mixed_metric(runs: &[RunLog]) -> bool {
+    let mut names: HashSet<String> = HashSet::new();
+    let mut dirs: HashSet<String> = HashSet::new();
+    for r in runs {
+        if let Some(b) = r.best() {
+            names.insert(b.effective_metric_name(r).to_string());
+            dirs.insert(b.effective_direction(r).as_str().to_string());
+        }
+    }
+    names.len() > 1 || dirs.len() > 1
+}
 
 /// Build the per-run JSON summary objects used by the Json output branch.
 pub(crate) fn compare_summary(filtered: &[RunLog]) -> Vec<serde_json::Value> {
@@ -50,6 +67,27 @@ pub fn cmd_compare(data_dir: &Path, run_tags: &[String], format: &OutputFormat) 
             )
         );
         return Ok(());
+    }
+
+    // Warn when no tag filter was applied (cross-run) and runs disagree on metric/direction.
+    if run_tags.is_empty() && runs_are_mixed_metric(&filtered) {
+        let names: Vec<String> = {
+            let mut seen: Vec<String> = Vec::new();
+            let mut set: HashSet<String> = HashSet::new();
+            for r in &filtered {
+                if let Some(b) = r.best() {
+                    let n = b.effective_metric_name(r).to_string();
+                    if set.insert(n.clone()) {
+                        seen.push(n);
+                    }
+                }
+            }
+            seen
+        };
+        eprintln!(
+            "warning: aggregating runs with different metrics ({}); cross-run stats may not be comparable — use --tag to scope to one run",
+            names.join(", ")
+        );
     }
 
     // Determine the column header: use the common effective metric name if all
@@ -166,6 +204,100 @@ mod tests {
             metric_direction: None,
             schema_version: 1,
         }
+    }
+
+    fn make_run_with_metric(
+        tag: &str,
+        metric_name: Option<&str>,
+        direction: Option<crate::model::Direction>,
+        exps: Vec<Experiment>,
+    ) -> RunLog {
+        RunLog {
+            run_tag: tag.to_string(),
+            created_at: String::new(),
+            experiments: exps,
+            metric_name: metric_name.map(str::to_string),
+            metric_direction: direction,
+            schema_version: 1,
+        }
+    }
+
+    #[test]
+    fn runs_are_mixed_metric_uniform_returns_false() {
+        let runs = vec![
+            make_run_with_metric(
+                "a",
+                Some("val_bpb"),
+                Some(crate::model::Direction::Minimize),
+                vec![make_exp("c1", Status::Keep, 1.0)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("val_bpb"),
+                Some(crate::model::Direction::Minimize),
+                vec![make_exp("c2", Status::Keep, 1.1)],
+            ),
+        ];
+        assert!(!super::runs_are_mixed_metric(&runs));
+    }
+
+    #[test]
+    fn runs_are_mixed_metric_different_names_returns_true() {
+        let runs = vec![
+            make_run_with_metric(
+                "a",
+                Some("val_bpb"),
+                Some(crate::model::Direction::Minimize),
+                vec![make_exp("c1", Status::Keep, 1.0)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("accuracy"),
+                Some(crate::model::Direction::Maximize),
+                vec![make_exp("c2", Status::Keep, 0.9)],
+            ),
+        ];
+        assert!(super::runs_are_mixed_metric(&runs));
+    }
+
+    #[test]
+    fn runs_are_mixed_metric_same_name_different_direction_returns_true() {
+        let runs = vec![
+            make_run_with_metric(
+                "a",
+                Some("score"),
+                Some(crate::model::Direction::Minimize),
+                vec![make_exp("c1", Status::Keep, 1.0)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("score"),
+                Some(crate::model::Direction::Maximize),
+                vec![make_exp("c2", Status::Keep, 0.9)],
+            ),
+        ];
+        assert!(super::runs_are_mixed_metric(&runs));
+    }
+
+    #[test]
+    fn runs_are_mixed_metric_skips_runs_with_no_best() {
+        // Run with only crashed experiments has no best; should not count toward distinct metrics.
+        let runs = vec![
+            make_run_with_metric(
+                "a",
+                Some("val_bpb"),
+                Some(crate::model::Direction::Minimize),
+                vec![make_exp("c1", Status::Keep, 1.0)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("accuracy"),
+                None,
+                vec![make_exp("c2", Status::Crash, 0.0)],
+            ),
+        ];
+        // run_b has no best (only crashed), so only run_a contributes → uniform → false
+        assert!(!super::runs_are_mixed_metric(&runs));
     }
 
     #[test]

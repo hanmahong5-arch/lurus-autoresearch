@@ -110,10 +110,30 @@ pub(crate) fn pct(part: usize, total: usize) -> f64 {
 pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
     let experiments: Vec<Experiment> = match tag {
         Some(t) => require_run(data_dir, t)?.experiments,
-        None => load_all_runs(data_dir)?
-            .into_iter()
-            .flat_map(|r| r.experiments)
-            .collect(),
+        None => {
+            let runs = load_all_runs(data_dir)?;
+            if crate::commands::compare::runs_are_mixed_metric(&runs) {
+                let names: Vec<String> = {
+                    let mut seen: Vec<String> = Vec::new();
+                    let mut set: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    for r in &runs {
+                        if let Some(b) = r.best() {
+                            let n = b.effective_metric_name(r).to_string();
+                            if set.insert(n.clone()) {
+                                seen.push(n);
+                            }
+                        }
+                    }
+                    seen
+                };
+                eprintln!(
+                    "warning: aggregating runs with different metrics ({}); cross-run stats may not be comparable — use --tag to scope to one run",
+                    names.join(", ")
+                );
+            }
+            runs.into_iter().flat_map(|r| r.experiments).collect()
+        }
     };
 
     if experiments.is_empty() {
@@ -168,8 +188,63 @@ pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Direction, Experiment, Status};
+    use crate::model::{Direction, Experiment, RunLog, Status};
     use std::collections::HashMap;
+
+    fn make_run_with_metric(
+        tag: &str,
+        metric_name: Option<&str>,
+        direction: Option<Direction>,
+        exps: Vec<Experiment>,
+    ) -> RunLog {
+        RunLog {
+            run_tag: tag.to_string(),
+            created_at: String::new(),
+            experiments: exps,
+            metric_name: metric_name.map(str::to_string),
+            metric_direction: direction,
+            schema_version: 1,
+        }
+    }
+
+    #[test]
+    fn stats_mixed_metric_detection_via_helper() {
+        use crate::commands::compare::runs_are_mixed_metric;
+
+        // Two runs with the same metric → not mixed.
+        let uniform = vec![
+            make_run_with_metric(
+                "a",
+                Some("val_bpb"),
+                Some(Direction::Minimize),
+                vec![make_exp(1.0, Status::Keep)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("val_bpb"),
+                Some(Direction::Minimize),
+                vec![make_exp(1.1, Status::Keep)],
+            ),
+        ];
+        assert!(!runs_are_mixed_metric(&uniform), "uniform → false");
+
+        // Two runs with different metric names → mixed.
+        let mixed = vec![
+            make_run_with_metric(
+                "a",
+                Some("val_bpb"),
+                Some(Direction::Minimize),
+                vec![make_exp(1.0, Status::Keep)],
+            ),
+            make_run_with_metric(
+                "b",
+                Some("accuracy"),
+                Some(Direction::Maximize),
+                vec![make_exp(0.9, Status::Keep)],
+            ),
+        ];
+        assert!(runs_are_mixed_metric(&mixed), "mixed names → true");
+    }
 
     fn make_exp(val_bpb: f64, status: Status) -> Experiment {
         Experiment {

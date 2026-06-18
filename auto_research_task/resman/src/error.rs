@@ -8,10 +8,12 @@ pub enum Error {
     #[error("invalid direction: {0} (expected min|max)")]
     InvalidDirection(String),
 
-    #[error("file not found: {0}")]
+    #[error("file not found: {0} — check the path (or `resman init` to create a new store)")]
     NotFound(PathBuf),
 
-    #[error("no experiments found — run `resman import <results.tsv>` or `resman add ...` first")]
+    #[error(
+        "no experiments found — run `resman import <results.tsv>` or `resman add ...` first (if you haven't created a store yet, run `resman init`)"
+    )]
     Empty,
 
     #[error("malformed TSV at line {line}: expected >=4 tab-separated columns, got {got}")]
@@ -50,3 +52,30 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_error_hints_init() {
+        let msg = Error::Empty.to_string();
+        assert!(
+            msg.contains("resman init"),
+            "Empty error should mention `resman init`"
+        );
+    }
+
+    #[test]
+    fn not_found_error_hints_init() {
+        let msg = Error::NotFound(PathBuf::from("/tmp/nope")).to_string();
+        assert!(
+            msg.contains("resman init"),
+            "NotFound error should mention `resman init`"
+        );
+        assert!(
+            msg.contains("/tmp/nope"),
+            "NotFound error should include the path"
+        );
+    }
+}

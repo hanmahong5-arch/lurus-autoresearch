@@ -385,9 +385,25 @@ pub fn check_invariants(data_dir: &Path) -> CheckResult {
     let mut zero_byte = 0usize;
     let mut corrupt = 0usize;
     let mut orphan_parents = 0usize;
+    let mut leftover_tmp = 0usize;
 
     for entry in entries.flatten() {
         let path = entry.path();
+        // Count leftover atomic-write temp files (crash mid-rename).
+        if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e == "tmp")
+            .unwrap_or(false)
+            && path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.ends_with(".json.tmp"))
+                .unwrap_or(false)
+        {
+            leftover_tmp += 1;
+            continue;
+        }
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
@@ -429,12 +445,21 @@ pub fn check_invariants(data_dir: &Path) -> CheckResult {
         }
     }
 
-    if zero_byte == 0 && corrupt == 0 && orphan_parents == 0 {
+    if zero_byte == 0 && corrupt == 0 && orphan_parents == 0 && leftover_tmp == 0 {
         CheckResult {
             name: "invariants",
             status: CheckStatus::Ok,
             detail: format!("{total} runs scanned, 0 zero-byte, 0 corrupt, 0 orphan parents"),
             hint: None,
+        }
+    } else if leftover_tmp > 0 && zero_byte == 0 && corrupt == 0 && orphan_parents == 0 {
+        CheckResult {
+            name: "invariants",
+            status: CheckStatus::Warn,
+            detail: format!("{total} runs scanned, 0 zero-byte, 0 corrupt, 0 orphan parents"),
+            hint: Some(format!(
+                "{leftover_tmp} leftover .json.tmp file(s) from an interrupted write — safe to delete"
+            )),
         }
     } else {
         CheckResult {
@@ -443,7 +468,13 @@ pub fn check_invariants(data_dir: &Path) -> CheckResult {
             detail: format!(
                 "{total} runs scanned, {zero_byte} zero-byte, {corrupt} corrupt, {orphan_parents} orphan parents"
             ),
-            hint: Some("inspect listed runs or rerun affected tags".into()),
+            hint: Some(if leftover_tmp > 0 {
+                format!(
+                    "inspect listed runs or rerun affected tags; {leftover_tmp} leftover .json.tmp file(s) from an interrupted write — safe to delete"
+                )
+            } else {
+                "inspect listed runs or rerun affected tags".into()
+            }),
         }
     }
 }
@@ -707,6 +738,36 @@ mod tests {
         let r = check_invariants(&path);
         assert_eq!(r.status, CheckStatus::Warn);
         assert!(r.detail.contains("1 orphan parents"));
+    }
+
+    // 11. invariants — leftover .json.tmp file → warn with hint
+    #[test]
+    fn invariants_detects_leftover_tmp() {
+        let (_dir, path) = fresh_dir();
+        // Write a valid run so total > 0.
+        let run = crate::model::RunLog {
+            run_tag: "t1".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            experiments: vec![make_exp("aaa001", None)],
+            metric_name: None,
+            metric_direction: None,
+            schema_version: 1,
+        };
+        crate::store::save_run(&path, &run).unwrap();
+        // Simulate a crash-leftover tmp file.
+        let runs_dir = crate::store::runs_dir(&path);
+        fs::write(runs_dir.join("t1.json.tmp"), b"partial").unwrap();
+        let r = check_invariants(&path);
+        assert_eq!(r.status, CheckStatus::Warn);
+        let hint = r.hint.unwrap_or_default();
+        assert!(
+            hint.contains("leftover .json.tmp"),
+            "hint must mention leftover .json.tmp"
+        );
+        assert!(
+            hint.contains("safe to delete"),
+            "hint must say safe to delete"
+        );
     }
 
     // Helper: build a minimal Experiment.
