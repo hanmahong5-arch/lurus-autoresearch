@@ -63,11 +63,27 @@ pub(crate) fn filter_sort_truncate(
     }
 
     match sort_by {
-        SortField::ValBpb => tagged.sort_by(|(a, _), (b, _)| {
-            a.val_bpb
-                .partial_cmp(&b.val_bpb)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }),
+        SortField::ValBpb => {
+            // Best-first per direction: Minimize → ascending (lowest first),
+            // Maximize → descending (highest first).  Use the first entry's
+            // effective direction as the representative for the whole batch;
+            // mixed-direction lists are unusual and this is consistent with
+            // how RunLog::best() breaks ties.
+            let dir = tagged
+                .first()
+                .map(|(e, r)| e.effective_direction(r))
+                .unwrap_or(crate::model::Direction::Minimize);
+            tagged.sort_by(|(a, _), (b, _)| {
+                let cmp = a
+                    .val_bpb
+                    .partial_cmp(&b.val_bpb)
+                    .unwrap_or(std::cmp::Ordering::Equal);
+                match dir {
+                    crate::model::Direction::Minimize => cmp,
+                    crate::model::Direction::Maximize => cmp.reverse(),
+                }
+            });
+        }
         SortField::MemoryGb => tagged.sort_by(|(a, _), (b, _)| {
             a.memory_gb
                 .partial_cmp(&b.memory_gb)
@@ -338,5 +354,127 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0.commit, "x");
+    }
+
+    // Helper that sets run-level metric_direction for direction-aware sort tests.
+    fn make_run_dir(
+        tag: &str,
+        dir: Option<crate::model::Direction>,
+        exps: Vec<Experiment>,
+    ) -> RunLog {
+        RunLog {
+            run_tag: tag.to_string(),
+            created_at: String::new(),
+            experiments: exps,
+            metric_name: None,
+            metric_direction: dir,
+            schema_version: 1,
+        }
+    }
+
+    /// Maximize run: highest metric value must rank #1 by default (no --reverse).
+    #[test]
+    fn list_sort_maximize_highest_first() {
+        let run = make_run_dir(
+            "max",
+            Some(crate::model::Direction::Maximize),
+            vec![
+                make_exp("low", Status::Keep, 1.0, vec![]),
+                make_exp("high", Status::Keep, 3.0, vec![]),
+                make_exp("mid", Status::Keep, 2.0, vec![]),
+            ],
+        );
+        let tagged: Vec<_> = run
+            .experiments
+            .clone()
+            .into_iter()
+            .map(|e| (e, run.clone()))
+            .collect();
+
+        let result = super::filter_sort_truncate(
+            tagged,
+            Some("all"),
+            &SortField::ValBpb,
+            None,
+            None,
+            false,
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(
+            result[0].0.commit, "high",
+            "Maximize: highest must be first"
+        );
+        assert_eq!(result[2].0.commit, "low", "Maximize: lowest must be last");
+    }
+
+    /// --reverse on a Maximize run flips to lowest-first.
+    #[test]
+    fn list_sort_maximize_reverse_lowest_first() {
+        let run = make_run_dir(
+            "max",
+            Some(crate::model::Direction::Maximize),
+            vec![
+                make_exp("low", Status::Keep, 1.0, vec![]),
+                make_exp("high", Status::Keep, 3.0, vec![]),
+            ],
+        );
+        let tagged: Vec<_> = run
+            .experiments
+            .clone()
+            .into_iter()
+            .map(|e| (e, run.clone()))
+            .collect();
+
+        let result = super::filter_sort_truncate(
+            tagged,
+            Some("all"),
+            &SortField::ValBpb,
+            None,
+            None,
+            true, // --reverse
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(
+            result[0].0.commit, "low",
+            "Maximize + reverse: lowest first"
+        );
+        assert_eq!(result[1].0.commit, "high");
+    }
+
+    /// Minimize run (default): lowest metric must still rank #1 (byte-identical to pre-fix).
+    #[test]
+    fn list_sort_minimize_lowest_first_unchanged() {
+        let run = make_run(
+            "min",
+            vec![
+                make_exp("high", Status::Keep, 3.0, vec![]),
+                make_exp("low", Status::Keep, 1.0, vec![]),
+                make_exp("mid", Status::Keep, 2.0, vec![]),
+            ],
+        );
+        let tagged: Vec<_> = run
+            .experiments
+            .clone()
+            .into_iter()
+            .map(|e| (e, run.clone()))
+            .collect();
+
+        let result = super::filter_sort_truncate(
+            tagged,
+            Some("all"),
+            &SortField::ValBpb,
+            None,
+            None,
+            false,
+            &[],
+        )
+        .unwrap();
+
+        assert_eq!(result[0].0.commit, "low", "Minimize: lowest must be first");
+        assert_eq!(result[2].0.commit, "high", "Minimize: highest must be last");
     }
 }

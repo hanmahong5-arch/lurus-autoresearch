@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.17.5] — direction-aware correctness sweep (2026-06-18)
+
+The metric generalization (v0.5) left several paths still assuming "lower is
+better". This makes the rest of the codebase honor `metric_direction`, plus two
+parsing/classification fixes. `-o json`/`-o tsv` schema and `best -f value` are
+unchanged; table/Markdown VALUES change where they were wrong for maximize metrics.
+
+### Fixed
+
+- **`stats` reported best/worst inverted for maximize metrics** (best was the
+  minimum). Best/worst are now direction-aware. The improvement-rate denominator
+  was the total experiment count (incl. crashes/discards); it is now the count of
+  scored (kept, finite) experiments, matching "per experiment".
+- **`list` default sort ignored direction**, so a maximize run listed its worst
+  result first. The default metric sort is now best-first per direction
+  (`--reverse` still flips it). Order only — JSON array and TSV header unchanged.
+- **`near` and `distill` unexplored-neighbors dropped legitimate maximize
+  zero-values.** The `val_bpb > 0` guard now applies only to Minimize; for
+  Maximize, 0.0 (e.g. accuracy at init) is valid.
+- **`distill` stagnation count over-counted.** "Runs since last improvement"
+  included crashes/discards; it now counts only kept experiments.
+- **OOM mis-classification.** The signal regex matched any line containing
+  "GiB total capacity", so a benign CUDA memory-stats line was tagged `oom`. The
+  pattern now requires a genuine out-of-memory indicator.
+- **wandb import treated incomplete runs as kept.** Any non-final state
+  (`running`, `stopped`, …) mapped to `keep` with metric 0.0. Now `finished` →
+  keep; crashed/failed/killed/preempted → crash; other states → discard.
+
+### Tests
+
+281 (was 267): +14 regression tests across the fixes. Clippy `--all-targets`
+clean, fmt clean.
+
+---
+
 ## [0.17.4] — reliability hardening (2026-06-18)
 
 A correctness + robustness pass from a three-angle reliability audit (panic

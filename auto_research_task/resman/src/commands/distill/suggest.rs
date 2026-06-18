@@ -169,7 +169,12 @@ pub(super) fn build_suggestions(
         }
 
         if let Some(last_imp) = last_improvement_idx {
-            let runs_since = sorted.len().saturating_sub(1).saturating_sub(last_imp);
+            // Count only kept experiments that came *after* the last improvement.
+            // Crashes and discards must not inflate the stagnation count.
+            let runs_since = sorted[last_imp + 1..]
+                .iter()
+                .filter(|e| e.status.is_kept())
+                .count();
             if runs_since >= 8 {
                 let anchor = sorted[last_imp];
                 suggestions.push(format!(

@@ -987,6 +987,72 @@ fn render_cross_html_empty() {
     );
 }
 
+// ── Bug regression tests ─────────────────────────────────────────────────────
+
+/// Regression: stagnation `runs_since` must count only KEPT experiments after
+/// the last improvement, not all experiments (crashes/discards must not inflate).
+/// Setup: 1 kept improvement, then 3 crashes, then 0 further keeps.
+/// → runs_since = 0 (no kept experiments after the improvement) → no stagnation.
+#[test]
+fn stagnation_runs_since_excludes_crashes_and_discards() {
+    // total = 11 (>= 10 threshold), but only 1 kept, then 10 crashes.
+    // The single kept experiment IS the improvement anchor; kept after it = 0.
+    // Stagnation must NOT fire (runs_since = 0 < 8).
+    let mut exps = Vec::new();
+    let mut anchor = make_exp("anchor0", 0.99, Status::Keep, "only keep", None, vec![]);
+    anchor.timestamp = "2026-05-01T00:00:00Z".to_string();
+    exps.push(anchor);
+    for i in 1..=10 {
+        let mut e = make_exp(
+            &format!("crash{i:03}"),
+            0.0,
+            Status::Crash,
+            &format!("oom run {i}"),
+            None,
+            vec![Signal::Oom],
+        );
+        e.timestamp = format!("2026-05-{:02}T00:00:00Z", i + 1);
+        exps.push(e);
+    }
+    let run = make_run("crash_stagnation", exps);
+    let report = build_distill(&run, None);
+    assert!(
+        !report.suggestions.iter().any(|s| s.contains("stagnant")),
+        "stagnation must not fire when kept-after-improvement = 0; got: {:?}",
+        report.suggestions
+    );
+}
+
+/// Regression: `build_neighbors` must NOT drop Maximize experiments whose
+/// value is exactly 0.0 (e.g. accuracy at epoch 0).
+/// A non-best kept experiment with val_bpb=0.0 under Maximize must appear
+/// in unexplored_neighbors.
+#[test]
+fn neighbors_maximize_includes_zero_value() {
+    use crate::model::Direction;
+
+    let mut run = make_run(
+        "maximize_zero",
+        vec![
+            make_exp("best1", 0.9, Status::Best, "best run", None, vec![]),
+            // val_bpb = 0.0 is a legitimate accuracy-at-epoch-0 value for Maximize.
+            make_exp("zero1", 0.0, Status::Keep, "zero accuracy", None, vec![]),
+        ],
+    );
+    run.metric_direction = Some(Direction::Maximize);
+
+    let report = build_distill(&run, None);
+    let has_zero_neighbor = report
+        .unexplored_neighbors
+        .iter()
+        .any(|n| n.commit == "zero1");
+    assert!(
+        has_zero_neighbor,
+        "Maximize experiment with val_bpb=0.0 must appear in unexplored_neighbors; got: {:?}",
+        report.unexplored_neighbors
+    );
+}
+
 /// load_events on a missing file returns empty Vec (never panics).
 #[test]
 fn load_events_missing_file_returns_empty() {

@@ -15,7 +15,13 @@ pub(super) fn build_neighbors(
     let mut candidates: Vec<&Experiment> = run
         .experiments
         .iter()
-        .filter(|e| e.commit != best.commit && e.val_bpb > 0.0)
+        .filter(|e| {
+            e.commit != best.commit
+                && e.val_bpb.is_finite()
+                // For Minimize, exclude zero-or-negative sentinels (no real metric).
+                // For Maximize, 0.0 is a legitimate value (e.g. accuracy at epoch 0).
+                && (direction != Direction::Minimize || e.val_bpb > 0.0)
+        })
         .collect();
 
     // Sort by absolute distance to best value.

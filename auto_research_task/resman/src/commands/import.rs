@@ -332,7 +332,9 @@ fn parse_wandb(content: &str, metric_col: Option<&str>) -> Result<Vec<Experiment
         let status = match state_cell.to_ascii_lowercase().as_str() {
             "finished" => Status::Keep,
             "crashed" | "failed" | "killed" | "preempted" => Status::Crash,
-            _ => Status::Keep,
+            // running, stopped, and any other non-final/unknown state → Discard
+            // so incomplete runs are visible but not counted as kept results.
+            _ => Status::Discard,
         };
 
         let notes_cell = get_cell(row, notes_idx);
@@ -580,6 +582,33 @@ mod tests {
         assert_eq!(exps[0].status, Status::Keep);
         assert_eq!(exps[1].status, Status::Crash);
         assert_eq!(exps[2].status, Status::Keep);
+    }
+
+    // Regression: non-final states must map to Discard, not Keep.
+    #[test]
+    fn wandb_running_state_maps_to_discard() {
+        let csv = "ID,Name,State,Created,eval/loss,notes\n\
+                   r1,in-progress,running,2024-01-01,0.5,\n";
+        let exps = parse_wandb(csv, Some("eval/loss")).unwrap();
+        assert_eq!(exps[0].status, Status::Discard, "running must be Discard");
+    }
+
+    #[test]
+    fn wandb_stopped_state_maps_to_discard() {
+        let csv = "ID,Name,State,Created,eval/loss,notes\n\
+                   r1,stopped-run,stopped,2024-01-01,0.5,\n";
+        let exps = parse_wandb(csv, Some("eval/loss")).unwrap();
+        assert_eq!(exps[0].status, Status::Discard, "stopped must be Discard");
+    }
+
+    #[test]
+    fn wandb_finished_and_crashed_unchanged() {
+        let csv = "ID,Name,State,Created,eval/loss,notes\n\
+                   r1,ok,finished,2024-01-01,0.9,\n\
+                   r2,bad,crashed,2024-01-02,0.0,\n";
+        let exps = parse_wandb(csv, Some("eval/loss")).unwrap();
+        assert_eq!(exps[0].status, Status::Keep, "finished must be Keep");
+        assert_eq!(exps[1].status, Status::Crash, "crashed must be Crash");
     }
 
     #[test]

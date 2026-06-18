@@ -89,10 +89,14 @@ pub fn classify(tail: &str) -> Vec<Signal> {
     static RE_DIVERGED: OnceLock<Regex> = OnceLock::new();
     static RE_MFU: OnceLock<Regex> = OnceLock::new();
 
-    // OOM: original phrasings + PyTorch allocator line (contains "GiB total capacity"
-    // without the words "out of memory") + NCCL internal OOM.
+    // OOM: explicit out-of-memory phrasings only. "GiB total capacity" was
+    // previously included here but also matches benign CUDA memory-stats lines
+    // (e.g. "GPU 0: 24.00 GiB total capacity, 4.53 GiB already allocated"),
+    // causing false-positive Oom signals. Removed: benign stats must fall
+    // through to Unknown. PyTorch's own OutOfMemoryError class names are
+    // sufficient to catch the allocator failures without the stats line.
     let re_oom = RE_OOM.get_or_init(|| {
-        re(r"(?i)(CUDA out of memory\b|CUDAOutOfMemoryError|torch\.cuda\.OutOfMemoryError|out of memory while|RuntimeError:.*out of memory|GiB\s+total capacity\b|NCCL error:.*out of memory)")
+        re(r"(?i)(CUDA out of memory\b|CUDAOutOfMemoryError|torch\.cuda\.OutOfMemoryError|out of memory while|RuntimeError:.*out of memory|NCCL error:.*out of memory)")
     });
 
     // CudaError: original + cuBLAS internal error + cuDNN status errors +
@@ -403,6 +407,28 @@ mod tests {
         assert!(
             classify(t).iter().any(|s| matches!(s, Signal::Oom)),
             "expected Oom from PyTorch allocator line"
+        );
+    }
+
+    // Regression: benign CUDA memory-stats line must NOT classify as Oom.
+    // Previously the "GiB total capacity" branch in RE_OOM fired on this.
+    #[test]
+    fn benign_cuda_memory_stats_not_oom() {
+        let t = "GPU 0: 24.00 GiB total capacity, 4.53 GiB already allocated";
+        let sigs = classify(t);
+        assert!(
+            !sigs.iter().any(|s| matches!(s, Signal::Oom)),
+            "benign memory-stats line must NOT classify as Oom, got {sigs:?}"
+        );
+    }
+
+    // Real CUDA OOM (RuntimeError phrasing) must still classify as Oom.
+    #[test]
+    fn real_cuda_oom_still_classifies() {
+        let t = "RuntimeError: CUDA out of memory. Tried to allocate 2.00 GiB (GPU 0; 23.65 GiB total capacity; 21.03 GiB already allocated)";
+        assert!(
+            classify(t).iter().any(|s| matches!(s, Signal::Oom)),
+            "real OOM RuntimeError must still classify as Oom"
         );
     }
 
