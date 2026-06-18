@@ -23,8 +23,8 @@ pub(crate) struct StatsData {
 }
 
 /// Compute counts and val_bpb statistics from a slice of experiments.
-/// `bpb` is `None` when there are no kept experiments or no positive val_bpb values.
-pub(crate) fn compute_stats(experiments: &[Experiment]) -> StatsData {
+/// `bpb` is `None` when there are no kept experiments or no valid val_bpb values.
+pub(crate) fn compute_stats(experiments: &[Experiment], direction: Direction) -> StatsData {
     let kept_exps: Vec<&Experiment> = experiments.iter().filter(|e| e.status.is_kept()).collect();
     let crashed = experiments
         .iter()
@@ -43,16 +43,11 @@ pub(crate) fn compute_stats(experiments: &[Experiment]) -> StatsData {
         let bpbs: Vec<f64> = kept_exps
             .iter()
             .map(|e| e.val_bpb)
-            .filter(|v| *v > 0.0)
+            .filter(|v| v.is_finite() && (direction == Direction::Maximize || *v > 0.0))
             .collect();
         if bpbs.is_empty() {
             None
         } else {
-            // Effective direction: first experiment's override, else Minimize.
-            let direction = experiments
-                .first()
-                .and_then(|e| e.metric_direction)
-                .unwrap_or(Direction::Minimize);
             let (best, worst) = match direction {
                 Direction::Minimize => (
                     bpbs.iter().copied().fold(f64::INFINITY, f64::min),
@@ -66,7 +61,7 @@ pub(crate) fn compute_stats(experiments: &[Experiment]) -> StatsData {
             let mean = bpbs.iter().sum::<f64>() / bpbs.len() as f64;
             let variance = bpbs.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / bpbs.len() as f64;
             let stddev = variance.sqrt();
-            let improvement = worst - best;
+            let improvement = (best - worst).abs();
             let pct_improve = if worst > 0.0 {
                 improvement / worst * 100.0
             } else {
@@ -108,8 +103,15 @@ pub(crate) fn pct(part: usize, total: usize) -> f64 {
 }
 
 pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
-    let experiments: Vec<Experiment> = match tag {
-        Some(t) => require_run(data_dir, t)?.experiments,
+    let (experiments, direction): (Vec<Experiment>, Direction) = match tag {
+        Some(t) => {
+            let run = require_run(data_dir, t)?;
+            let direction = run
+                .metric_direction
+                .or_else(|| run.experiments.first().and_then(|e| e.metric_direction))
+                .unwrap_or(Direction::Minimize);
+            (run.experiments, direction)
+        }
         None => {
             let runs = load_all_runs(data_dir)?;
             if crate::commands::compare::runs_are_mixed_metric(&runs) {
@@ -132,7 +134,16 @@ pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
                     names.join(", ")
                 );
             }
-            runs.into_iter().flat_map(|r| r.experiments).collect()
+            let direction = runs
+                .first()
+                .map(|r| {
+                    r.metric_direction
+                        .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+                        .unwrap_or(Direction::Minimize)
+                })
+                .unwrap_or(Direction::Minimize);
+            let experiments = runs.into_iter().flat_map(|r| r.experiments).collect();
+            (experiments, direction)
         }
     };
 
@@ -146,7 +157,7 @@ pub fn cmd_stats(data_dir: &Path, tag: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    let s = compute_stats(&experiments);
+    let s = compute_stats(&experiments, direction);
 
     println!("{}\n", crate::term::section_header("stats", tag));
     println!("total:       {}", s.total);
@@ -273,7 +284,7 @@ mod tests {
             make_exp(9.9, Status::Discard),
             make_exp(0.0, Status::Crash),
         ];
-        let s = super::compute_stats(&exps);
+        let s = super::compute_stats(&exps, Direction::Minimize);
 
         assert_eq!(s.total, 5);
         assert_eq!(s.kept, 3);
@@ -284,7 +295,7 @@ mod tests {
         assert!((bpb.best - 1.0).abs() < 1e-9, "best={}", bpb.best);
         assert!((bpb.worst - 3.0).abs() < 1e-9, "worst={}", bpb.worst);
         assert!((bpb.mean - 2.0).abs() < 1e-9, "mean={}", bpb.mean);
-        // improvement = worst - best = 2.0
+        // improvement = |best - worst| = 2.0
         assert!((bpb.improvement - 2.0).abs() < 1e-9);
         // pct_improve = 2/3 * 100
         assert!((bpb.pct_improve - (2.0 / 3.0 * 100.0)).abs() < 1e-6);
@@ -296,7 +307,7 @@ mod tests {
     fn compute_stats_bpb_none_when_all_kept_zero_or_negative() {
         // All kept experiments have val_bpb <= 0 → bpb should be None
         let exps = vec![make_exp(0.0, Status::Keep), make_exp(-1.0, Status::Keep)];
-        let s = super::compute_stats(&exps);
+        let s = super::compute_stats(&exps, Direction::Minimize);
         assert_eq!(s.kept, 2);
         assert!(
             s.bpb.is_none(),
@@ -307,7 +318,7 @@ mod tests {
     #[test]
     fn compute_stats_bpb_none_when_no_kept() {
         let exps = vec![make_exp(1.0, Status::Discard), make_exp(2.0, Status::Crash)];
-        let s = super::compute_stats(&exps);
+        let s = super::compute_stats(&exps, Direction::Minimize);
         assert_eq!(s.kept, 0);
         assert!(s.bpb.is_none(), "bpb should be None when kept=0");
     }
@@ -341,7 +352,7 @@ mod tests {
             make_exp_with_direction(0.8, Status::Keep, Some(Direction::Maximize)),
             make_exp_with_direction(0.9, Status::Keep, Some(Direction::Maximize)),
         ];
-        let s = super::compute_stats(&exps);
+        let s = super::compute_stats(&exps, Direction::Maximize);
         let bpb = s.bpb.expect("bpb should be Some");
         assert!(
             (bpb.best - 0.9).abs() < 1e-9,
@@ -365,7 +376,7 @@ mod tests {
             make_exp(9.9, Status::Discard),
             make_exp(0.0, Status::Crash), // val_bpb=0 filtered from bpbs; crash not kept
         ];
-        let s = super::compute_stats(&exps);
+        let s = super::compute_stats(&exps, Direction::Minimize);
         assert_eq!(s.total, 5);
         let bpb = s.bpb.expect("bpb should be Some");
         let expected = 2.0 / 3.0;
@@ -373,6 +384,50 @@ mod tests {
             (bpb.improvement_rate - expected).abs() < 1e-9,
             "improvement_rate should be {expected} (kept count=3), got {}",
             bpb.improvement_rate
+        );
+    }
+
+    #[test]
+    fn compute_stats_maximize_improvement_is_positive() {
+        // Maximize run with [0.7, 0.8, 0.9]: best=0.9, worst=0.7, improvement=0.2 (positive)
+        let exps = vec![
+            make_exp_with_direction(0.7, Status::Keep, Some(Direction::Maximize)),
+            make_exp_with_direction(0.8, Status::Keep, Some(Direction::Maximize)),
+            make_exp_with_direction(0.9, Status::Keep, Some(Direction::Maximize)),
+        ];
+        let s = super::compute_stats(&exps, Direction::Maximize);
+        let bpb = s.bpb.expect("bpb should be Some");
+        assert!(
+            (bpb.improvement - 0.2).abs() < 1e-9,
+            "Maximize improvement should be ~0.2 (positive), got {}",
+            bpb.improvement
+        );
+        assert!(
+            bpb.improvement_rate > 0.0,
+            "Maximize improvement_rate should be positive, got {}",
+            bpb.improvement_rate
+        );
+    }
+
+    #[test]
+    fn compute_stats_maximize_includes_zero_value() {
+        // Maximize run includes 0.0: it must NOT be filtered out (only >0 guard applies to Minimize)
+        let exps = vec![
+            make_exp_with_direction(0.0, Status::Keep, Some(Direction::Maximize)),
+            make_exp_with_direction(0.5, Status::Keep, Some(Direction::Maximize)),
+            make_exp_with_direction(0.8, Status::Keep, Some(Direction::Maximize)),
+        ];
+        let s = super::compute_stats(&exps, Direction::Maximize);
+        let bpb = s.bpb.expect("bpb should be Some for Maximize with 0.0");
+        assert!(
+            (bpb.worst - 0.0).abs() < 1e-9,
+            "Maximize worst should be 0.0 (included), got {}",
+            bpb.worst
+        );
+        // All 3 kept experiments scored
+        assert!(
+            bpb.improvement_rate > 0.0,
+            "scored count should include the 0.0 experiment"
         );
     }
 }

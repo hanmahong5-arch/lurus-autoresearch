@@ -320,10 +320,10 @@ pub fn cmd_unverify(data_dir: &Path, opts: UnverifyOpts<'_>) -> Result<()> {
     Ok(())
 }
 
-fn locate_unverify_target(
-    data_dir: &Path,
-    opts: &UnverifyOpts<'_>,
-) -> Result<(String, usize, crate::model::RunLog)> {
+/// Returns `(ref_tag, ref_commit)` from a snapshot search — no reload, no
+/// index.  Callers must reload the run themselves and re-locate the target by
+/// commit string to avoid a TOCTOU stale-index bug.
+fn locate_unverify_target(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<(String, String)> {
     let runs = match opts.tag {
         Some(t) => vec![load_run_or_suggest(data_dir, t)?],
         None => load_all_runs(data_dir)?,
@@ -367,15 +367,36 @@ fn locate_unverify_target(
         .into_iter()
         .next()
         .ok_or_else(|| Error::Custom("internal: matches became empty".to_string()))?;
-    let run = load_run(data_dir, &ref_tag)?
-        .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
-    Ok((ref_tag, ref_idx, run))
+    let ref_commit = runs
+        .iter()
+        .find(|r| r.run_tag == ref_tag)
+        .and_then(|r| r.experiments.get(ref_idx))
+        .map(|e| e.commit.clone())
+        .ok_or_else(|| Error::Custom("internal: snapshot experiment vanished".to_string()))?;
+    Ok((ref_tag, ref_commit))
 }
 
 /// Returns human-readable text describing the unverify outcome.
 pub fn unverify_inner(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<String> {
-    let (ref_tag, ref_idx, mut run) = locate_unverify_target(data_dir, opts)?;
-    let exp = &run.experiments[ref_idx];
+    let (ref_tag, ref_commit) = locate_unverify_target(data_dir, opts)?;
+
+    // Reload the run mutably. Re-locate by commit string to avoid a TOCTOU
+    // index-out-of-bounds if a concurrent writer changed the run between the
+    // snapshot above and this reload.
+    let mut run = load_run(data_dir, &ref_tag)?
+        .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
+
+    let fresh_idx = run
+        .experiments
+        .iter()
+        .position(|e| e.commit == ref_commit)
+        .ok_or_else(|| {
+            Error::Custom(format!(
+                "experiment {ref_commit} no longer present after reload"
+            ))
+        })?;
+
+    let exp = &run.experiments[fresh_idx];
 
     if exp.status != Status::Verified {
         return Err(Error::Custom(format!(
@@ -389,7 +410,7 @@ pub fn unverify_inner(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<String
     let retained_value = exp.val_bpb;
     let metric = exp.effective_metric_name(&run).to_string();
 
-    run.experiments[ref_idx].status = Status::Keep;
+    run.experiments[fresh_idx].status = Status::Keep;
     save_run(data_dir, &run)?;
 
     Ok(format!(
@@ -401,8 +422,25 @@ pub fn unverify_inner(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<String
 pub fn unverify_inner_json(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<String> {
     use serde_json::json;
 
-    let (ref_tag, ref_idx, mut run) = locate_unverify_target(data_dir, opts)?;
-    let exp = &run.experiments[ref_idx];
+    let (ref_tag, ref_commit) = locate_unverify_target(data_dir, opts)?;
+
+    // Reload the run mutably. Re-locate by commit string to avoid a TOCTOU
+    // index-out-of-bounds if a concurrent writer changed the run between the
+    // snapshot above and this reload.
+    let mut run = load_run(data_dir, &ref_tag)?
+        .ok_or_else(|| Error::Custom(format!("tag `{ref_tag}` disappeared")))?;
+
+    let fresh_idx = run
+        .experiments
+        .iter()
+        .position(|e| e.commit == ref_commit)
+        .ok_or_else(|| {
+            Error::Custom(format!(
+                "experiment {ref_commit} no longer present after reload"
+            ))
+        })?;
+
+    let exp = &run.experiments[fresh_idx];
 
     if exp.status != Status::Verified {
         return Err(Error::Custom(format!(
@@ -416,7 +454,7 @@ pub fn unverify_inner_json(data_dir: &Path, opts: &UnverifyOpts<'_>) -> Result<S
     let retained_value = exp.val_bpb;
     let metric = exp.effective_metric_name(&run).to_string();
 
-    run.experiments[ref_idx].status = Status::Keep;
+    run.experiments[fresh_idx].status = Status::Keep;
     save_run(data_dir, &run)?;
 
     let result = json!({
@@ -765,6 +803,118 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("ambiguous"), "expected ambiguous error: {msg}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unverify_relocates_by_commit_not_stale_index() {
+        // Simulate a concurrent prepend between snapshot and reload: the target
+        // starts at snapshot-index 0 but is pushed to index 1 on disk by the
+        // time unverify_inner reloads.  The fix must still find and revert the
+        // correct experiment.
+        let dir = setup_dir("resman_unverify_toctou");
+
+        // Step 1: save the initial run with ONE verified experiment.
+        let run_initial = make_run(
+            "utoc",
+            vec![make_exp("deadbeef", 0.90, Status::Verified, None)],
+        );
+        save_run(&dir, &run_initial).unwrap();
+
+        // Step 2: "concurrent writer" prepends a new experiment — target shifts
+        // from index 0 to index 1 on disk.
+        let run_modified = make_run(
+            "utoc",
+            vec![
+                make_exp("aabbccdd", 0.88, Status::Keep, None), // new entry at 0
+                make_exp("deadbeef", 0.90, Status::Verified, None), // target pushed to 1
+            ],
+        );
+        save_run(&dir, &run_modified).unwrap();
+
+        // unverify_inner must find "deadbeef" at fresh index 1, not mutate index 0.
+        let result = unverify_inner(
+            &dir,
+            &UnverifyOpts {
+                commit: "deadbeef",
+                tag: None,
+            },
+        );
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+        let msg = result.unwrap();
+        assert!(
+            msg.starts_with("unverified"),
+            "expected unverified, got: {msg}"
+        );
+
+        let saved = load_run(&dir, "utoc").unwrap().unwrap();
+        // The correct experiment (now at index 1) must be reverted to Keep.
+        let target = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "deadbeef")
+            .expect("deadbeef must still be present");
+        assert_eq!(target.status, Status::Keep);
+
+        // The unrelated experiment at index 0 must be untouched.
+        let other = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "aabbccdd")
+            .expect("aabbccdd must still be present");
+        assert_eq!(other.status, Status::Keep);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unverify_inner_json_relocates_by_commit_not_stale_index() {
+        // Same TOCTOU scenario for the JSON path.
+        let dir = setup_dir("resman_unverify_toctou_json");
+
+        let run_initial = make_run(
+            "utocj",
+            vec![make_exp("deadbeef", 0.90, Status::Verified, None)],
+        );
+        save_run(&dir, &run_initial).unwrap();
+
+        let run_modified = make_run(
+            "utocj",
+            vec![
+                make_exp("aabbccdd", 0.88, Status::Keep, None),
+                make_exp("deadbeef", 0.90, Status::Verified, None),
+            ],
+        );
+        save_run(&dir, &run_modified).unwrap();
+
+        let result = unverify_inner_json(
+            &dir,
+            &UnverifyOpts {
+                commit: "deadbeef",
+                tag: None,
+            },
+        );
+        assert!(result.is_ok(), "expected ok, got: {:?}", result);
+        let v: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(v["unverified"], true);
+        assert_eq!(v["commit"], "deadbeef");
+        assert_eq!(v["new_status"], "keep");
+
+        let saved = load_run(&dir, "utocj").unwrap().unwrap();
+        let target = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "deadbeef")
+            .expect("deadbeef must still be present");
+        assert_eq!(target.status, Status::Keep);
+
+        let other = saved
+            .experiments
+            .iter()
+            .find(|e| e.commit == "aabbccdd")
+            .expect("aabbccdd must still be present");
+        assert_eq!(other.status, Status::Keep);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

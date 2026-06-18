@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.17.7] — closeout fixes: maximize stats + unverify TOCTOU (2026-06-18)
+
+A completeness audit after the v0.17.4–v0.17.6 hardening surfaced four real bugs
+the earlier passes missed — all fixed here. `-o json`/`-o tsv` schema and
+`best -f value` unchanged; maximize-metric `stats` numbers change (they were
+wrong before).
+
+### Fixed
+
+- **`stats` was broken for maximize metrics** in three ways, now all corrected:
+  (1) `improvement` was `worst - best` → negative for maximize, making the
+  percent negative and `improvement_rate` clamp to 0; it is now the magnitude
+  `(best - worst).abs()`. (2) The value filter dropped legitimate `0.0` values
+  for maximize (it applied the minimize `> 0` guard unconditionally); `0.0` is
+  now kept for maximize. (3) Direction was read only from the first experiment's
+  override, ignoring the run-level `metric_direction`; `stats` (CLI and the
+  `resman_stats` MCP tool) now uses the full run→experiment→default cascade.
+- **`unverify` could mutate the wrong experiment under concurrent writes.** Like
+  the `verify` TOCTOU fixed in 0.17.4, it computed an index from one store
+  snapshot then reloaded; a concurrent `add` made the index stale. `unverify` now
+  re-locates the target by commit after reload (the stale index is gone entirely).
+
+### Tests
+
+293 (was 289): +4 (maximize improvement sign, maximize zero-value inclusion,
+unverify relocation ×2). Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.6] — usability & robustness polish (2026-06-18)
 
 Onboarding, error guidance, and defensive hardening from the audit's usability

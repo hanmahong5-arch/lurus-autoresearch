@@ -1120,23 +1120,40 @@ fn tool_compare(data_dir: &Path, args: &Value) -> std::result::Result<String, St
 
 fn tool_stats(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
     use crate::commands::stats::{compute_stats, pct};
-    use crate::model::Experiment;
+    use crate::model::{Direction, Experiment};
 
     let tag = args.get("tag").and_then(|v| v.as_str());
 
-    let experiments: Vec<Experiment> = match tag {
+    // Capture the effective run-level direction (cascade: run → first experiment
+    // → Minimize) before consuming the runs, so MCP stats match the CLI and are
+    // correct for maximize metrics.
+    let (experiments, direction): (Vec<Experiment>, Direction) = match tag {
         Some(t) => match load_run(data_dir, t).map_err(|e| e.to_string())? {
-            Some(r) => r.experiments,
+            Some(r) => {
+                let dir = r
+                    .metric_direction
+                    .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+                    .unwrap_or(Direction::Minimize);
+                (r.experiments, dir)
+            }
             None => return Err(format!("no such tag: {t}")),
         },
-        None => load_all_runs(data_dir)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .flat_map(|r| r.experiments)
-            .collect(),
+        None => {
+            let runs = load_all_runs(data_dir).map_err(|e| e.to_string())?;
+            let dir = runs
+                .first()
+                .map(|r| {
+                    r.metric_direction
+                        .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
+                        .unwrap_or(Direction::Minimize)
+                })
+                .unwrap_or(Direction::Minimize);
+            let experiments = runs.into_iter().flat_map(|r| r.experiments).collect();
+            (experiments, dir)
+        }
     };
 
-    let d = compute_stats(&experiments);
+    let d = compute_stats(&experiments, direction);
     let val_bpb = d.bpb.map(|b| {
         json!({
             "best": b.best,
