@@ -151,7 +151,12 @@ pub fn render_report_html(runs: &[crate::model::RunLog], title: &str) -> String 
     crate::html::page(&page_title, &body)
 }
 
-pub fn cmd_report(data_dir: &Path, output: &Path, title: Option<&str>) -> Result<()> {
+pub fn cmd_report(
+    data_dir: &Path,
+    output: &Path,
+    title: Option<&str>,
+    theme: crate::html::Theme,
+) -> Result<()> {
     let runs = load_all_runs(data_dir)?;
     if runs.is_empty() {
         eprintln!(
@@ -161,7 +166,7 @@ pub fn cmd_report(data_dir: &Path, output: &Path, title: Option<&str>) -> Result
     }
 
     let title = title.unwrap_or("research experiment report");
-    let html = render_report_html(&runs, title);
+    let html = theme.apply(render_report_html(&runs, title));
     fs::write(output, html)?;
     println!("html report written to: {}", output.display());
     Ok(())

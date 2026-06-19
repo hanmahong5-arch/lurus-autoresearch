@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.17.16] — `--theme light|dark` for HTML artifacts (2026-06-19)
+
+Completes the design system's prepared `data-theme` override hooks: `resman
+report` and `resman distill --html` now accept `--theme auto|light|dark`. `auto`
+(default) follows the OS via `prefers-color-scheme` and is **byte-identical** to
+prior output; `light`/`dark` force the theme by injecting `data-theme` onto the
+page's single `<html>` element — useful for embedding a report in a light-only or
+dark-only context regardless of the viewer's system setting.
+
+### Added
+
+- `--theme <auto|light|dark>` on `report` and `distill` (default `auto`). Applied
+  at the command layer via `html::Theme::apply`, so the renderers stay
+  theme-neutral and the default path is unchanged. Invalid values are rejected by
+  clap with the valid set.
+
+### Tests
+
+317 (+1): `theme_apply_auto_is_identity_else_injects` pins Auto = byte-identical,
+Light/Dark = the correct `data-theme`. Verified end-to-end on the binary (auto →
+`<html lang="en">`, dark → `<html lang="en" data-theme="dark">`).
+
+---
+
 ## [0.17.15] — HTML design refresh (report / distill) (2026-06-19)
 
 A visual polish pass on the self-contained HTML output (`resman report`,

@@ -141,9 +141,11 @@ fn main() -> ExitCode {
         Commands::Compare { run_tags, format } => {
             commands::compare::cmd_compare(&data_dir, &run_tags, &format)
         }
-        Commands::Report { output, title } => {
-            commands::report::cmd_report(&data_dir, &output, title.as_deref())
-        }
+        Commands::Report {
+            output,
+            title,
+            theme,
+        } => commands::report::cmd_report(&data_dir, &output, title.as_deref(), theme),
         Commands::Export { output } => commands::export::cmd_export(&data_dir, &output),
         Commands::Watch {
             path,
@@ -169,6 +171,7 @@ fn main() -> ExitCode {
             format,
             html,
             all,
+            theme,
         } => {
             if all {
                 commands::distill::cmd_cross_distill(
@@ -176,6 +179,7 @@ fn main() -> ExitCode {
                     out.as_deref(),
                     &format,
                     html.as_deref(),
+                    theme,
                 )
             } else {
                 let t = tag.expect("tag is required when --all is not set");
@@ -185,6 +189,7 @@ fn main() -> ExitCode {
                     out.as_deref(),
                     &format,
                     html.as_deref(),
+                    theme,
                 )
             }
         }
@@ -347,6 +352,7 @@ mod tests {
             format: crate::commands::distill::DistillFormat::Markdown,
             html: None,
             all: false,
+            theme: crate::html::Theme::Auto,
         };
         let (name, args) = usage_descriptor(&cmd).expect("Distill(tag) must produce a descriptor");
         assert_eq!(name, "resman_distill");
@@ -362,6 +368,7 @@ mod tests {
             format: crate::commands::distill::DistillFormat::Markdown,
             html: None,
             all: true,
+            theme: crate::html::Theme::Auto,
         };
         let (name, args) = usage_descriptor(&cmd).expect("Distill(all) must produce a descriptor");
         assert_eq!(name, "resman_distill");

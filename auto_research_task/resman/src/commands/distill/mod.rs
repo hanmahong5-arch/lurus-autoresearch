@@ -634,6 +634,7 @@ pub fn cmd_distill(
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
     html_path: Option<&std::path::Path>,
+    theme: crate::html::Theme,
 ) -> Result<()> {
     let run = load_run_or_suggest(data_dir, tag)?;
     let all_runs = load_all_runs(data_dir).unwrap_or_default();
@@ -645,7 +646,7 @@ pub fn cmd_distill(
 
     // Write HTML artifact if requested.
     if let Some(hp) = html_path {
-        let html = render_html(&report);
+        let html = theme.apply(render_html(&report));
         std::fs::write(hp, &html)?;
         eprintln!("wrote HTML to {}", hp.display());
     }
@@ -670,6 +671,7 @@ pub fn cmd_cross_distill(
     out_path: Option<&std::path::Path>,
     format: &DistillFormat,
     html_path: Option<&std::path::Path>,
+    theme: crate::html::Theme,
 ) -> Result<()> {
     let runs = load_all_runs(data_dir)?;
     if runs.is_empty() {
@@ -679,7 +681,7 @@ pub fn cmd_cross_distill(
 
     // Write HTML artifact if requested (additive — text output still emitted).
     if let Some(hp) = html_path {
-        let html = render_cross_html(&report);
+        let html = theme.apply(render_cross_html(&report));
         std::fs::write(hp, &html)?;
         eprintln!("wrote HTML to {}", hp.display());
     }

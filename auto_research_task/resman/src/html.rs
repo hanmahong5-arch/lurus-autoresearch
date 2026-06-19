@@ -361,6 +361,40 @@ pub fn data_table(headers: &[&str], rows: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Theme
+// ---------------------------------------------------------------------------
+
+/// Color theme for generated HTML artifacts. `Auto` follows the OS via
+/// `prefers-color-scheme`; `Light`/`Dark` force it through the `data-theme`
+/// override hooks already present in the stylesheet.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum Theme {
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
+impl Theme {
+    /// Decorate a full page (from `page()`) with this theme. `Auto` is the
+    /// identity — output stays byte-identical to the default — so only an
+    /// explicit `--theme light|dark` changes anything. Injects `data-theme`
+    /// onto the single `<html>` element.
+    pub fn apply(self, html: String) -> String {
+        let attr = match self {
+            Theme::Auto => return html,
+            Theme::Light => " data-theme=\"light\"",
+            Theme::Dark => " data-theme=\"dark\"",
+        };
+        html.replacen(
+            "<html lang=\"en\">",
+            &format!("<html lang=\"en\"{attr}>"),
+            1,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Page wrapper
 // ---------------------------------------------------------------------------
 
@@ -536,5 +570,22 @@ mod tests {
         assert!(p.contains("<style>"));
         assert!(p.contains("<p>body</p>"));
         assert!(!p.contains("http://"));
+    }
+
+    #[test]
+    fn theme_apply_auto_is_identity_else_injects() {
+        let base = page("T", "<p>b</p>");
+        // Auto must not change a single byte (preserves the default contract).
+        assert_eq!(Theme::Auto.apply(base.clone()), base);
+        assert!(
+            Theme::Dark
+                .apply(base.clone())
+                .contains("<html lang=\"en\" data-theme=\"dark\">")
+        );
+        assert!(
+            Theme::Light
+                .apply(base)
+                .contains("<html lang=\"en\" data-theme=\"light\">")
+        );
     }
 }

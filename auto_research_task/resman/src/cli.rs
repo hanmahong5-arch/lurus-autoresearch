@@ -262,6 +262,9 @@ pub enum Commands {
         /// Report title (default: "Research Experiment Report")
         #[arg(long)]
         title: Option<String>,
+        /// Color theme: auto (follow OS, default), light, or dark
+        #[arg(long, value_enum, default_value_t = crate::html::Theme::Auto)]
+        theme: crate::html::Theme,
     },
 
     /// Export all data as JSON
@@ -355,6 +358,9 @@ pub enum Commands {
         /// Aggregate across ALL runs instead of a single tag
         #[arg(long, conflicts_with = "tag")]
         all: bool,
+        /// Color theme for --html: auto (follow OS, default), light, or dark
+        #[arg(long, value_enum, default_value_t = crate::html::Theme::Auto)]
+        theme: crate::html::Theme,
     },
 
     /// Inspect MCP tool usage telemetry (usage.jsonl)
