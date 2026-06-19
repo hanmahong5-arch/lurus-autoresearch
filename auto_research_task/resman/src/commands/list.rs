@@ -129,6 +129,13 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
         return Ok(());
     }
 
+    // Warn (CLI stderr) when listing a cross-run batch whose runs disagree on
+    // metric/direction while sorting by value — the order then mixes incomparable
+    // quantities. Mirrors best/stats/compare; stdout (json/tsv/table) is unchanged.
+    let warn_mixed = tag.is_none()
+        && matches!(sort_by, SortField::ValBpb)
+        && crate::commands::compare::runs_are_mixed_metric(&runs);
+
     // Build Vec<(Experiment, RunLog)> to preserve run context for metric name resolution.
     let tagged: Vec<(Experiment, RunLog)> = runs
         .into_iter()
@@ -156,6 +163,12 @@ pub fn cmd_list(data_dir: &Path, opts: ListOpts<'_>) -> Result<()> {
             crate::term::empty_state("no experiments matched filters.")
         );
         return Ok(());
+    }
+
+    if warn_mixed {
+        eprintln!(
+            "warning: listing runs with different metrics/directions; value ordering may not be comparable — use --tag to scope to one run"
+        );
     }
 
     // Determine column label: use common name if all entries agree, else "metric".

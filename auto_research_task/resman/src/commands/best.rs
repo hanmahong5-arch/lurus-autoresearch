@@ -28,37 +28,8 @@ pub fn cmd_best(data_dir: &Path, tag: Option<&str>, format: &str, composite: boo
         return cmd_best_composite(&runs, format);
     }
 
-    // --- original non-composite path (unchanged) ---
-    let mut global_best: Option<(&RunLog, &Experiment)> = None;
-    for r in &runs {
-        if let Some(b) = r.best() {
-            let dir = b.effective_direction(r);
-            match global_best {
-                None => {
-                    global_best = Some((r, b));
-                }
-                Some((gr, gb)) => {
-                    let gdir = gb.effective_direction(gr);
-                    if dir != gdir {
-                        eprintln!(
-                            "warning: comparing runs with different directions ({} vs {}); using first run's direction",
-                            gdir.as_str(),
-                            dir.as_str()
-                        );
-                    }
-                    let better = match gdir {
-                        Direction::Minimize => b.val_bpb < gb.val_bpb,
-                        Direction::Maximize => b.val_bpb > gb.val_bpb,
-                    };
-                    if better {
-                        global_best = Some((r, b));
-                    }
-                }
-            }
-        }
-    }
-
-    let (run, best) = global_best.ok_or(Error::Empty)?;
+    // --- original non-composite path (selection shared with MCP `tool_best`) ---
+    let (run, best) = global_best(&runs, true).ok_or(Error::Empty)?;
     let label = best.effective_metric_name(run);
 
     match format {
@@ -203,6 +174,41 @@ fn composite_candidates(runs: &[RunLog]) -> Vec<(&RunLog, &Experiment)> {
         }
     }
     out
+}
+
+/// Cross-run global best (non-composite): the single best kept experiment across
+/// all runs, by each run's effective direction. Pure selection; `warn` toggles
+/// the mixed-direction stderr notice — the CLI `cmd_best` passes `true`, the MCP
+/// `tool_best` passes `false` (it is stdio JSON-RPC, no human prose). Shared by
+/// both surfaces so the non-composite winner cannot drift (cf. `composite_winner`).
+pub(crate) fn global_best(runs: &[RunLog], warn: bool) -> Option<(&RunLog, &Experiment)> {
+    let mut best: Option<(&RunLog, &Experiment)> = None;
+    for r in runs {
+        if let Some(b) = r.best() {
+            let dir = b.effective_direction(r);
+            match best {
+                None => best = Some((r, b)),
+                Some((gr, gb)) => {
+                    let gdir = gb.effective_direction(gr);
+                    if warn && dir != gdir {
+                        eprintln!(
+                            "warning: comparing runs with different directions ({} vs {}); using first run's direction",
+                            gdir.as_str(),
+                            dir.as_str()
+                        );
+                    }
+                    let better = match gdir {
+                        Direction::Minimize => b.val_bpb < gb.val_bpb,
+                        Direction::Maximize => b.val_bpb > gb.val_bpb,
+                    };
+                    if better {
+                        best = Some((r, b));
+                    }
+                }
+            }
+        }
+    }
+    best
 }
 
 /// Score every candidate — each normalized WITHIN ITS OWN RUN (that run's
@@ -374,6 +380,38 @@ mod tests {
             metric_direction: None,
             signals: Vec::new(),
         }
+    }
+
+    #[test]
+    fn global_best_picks_directionally_across_runs() {
+        // Drift guard for the helper shared by cmd_best and MCP tool_best.
+        // Two Minimize runs → lowest val_bpb wins.
+        let runs_min = [
+            make_run(
+                Some(Direction::Minimize),
+                vec![make_exp("a1", 0.95, Status::Keep, "", None)],
+            ),
+            make_run(
+                Some(Direction::Minimize),
+                vec![make_exp("b1", 0.90, Status::Keep, "", None)],
+            ),
+        ];
+        let (_, best) = global_best(&runs_min, false).expect("a winner");
+        assert_eq!(best.commit, "b1", "minimize → lowest val_bpb wins");
+
+        // Two Maximize runs → highest val_bpb wins.
+        let runs_max = [
+            make_run(
+                Some(Direction::Maximize),
+                vec![make_exp("c1", 0.90, Status::Keep, "", None)],
+            ),
+            make_run(
+                Some(Direction::Maximize),
+                vec![make_exp("d1", 0.95, Status::Keep, "", None)],
+            ),
+        ];
+        let (_, best) = global_best(&runs_max, false).expect("a winner");
+        assert_eq!(best.commit, "d1", "maximize → highest val_bpb wins");
     }
 
     // 1. Verified experiment with slightly worse raw metric beats Keep with

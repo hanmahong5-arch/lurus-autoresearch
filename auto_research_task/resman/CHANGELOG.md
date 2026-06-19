@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.17.13] — round-7 closeout: CLI/MCP parity invariant fully closed (2026-06-19)
+
+A round-7 final audit certified the hardening complete — no reachable panics, no
+data loss, no wrong-direction math, no red-line breaks — and surfaced the last two
+CLI↔MCP "inline twin" selectors plus a missing `list` warning. No schema change;
+all `-o json`/`-o tsv` and `best -f value` output unchanged.
+
+### Fixed / hardened
+
+- **`tool_best` (non-composite) and `tool_search` duplicated their CLI siblings'
+  selection logic inline.** Identical today, but exactly the drift pattern the
+  `near` fix eliminated. Extracted shared `best::global_best(runs, warn)` and
+  `search::matches_search(exp, re, include_discarded)`; the CLI and MCP paths now
+  both call them, so the winner/predicate cannot diverge. (The composite winner
+  was already shared via `composite_winner`; `near` via `has_usable_metric`.)
+  Output byte-identical.
+- **`resman list` didn't warn on a mixed-direction cross-run sort.** Sorting a
+  cross-run batch by value uses the first run's direction; when runs disagree on
+  metric/direction the order mixes incomparable quantities. `list` now emits the
+  same stderr warning `best`/`stats`/`compare` already do (reusing
+  `runs_are_mixed_metric`). stdout (json/tsv/table) unchanged.
+
+### Tests
+
+315 (+1): `global_best_picks_directionally_across_runs`. Clippy `--all-targets`
+clean, fmt clean.
+
+### Known — deferred to the v1.0 schema freeze
+
+The CLI `-o json` surface and the MCP-tool JSON surface are *separately* frozen
+contracts and differ in a few key names/shapes (e.g. a result's run identifier is
+`run` in CLI json vs `tag` in MCP json; `diff`'s `delta` is a bare float + a
+`regression` bool in the CLI vs a per-field object in MCP). Each is stable for its
+own consumers; reconciling them is a v1.0 schema-freeze task, not a patch — changing
+either side would break that surface's existing scripts/agents.
+
+---
+
 ## [0.17.12] — round-6 closeout: last UTF-8 byte-slice + TSV invariant complete (2026-06-19)
 
 A round-6 audit (reliability + MCP/CLI parity + completeness) confirmed the

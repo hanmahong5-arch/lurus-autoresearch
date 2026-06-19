@@ -41,7 +41,7 @@ This is a *different product category* than cloud experiment trackers — not a 
 curl -fsSL https://raw.githubusercontent.com/hanmahong5-arch/lurus-autoresearch/master/auto_research_task/resman/install.sh | sh
 ```
 
-Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.17.12`. Each release also ships a `.sha256` the installer verifies automatically; a failed or missing verification aborts the install (override with `RESMAN_ALLOW_UNVERIFIED=1`).
+Detects your OS+arch, pulls the latest release from GitHub, drops a ~3 MB binary into `~/.local/bin`. Customize with `RESMAN_INSTALL_DIR=/usr/local/bin` or `RESMAN_VERSION=v0.17.13`. Each release also ships a `.sha256` the installer verifies automatically; a failed or missing verification aborts the install (override with `RESMAN_ALLOW_UNVERIFIED=1`).
 
 **From crates.io** _(once `resman-cli` is published — until then use the prebuilt binary above or build from source)_:
 
@@ -258,7 +258,7 @@ glyph+label status cells, and one empty-state tone — light/dark/system in HTML
 
 ## Roadmap
 
-The project is at **v0.17.12**. Through v0.9–v0.17 the following shipped:
+The project is at **v0.17.13**. Through v0.9–v0.17 the following shipped:
 `doctor`, `usage`, structured MCP JSON across all tools, typed signals
 (`diverged_loss`, `slow_mfu`), schema_version, property tests (v0.9–v0.11);
 usage-aware distill, composite best, verify/unverify, `resman_tags`,

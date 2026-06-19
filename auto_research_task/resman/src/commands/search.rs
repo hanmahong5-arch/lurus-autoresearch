@@ -1,11 +1,32 @@
 use std::path::Path;
 
-use regex::RegexBuilder;
+use regex::{Regex, RegexBuilder};
 
 use crate::cli::OutputFormat;
 use crate::error::Result;
-use crate::model::Experiment;
+use crate::model::{Experiment, Status};
 use crate::store::{load_all_runs, truncate};
+
+/// Whether an experiment matches a search: a case-insensitive regex over its
+/// description, commit, and `k=v` params. Discards are skipped unless
+/// `include_discarded`. Shared by `cmd_search` and the MCP `tool_search` so the
+/// two match predicates cannot drift.
+pub(crate) fn matches_search(e: &Experiment, re: &Regex, include_discarded: bool) -> bool {
+    if !include_discarded && matches!(e.status, Status::Discard) {
+        return false;
+    }
+    let haystack = format!(
+        "{} {} {}",
+        e.description,
+        e.commit,
+        e.params
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    re.is_match(&haystack)
+}
 
 /// Answer the question "has the agent already tried this?" — the single most
 /// requested feature in the upstream community (issue #47, #418, PR #80).
@@ -24,20 +45,7 @@ pub fn cmd_search(
 
     for run in &runs {
         for e in &run.experiments {
-            if !include_discarded && matches!(e.status, crate::model::Status::Discard) {
-                continue;
-            }
-            let haystack = format!(
-                "{} {} {}",
-                e.description,
-                e.commit,
-                e.params
-                    .iter()
-                    .map(|(k, v)| format!("{k}={v}"))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-            if re.is_match(&haystack) {
+            if matches_search(e, &re, include_discarded) {
                 hits.push((&run.run_tag, e));
             }
         }

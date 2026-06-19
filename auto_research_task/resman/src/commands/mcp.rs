@@ -434,8 +434,7 @@ fn handle_tool_call(data_dir: &Path, params: &Value) -> std::result::Result<Stri
 }
 
 fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, String> {
-    use crate::commands::best::{composite_winner, lineage_depth};
-    use crate::model::Direction;
+    use crate::commands::best::{composite_winner, global_best, lineage_depth};
 
     let tag = args.get("tag").and_then(|v| v.as_str());
     let composite = args
@@ -499,32 +498,9 @@ fn tool_best(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
         };
     }
 
-    // Non-composite: structured JSON path.
-    let mut global_best: Option<(&crate::model::RunLog, &crate::model::Experiment)> = None;
-    for r in &runs {
-        if let Some(b) = r.best() {
-            let dir = b.effective_direction(r);
-            match global_best {
-                None => {
-                    global_best = Some((r, b));
-                }
-                Some((gr, gb)) => {
-                    let gdir = gb.effective_direction(gr);
-                    let better = match gdir {
-                        Direction::Minimize => b.val_bpb < gb.val_bpb,
-                        Direction::Maximize => b.val_bpb > gb.val_bpb,
-                    };
-                    // Suppress the direction mismatch warning here (MCP is stdio).
-                    let _ = dir;
-                    if better {
-                        global_best = Some((r, b));
-                    }
-                }
-            }
-        }
-    }
-
-    match global_best {
+    // Non-composite: structured JSON path. Selection shared with the CLI's
+    // `cmd_best` (warn=false — MCP is stdio JSON-RPC, no stderr prose).
+    match global_best(&runs, false) {
         Some((run, e)) => {
             let metric = e.effective_metric_name(run);
             let result = json!({
@@ -565,20 +541,7 @@ fn tool_search(data_dir: &Path, args: &Value) -> std::result::Result<String, Str
     let mut matches: Vec<Value> = Vec::new();
     for r in &runs {
         for e in &r.experiments {
-            if !include_discarded && e.status == Status::Discard {
-                continue;
-            }
-            let hay = format!(
-                "{} {} {}",
-                e.description,
-                e.commit,
-                e.params
-                    .iter()
-                    .map(|(k, v)| format!("{k}={v}"))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            );
-            if re.is_match(&hay) {
+            if crate::commands::search::matches_search(e, &re, include_discarded) {
                 let metric = e.effective_metric_name(r);
                 matches.push(json!({
                     "tag": r.run_tag,
