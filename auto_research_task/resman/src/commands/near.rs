@@ -12,25 +12,24 @@ use crate::store::{load_all_runs, truncate};
 /// proxy for a semantic neighborhood search without any embedding model.
 pub fn cmd_near(data_dir: &Path, target: f64, n: usize, format: &OutputFormat) -> Result<()> {
     let runs = load_all_runs(data_dir)?;
-    let mut all: Vec<(String, Experiment)> = runs
-        .into_iter()
+    let mut all: Vec<(String, &Experiment)> = runs
+        .iter()
         .flat_map(|r| {
-            let tag = r.run_tag.clone();
             r.experiments
-                .into_iter()
+                .iter()
                 .filter(move |e| {
-                    // Mirror RunLog::best(): for Minimize, exclude sentinel 0.0;
-                    // for Maximize, 0.0 is a legitimate value.
-                    let dir = e
-                        .metric_direction
-                        .or(r.metric_direction)
-                        .unwrap_or(Direction::Minimize);
-                    match dir {
+                    // Resolve direction PER-EXPERIMENT via the canonical cascade
+                    // (experiment override > run default > Minimize). mcp.rs's
+                    // `tool_near` MUST mirror this exactly — keep both routed
+                    // through `effective_direction` so they can't drift again.
+                    // For Minimize, exclude the 0.0 sentinel; for Maximize, 0.0
+                    // is a legitimate value.
+                    match e.effective_direction(r) {
                         Direction::Minimize => e.val_bpb > 0.0,
                         Direction::Maximize => true,
                     }
                 })
-                .map(move |e| (tag.clone(), e))
+                .map(move |e| (r.run_tag.clone(), e))
         })
         .collect();
 

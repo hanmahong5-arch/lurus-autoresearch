@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.17.10] — MCP near direction parity (2026-06-18)
+
+The round-4 parity audit found the final instance of the recurring "fixed the
+CLI, missed the MCP mirror" pattern. No schema change; `best -f value` and all
+`-o json`/`-o tsv` output byte-for-byte unchanged.
+
+### Fixed
+
+- **`resman_near` MCP tool resolved metric direction wrong.** The 0.17.8 fix gave
+  the MCP `tool_near` a *per-run* direction resolved run-level-first
+  (`run.metric_direction` then the *first* experiment's). The CLI `near` resolves
+  *per-experiment*, experiment-override-first. So in a run whose later experiments
+  carry their own `metric_direction` (e.g. a Maximize experiment with a legitimate
+  `0.0` score appended to a Minimize run), the MCP tool wrongly dropped them as
+  sentinels while the CLI kept them. Both paths now route through the canonical
+  `Experiment::effective_direction` helper, resolved per-experiment, so they
+  cannot diverge again.
+
+### Tests
+
+296 (+1): `tool_near_resolves_direction_per_experiment` pins the per-experiment
+cascade (a Maximize-override `0.0` in a Minimize run must survive `tool_near`'s
+filter). Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.9] — MCP composite parity (2026-06-18)
 
 A final audit round found the last instance of the recurring "fixed the CLI,

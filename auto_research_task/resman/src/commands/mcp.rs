@@ -609,14 +609,13 @@ fn tool_near(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
     let mut all: Vec<(String, &crate::model::Experiment)> = runs
         .iter()
         .flat_map(|r| {
-            // Per-run direction: keep 0.0 for maximize, drop <=0 only for minimize.
-            let dir = r
-                .metric_direction
-                .or_else(|| r.experiments.first().and_then(|e| e.metric_direction))
-                .unwrap_or(crate::model::Direction::Minimize);
             r.experiments
                 .iter()
                 .filter(move |e| {
+                    // Mirror cmd_near EXACTLY: resolve direction PER-EXPERIMENT via
+                    // the canonical cascade (experiment override > run default >
+                    // Minimize). Keep 0.0 for maximize; drop <=0 only for minimize.
+                    let dir = e.effective_direction(r);
                     e.val_bpb.is_finite()
                         && (dir == crate::model::Direction::Maximize || e.val_bpb > 0.0)
                 })
@@ -1426,6 +1425,47 @@ mod tests {
         for nb in neighbors {
             assert!(nb["delta"].is_number(), "delta missing in neighbor");
         }
+    }
+
+    #[test]
+    fn tool_near_resolves_direction_per_experiment() {
+        // Regression for the MCP/CLI parity bug (round-4 audit): tool_near must
+        // resolve metric direction PER-EXPERIMENT (experiment override > run
+        // default), exactly like cmd_near — NOT once-per-run from the run/first
+        // experiment. Here the run is Minimize but a later experiment overrides
+        // to Maximize with a legitimate 0.0 score; that experiment must survive
+        // the sentinel filter. Run-level-first resolution would wrongly drop it.
+        let (_dir, path) = tmp();
+
+        // First add fixes the run-level direction to Minimize.
+        let mut m1 = serde_json::Map::new();
+        m1.insert("tag".into(), json!("nd"));
+        m1.insert("commit".into(), json!("nd000001"));
+        m1.insert("val_bpb".into(), json!(0.5));
+        m1.insert("status".into(), json!("keep"));
+        m1.insert("description".into(), json!("minimize baseline"));
+        m1.insert("metric_direction".into(), json!("min"));
+        tool_add(&path, &Value::Object(m1)).unwrap();
+
+        // A NON-first experiment overrides to Maximize with val_bpb = 0.0.
+        let mut m2 = serde_json::Map::new();
+        m2.insert("tag".into(), json!("nd"));
+        m2.insert("commit".into(), json!("nd000002"));
+        m2.insert("val_bpb".into(), json!(0.0));
+        m2.insert("status".into(), json!("keep"));
+        m2.insert("description".into(), json!("maximize override, legit 0.0"));
+        m2.insert("parent_commit".into(), json!("nd000001"));
+        m2.insert("metric_direction".into(), json!("max"));
+        tool_add(&path, &Value::Object(m2)).unwrap();
+
+        let out = tool_near(&path, &json!({"val_bpb": 0.0})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("must be valid JSON");
+        let neighbors = v["neighbors"].as_array().unwrap();
+        assert!(
+            neighbors.iter().any(|nb| nb["commit"] == "nd000002"),
+            "per-experiment Maximize override (val_bpb=0.0) must survive the \
+             filter; run-level-first resolution would drop it. got: {out}"
+        );
     }
 
     #[test]
