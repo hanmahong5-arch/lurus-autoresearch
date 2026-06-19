@@ -29,3 +29,14 @@ ex_autoresearch/_build/
 
 # Results file
 results.tsv
+
+# Editor / IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
