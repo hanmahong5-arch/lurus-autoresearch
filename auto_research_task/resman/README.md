@@ -211,6 +211,11 @@ analysis. Opt out with `RESMAN_DISABLE_USAGE_LOG=1`.
 - MCP wiring guide: [docs/MCP.md](docs/MCP.md)
 - Field-level schema decisions: [docs/SCHEMA.md](docs/SCHEMA.md)
 
+**中文文档 (Chinese)** — every example is tested on the current release and reproducible:
+- 实操教程（完整训练循环）: [docs/TUTORIAL.zh.md](docs/TUTORIAL.zh.md)
+- 边缘情况与可靠性手册: [docs/EDGE_CASES.zh.md](docs/EDGE_CASES.zh.md)
+- 接入 agent（MCP）实操: [docs/MCP.zh.md](docs/MCP.zh.md)
+
 ## The feedback flywheel
 
 resman doesn't just store what an agent did — it reads its own usage back and
