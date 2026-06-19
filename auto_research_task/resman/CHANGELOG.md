@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.17.15] — HTML design refresh (report / distill) (2026-06-19)
+
+A visual polish pass on the self-contained HTML output (`resman report`,
+`resman distill --html`). No schema, CLI, or machine-format change; every HTML
+structural invariant (single `<style>`, self-contained / no external refs,
+escaped, dual-theme + `prefers-color-scheme`, 6 badge classes) is preserved and
+still tested. Colors/spacing/fonts were never fixed by tests — only craft moved.
+
+### Changed (design system, `src/html.rs`)
+
+- **Design tokens extended**: explicit `--font-size-h1`, `--radius-lg`,
+  `--shadow-md`, `--transition`, `--content-w`; richer mono/sans font stacks;
+  airier `--line-height` (1.5 → 1.55). Theme-independent additions only; existing
+  color/spacing values unchanged.
+- **Hero best-card**: left accent stripe + larger radius + elevated shadow; the
+  headline metric now renders in the brand accent (was amber/warn), distinct from
+  the supporting amber stat tiles — clearer visual hierarchy.
+- **Micro-interactions & a11y**: stat tiles lift on hover, table rows transition,
+  `<details>` open-state border, `summary:focus-visible` outline, branded
+  `::selection`, font-smoothing; content is centered (`margin: 0 auto`).
+- **Trend chart**: gradient area fill (replaces flat opacity) and an emphasized
+  halo ring on the latest experiment point. Still pure `var(--accent)`, no
+  hardcoded hex, fully self-contained.
+- Residual hardcoded px margins/paddings tokenized for consistent rhythm.
+
+### Repo hygiene
+
+- root `.gitignore`: ignore editor/IDE dirs (`.vs/`, `.vscode/`, `.idea/`) and OS
+  cruft (`.DS_Store`, `Thumbs.db`).
+
+### Tests
+
+316 (unchanged): all HTML structural invariants green; regenerated report/distill
+verified to carry the new tokens/gradient/hero and zero external refs or NaN.
+
+---
+
 ## [0.17.14] — round-8 closeout: report chart NaN-safe by construction (2026-06-19)
 
 A round-8 convergence audit certified the codebase converged — the v0.17.13

@@ -30,14 +30,18 @@ pub const CSS: &str = r#"
   --badge-crash-bg:     #fde0e0; --badge-crash-fg:     #8a2020;
   --badge-discard-bg:   #e8eaed; --badge-discard-fg:   #5a6370;
   --badge-neutral-bg:   #eaecf0; --badge-neutral-fg:   #5a6475;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Menlo, monospace;
   --font-size-base: 14px;
-  --line-height:    1.5;
+  --font-size-h1:   28px;
+  --line-height:    1.55;
   --space-1: 4px; --space-2: 8px; --space-3: 16px;
   --space-4: 24px; --space-5: 32px; --space-6: 48px;
-  --radius-sm: 6px; --radius-md: 8px;
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px;
   --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.06);
+  --transition: .15s ease;
+  --content-w: 1080px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -83,33 +87,39 @@ pub const CSS: &str = r#"
   --badge-discard-bg:#e8eaed; --badge-discard-fg:#5a6370;
   --badge-neutral-bg:#eaecf0; --badge-neutral-fg:#5a6475;
 }
-body { font: var(--font-size-base)/var(--line-height) var(--font-sans); margin:0; padding:var(--space-5); background:var(--bg); color:var(--text); max-width:1100px; }
-h1 { color:var(--accent); margin:0 0 var(--space-1); font-weight:600; letter-spacing:-0.01em; }
-h2 { color:var(--ok); margin:36px 0 12px; font-weight:500; font-size:16px; text-transform:uppercase; letter-spacing:0.08em; }
-h3 { color:var(--mauve); margin:20px 0 8px; font-weight:500; font-size:14px; }
+html { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+body { font: var(--font-size-base)/var(--line-height) var(--font-sans); margin:0 auto; padding:var(--space-5); background:var(--bg); color:var(--text); max-width:var(--content-w); }
+::selection { background:color-mix(in srgb, var(--accent) 26%, transparent); }
+h1 { color:var(--accent); margin:0 0 var(--space-1); font-size:var(--font-size-h1); line-height:1.2; font-weight:600; letter-spacing:-0.02em; }
+h2 { color:var(--ok); margin:var(--space-5) 0 var(--space-3); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:0.09em; }
+h3 { color:var(--mauve); margin:var(--space-4) 0 var(--space-2); font-weight:600; font-size:13px; }
 .sub { color:var(--muted); font-size:13px; margin-bottom:var(--space-4); }
 .empty { color:var(--muted); font-style:italic; }
-.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:var(--space-3); margin:20px 0 8px; }
-.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px 16px; box-shadow:var(--shadow-sm); }
-.stat-val { font-size:22px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:600; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--space-3); margin:var(--space-4) 0 var(--space-2); }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:var(--space-3); box-shadow:var(--shadow-sm); transition:transform var(--transition), box-shadow var(--transition); }
+.stat:hover { transform:translateY(-1px); box-shadow:var(--shadow-md); }
+.stat-val { font-size:24px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:700; letter-spacing:-0.01em; }
 .stat-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-top:var(--space-1); }
-table { border-collapse:collapse; width:100%; margin:12px 0; font-variant-numeric:tabular-nums; }
-th { color:var(--mauve); text-align:left; padding:8px 10px; border-bottom:2px solid var(--border-strong); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
-td { padding:8px 10px; border-bottom:1px solid var(--border); }
+table { border-collapse:collapse; width:100%; margin:var(--space-3) 0; font-variant-numeric:tabular-nums; }
+th { color:var(--mauve); text-align:left; padding:var(--space-2) 10px; border-bottom:2px solid var(--border-strong); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+td { padding:var(--space-2) 10px; border-bottom:1px solid var(--border); }
+tbody tr { transition:background var(--transition); }
 tr:hover td { background:var(--surface-raised); }
 code { font:13px var(--font-mono); color:var(--steel); }
-.chart { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:8px; box-shadow:var(--shadow-sm); }
-footer { margin-top:var(--space-6); color:var(--footer); font-size:12px; }
-.best-card { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:20px 24px; margin:16px 0; box-shadow:var(--shadow-sm); }
-.best-card .metric { font-size:28px; color:var(--warn); font-variant-numeric:tabular-nums; font-weight:700; }
-.best-card .commit-hash { font:13px var(--font-mono); color:var(--steel); margin:8px 0; }
-.best-card .desc { color:var(--text); margin-top:8px; }
+.chart { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:var(--space-2); box-shadow:var(--shadow-sm); }
+footer { margin-top:var(--space-6); padding-top:var(--space-3); border-top:1px solid var(--border); color:var(--footer); font-size:12px; }
+.best-card { background:var(--surface); border:1px solid var(--border-strong); border-left:3px solid var(--accent); border-radius:var(--radius-lg); padding:var(--space-4); margin:var(--space-3) 0; box-shadow:var(--shadow-md); }
+.best-card .metric { font-size:30px; color:var(--accent); font-variant-numeric:tabular-nums; font-weight:700; letter-spacing:-0.02em; }
+.best-card .commit-hash { font:13px var(--font-mono); color:var(--steel); margin:var(--space-2) 0; }
+.best-card .desc { color:var(--text); margin-top:var(--space-2); }
 .best-card .gpu { color:var(--muted); font-size:12px; margin-top:var(--space-1); }
-.signal-cluster { margin:12px 0; }
-.signal-cluster details { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 14px; }
+.signal-cluster { margin:var(--space-3) 0; }
+.signal-cluster details { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--space-2) 14px; transition:border-color var(--transition); }
+.signal-cluster details[open] { border-color:var(--border-strong); }
 .signal-cluster summary { cursor:pointer; color:var(--text); font-size:13px; }
-.signal-cluster ul { margin:8px 0 4px 16px; color:var(--text); font-size:13px; }
-.no-best { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:16px 20px; color:var(--muted); font-style:italic; margin:16px 0; }
+.signal-cluster summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+.signal-cluster ul { margin:var(--space-2) 0 var(--space-1) var(--space-3); color:var(--text); font-size:13px; }
+.no-best { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); color:var(--muted); font-style:italic; margin:var(--space-3) 0; }
 .detail { color:var(--muted); font-size:12px; }
 .badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; letter-spacing:0.03em; margin:0 3px; }
 .badge-keep { background:var(--badge-keep-bg); color:var(--badge-keep-fg); }
@@ -250,13 +260,14 @@ pub fn trend_svg(
             .join(" ");
         format!(
             "<polygon points='{x0:.1},{plot_bottom:.1} {interior} {xn:.1},{plot_bottom:.1}' \
-             fill='var(--accent)' fill-opacity='0.08' stroke='none'/>",
+             fill='url(#resman-area)' stroke='none'/>",
         )
     } else {
         String::new()
     };
 
     let with_labels = labels.len() == bpbs.len();
+    let last_idx = bpbs.len() - 1; // safe: early-returned when empty
     let dots: String = bpbs
         .iter()
         .enumerate()
@@ -267,10 +278,19 @@ pub fn trend_svg(
             } else {
                 format!("{:.6}", v)
             };
-            format!(
-                "<g><circle cx='{x:.1}' cy='{y:.1}' r='3.5' fill='var(--accent)'/>\
-                 <title>{tip}</title></g>"
-            )
+            if i == last_idx {
+                // Emphasize the latest experiment: a soft halo ring + larger dot.
+                format!(
+                    "<g><circle cx='{x:.1}' cy='{y:.1}' r='6.5' fill='var(--accent)' fill-opacity='0.18'/>\
+                     <circle cx='{x:.1}' cy='{y:.1}' r='4' fill='var(--accent)'/>\
+                     <title>{tip}</title></g>"
+                )
+            } else {
+                format!(
+                    "<g><circle cx='{x:.1}' cy='{y:.1}' r='3.5' fill='var(--accent)'/>\
+                     <title>{tip}</title></g>"
+                )
+            }
         })
         .collect();
 
@@ -290,8 +310,13 @@ pub fn trend_svg(
         })
         .collect();
 
+    let defs = "<defs><linearGradient id='resman-area' x1='0' y1='0' x2='0' y2='1'>\
+                <stop offset='0' stop-color='var(--accent)' stop-opacity='0.22'/>\
+                <stop offset='1' stop-color='var(--accent)' stop-opacity='0.012'/>\
+                </linearGradient></defs>";
     format!(
         "<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px'>\
+           {defs}\
            {y_axis}\
            {area_fill}\
            <polyline points='{line_points}' fill='none' stroke='var(--accent)' \
