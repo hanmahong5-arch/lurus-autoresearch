@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.17.11] — reliability sweep: non-finite ingestion, UTF-8 panics, search hygiene (2026-06-18)
+
+A round-5 adversarial audit (reliability + MCP/CLI parity + usability) found one
+high-severity data-loss path plus several latent panics and format bugs. No
+schema change; `best -f value` and all `-o json`/`-o tsv` output are byte-for-byte
+unchanged for valid input.
+
+### Fixed
+
+- **(HIGH — data-loss) Non-finite `val_bpb` made an entire run permanently
+  unreadable.** `inf`/`-inf`/`nan` (reachable because Rust's `f64::parse` accepts
+  `"inf"`/`"1e999"`) flowed through `import` (`parse_tsv`, `parse_metric_cell`)
+  and `verify` into `save_run`, where `serde_json` serializes a non-finite float
+  as JSON `null` — which then fails to deserialize, so the whole tag (including
+  valid sibling experiments) became invisible to `list`/`best`/`tree`/`distill`.
+  All three ingestion boundaries now reject (TSV / `verify`) or
+  coerce-to-0.0-with-warning (wandb/mlflow cells, matching their existing
+  unparseable-cell behavior) non-finite values before any write, mirroring the
+  guard `add` already had. The MCP path was already immune (JSON has no `inf`/`nan`).
+- **(panic) `resman tree` and `resman tags -o table` crashed on multibyte UTF-8.**
+  Both byte-sliced a string (`commit[..7]`, `metric_name[..10]`) guarded only by
+  byte length, so a non-ASCII commit (wandb/mlflow imports set `commit` from
+  arbitrary ids) or metric name whose boundary fell mid-codepoint panicked. Both
+  now truncate by character.
+- **(red line) `resman search -o tsv` did not sanitize descriptions.** A tab or
+  newline in a description injected extra TSV columns/rows — the lone TSV emitter
+  that skipped `store::tsv_field` (list/near/compare/tree already sanitize). Fixed.
+- **`resman search` with no matches returned human prose for every format.**
+  `search -o json` now returns `[]` and `-o tsv` a bare header on the (common)
+  no-match path, so an agent's `jq` pipeline doesn't choke; only the table view
+  keeps the friendly "unexplored" hint.
+- **`resman_near` / `near` could still diverge on non-finite values.** The MCP
+  tool filtered `is_finite` but the CLI did not, so a Minimize `+inf` row appeared
+  in one and not the other. Both `near` surfaces now share a single
+  `Experiment::has_usable_metric` predicate (finite + direction-aware sentinel
+  rule), so they cannot drift again — closing the 5-round "MCP mirror diverges
+  from the CLI" pattern.
+- **`verified` was missing from user-facing status lists.** The `invalid status`
+  error and `list --status` help now include `verified` (which `Status::FromStr`
+  and the `resman_list` MCP enum already accept). `add --status` still omits it by
+  design — `add` rejects `verified` (it is set via `resman verify`).
+
+### Tests
+
+313 (+17): non-finite rejection across import/verify (13), the shared
+`has_usable_metric` predicate (1), multibyte commit / metric-name no-panic (2),
+and `search` no-match JSON validity (1). Clippy `--all-targets` clean, fmt clean.
+
+---
+
 ## [0.17.10] — MCP near direction parity (2026-06-18)
 
 The round-4 parity audit found the final instance of the recurring "fixed the

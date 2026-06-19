@@ -706,3 +706,30 @@ fn distill_json_has_stable_shape() {
         "best.description key must be present"
     );
 }
+
+// ── Test 16 ──────────────────────────────────────────────────────────────────
+/// `search` with no matches must still emit machine-parseable output for agents:
+/// an empty JSON array for `-o json` (never human prose, which would break a jq
+/// pipeline on the common no-result path).
+#[test]
+fn search_no_match_json_is_empty_array() {
+    let home = TempDir::new().unwrap();
+    init_and_import(home.path());
+
+    let output = resman(home.path())
+        .args(["search", "zzz_never_matches_xyz", "-o", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8(output).unwrap();
+    let v: serde_json::Value = serde_json::from_str(text.trim())
+        .expect("search -o json must be valid JSON even with no matches");
+    let arr = v.as_array().expect("search -o json must be a JSON array");
+    assert!(
+        arr.is_empty(),
+        "no-match search must be an empty JSON array, got: {text}"
+    );
+}

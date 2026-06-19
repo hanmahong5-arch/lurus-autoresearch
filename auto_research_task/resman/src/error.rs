@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("invalid status: {0} (expected keep|discard|crash|best)")]
+    #[error("invalid status: {0} (expected keep|discard|crash|best|verified)")]
     InvalidStatus(String),
 
     #[error("invalid direction: {0} (expected min|max)")]

@@ -44,8 +44,17 @@ pub fn cmd_search(
     }
 
     if hits.is_empty() {
-        println!("no matches for `{pattern}` across {} run(s).", runs.len());
-        println!("→ idea is unexplored; safe to try.");
+        // Format-aware empty result: machine formats must stay parseable on the
+        // (common) no-match path — an empty JSON array / a bare TSV header —
+        // never human prose. Only the table view gets the friendly hint.
+        match format {
+            OutputFormat::Json => println!("[]"),
+            OutputFormat::Tsv => println!("run\tcommit\tval_bpb\tstatus\tdescription"),
+            OutputFormat::Table => {
+                println!("no matches for `{pattern}` across {} run(s).", runs.len());
+                println!("→ idea is unexplored; safe to try.");
+            }
+        }
         return Ok(());
     }
 
@@ -67,7 +76,10 @@ pub fn cmd_search(
             for (tag, e) in &hits {
                 println!(
                     "{tag}\t{}\t{:.6}\t{}\t{}",
-                    e.commit, e.val_bpb, e.status, e.description
+                    e.commit,
+                    e.val_bpb,
+                    e.status,
+                    crate::store::tsv_field(&e.description)
                 );
             }
         }

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::cli::OutputFormat;
 use crate::error::{Error, Result};
-use crate::model::{Direction, Experiment};
+use crate::model::Experiment;
 use crate::store::{load_all_runs, truncate};
 
 /// Find the N experiments with val_bpb closest to a target value.
@@ -17,18 +17,9 @@ pub fn cmd_near(data_dir: &Path, target: f64, n: usize, format: &OutputFormat) -
         .flat_map(|r| {
             r.experiments
                 .iter()
-                .filter(move |e| {
-                    // Resolve direction PER-EXPERIMENT via the canonical cascade
-                    // (experiment override > run default > Minimize). mcp.rs's
-                    // `tool_near` MUST mirror this exactly — keep both routed
-                    // through `effective_direction` so they can't drift again.
-                    // For Minimize, exclude the 0.0 sentinel; for Maximize, 0.0
-                    // is a legitimate value.
-                    match e.effective_direction(r) {
-                        Direction::Minimize => e.val_bpb > 0.0,
-                        Direction::Maximize => true,
-                    }
-                })
+                // Per-experiment inclusion via the shared predicate, so the CLI
+                // and MCP (`tool_near`) `near` surfaces cannot drift apart.
+                .filter(move |e| e.has_usable_metric(r))
                 .map(move |e| (r.run_tag.clone(), e))
         })
         .collect();

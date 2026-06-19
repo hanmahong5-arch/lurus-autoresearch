@@ -131,6 +131,17 @@ impl Experiment {
             .or(run.metric_direction)
             .unwrap_or(Direction::Minimize)
     }
+
+    /// Whether this experiment has a *usable* metric value for proximity /
+    /// neighbor listing under its effective direction. The value must be finite
+    /// (NaN/±inf are garbage — reachable via `import` of "inf"/"1e999"), and,
+    /// for Minimize, not the 0.0 sentinel; Maximize treats 0.0 as legitimate.
+    /// Shared by `near` on BOTH the CLI (`cmd_near`) and MCP (`tool_near`)
+    /// surfaces so the two filters cannot drift apart again.
+    pub fn has_usable_metric(&self, run: &RunLog) -> bool {
+        self.val_bpb.is_finite()
+            && (self.effective_direction(run) == Direction::Maximize || self.val_bpb > 0.0)
+    }
 }
 
 /// Returns the canonical schema version for newly-written RunLogs.
@@ -281,6 +292,30 @@ mod model_tests {
         assert_eq!(exp_none.effective_direction(&run_max), Direction::Maximize);
         // Default Minimize when both are None
         assert_eq!(exp_none.effective_direction(&run_none), Direction::Minimize);
+    }
+
+    #[test]
+    fn has_usable_metric_filters_non_finite_and_sentinel() {
+        let run_min = make_run(None, None); // default Minimize
+        let run_max = make_run(Some(Direction::Maximize), None);
+
+        // Minimize: a positive finite value is usable; the 0.0 sentinel and any
+        // non-finite value (NaN/±inf) are not.
+        assert!(make_exp(None, None, 0.5, Status::Keep).has_usable_metric(&run_min));
+        assert!(!make_exp(None, None, 0.0, Status::Keep).has_usable_metric(&run_min));
+        assert!(!make_exp(None, None, f64::INFINITY, Status::Keep).has_usable_metric(&run_min));
+        assert!(!make_exp(None, None, f64::NAN, Status::Keep).has_usable_metric(&run_min));
+
+        // Maximize: 0.0 is a legitimate value (usable); non-finite still excluded.
+        assert!(make_exp(None, None, 0.0, Status::Keep).has_usable_metric(&run_max));
+        assert!(!make_exp(None, None, f64::INFINITY, Status::Keep).has_usable_metric(&run_max));
+
+        // Experiment override beats run default: a Maximize experiment in a
+        // Minimize run keeps its legitimate 0.0.
+        assert!(
+            make_exp(Some(Direction::Maximize), None, 0.0, Status::Keep)
+                .has_usable_metric(&run_min)
+        );
     }
 
     #[test]

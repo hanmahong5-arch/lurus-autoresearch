@@ -611,14 +611,9 @@ fn tool_near(data_dir: &Path, args: &Value) -> std::result::Result<String, Strin
         .flat_map(|r| {
             r.experiments
                 .iter()
-                .filter(move |e| {
-                    // Mirror cmd_near EXACTLY: resolve direction PER-EXPERIMENT via
-                    // the canonical cascade (experiment override > run default >
-                    // Minimize). Keep 0.0 for maximize; drop <=0 only for minimize.
-                    let dir = e.effective_direction(r);
-                    e.val_bpb.is_finite()
-                        && (dir == crate::model::Direction::Maximize || e.val_bpb > 0.0)
-                })
+                // Per-experiment inclusion via the shared predicate (same as
+                // cmd_near), so the CLI and MCP `near` surfaces cannot drift.
+                .filter(move |e| e.has_usable_metric(r))
                 .map(move |e| (r.run_tag.clone(), e))
         })
         .collect();

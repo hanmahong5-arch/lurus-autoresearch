@@ -194,7 +194,7 @@ pub enum Commands {
     ///
     /// Example: `resman list --top 5 -o json | jq '.[0].val_bpb'`
     List {
-        /// Filter by status (keep/discard/crash/best/all). Default: kept-only
+        /// Filter by status (keep/discard/crash/best/verified/all). Default: kept-only
         #[arg(short, long)]
         status: Option<String>,
         /// Sort by this field

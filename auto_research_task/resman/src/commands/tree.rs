@@ -150,10 +150,11 @@ fn render_table_node(
     let star = if node.on_best_lineage { "★ " } else { "  " };
     let best_label = if is_best { "  (best)" } else { "" };
 
-    let short_commit = if node.exp.commit.len() >= 7 {
-        &node.exp.commit[..7]
-    } else {
-        &node.exp.commit
+    // Char-safe: take the first 7 chars, never slicing mid-codepoint — a
+    // commit imported from wandb/mlflow can be arbitrary (non-ASCII) text.
+    let short_commit = match node.exp.commit.char_indices().nth(7) {
+        Some((idx, _)) => &node.exp.commit[..idx],
+        None => &node.exp.commit,
     };
 
     buf.push_str(&format!(
@@ -200,10 +201,11 @@ fn render_root_table(
     let star = if node.on_best_lineage { "★ " } else { "  " };
     let best_label = if is_best { "  (best)" } else { "" };
 
-    let short_commit = if node.exp.commit.len() >= 7 {
-        &node.exp.commit[..7]
-    } else {
-        &node.exp.commit
+    // Char-safe: take the first 7 chars, never slicing mid-codepoint — a
+    // commit imported from wandb/mlflow can be arbitrary (non-ASCII) text.
+    let short_commit = match node.exp.commit.char_indices().nth(7) {
+        Some((idx, _)) => &node.exp.commit[..idx],
+        None => &node.exp.commit,
     };
 
     buf.push_str(&format!(
@@ -265,10 +267,11 @@ pub fn cmd_tree(
         }
         OutputFormat::Json => {
             fn node_to_json(node: &TreeNode<'_>) -> serde_json::Value {
-                let short_commit = if node.exp.commit.len() >= 7 {
-                    &node.exp.commit[..7]
-                } else {
-                    &node.exp.commit
+                // Char-safe: first 7 chars, never mid-codepoint (commit may be
+                // arbitrary non-ASCII text from a wandb/mlflow import).
+                let short_commit = match node.exp.commit.char_indices().nth(7) {
+                    Some((idx, _)) => &node.exp.commit[..idx],
+                    None => &node.exp.commit,
                 };
                 let children: Vec<_> = node.children.iter().map(node_to_json).collect();
                 json!({
@@ -298,10 +301,11 @@ pub fn cmd_tree(
                 if highlight_best && !node.on_best_lineage {
                     return;
                 }
-                let short_commit = if node.exp.commit.len() >= 7 {
-                    &node.exp.commit[..7]
-                } else {
-                    &node.exp.commit
+                // Char-safe: first 7 chars, never mid-codepoint (commit may be
+                // arbitrary non-ASCII text from a wandb/mlflow import).
+                let short_commit = match node.exp.commit.char_indices().nth(7) {
+                    Some((idx, _)) => &node.exp.commit[..idx],
+                    None => &node.exp.commit,
                 };
                 println!(
                     "{}\t{}\t{:.6}\t{}\t{}\t{}",
@@ -362,6 +366,26 @@ mod tests {
             metric_direction: None,
             schema_version: 1,
         }
+    }
+
+    #[test]
+    fn tree_text_does_not_panic_with_multibyte_commit() {
+        // Regression: short_commit truncated by BYTES; a non-ASCII commit (a
+        // wandb/mlflow import sets commit from an arbitrary id/name) whose byte 7
+        // fell mid-codepoint panicked. "实验一二三四五六七八" is 10 chars / 30 bytes.
+        let dir = tempfile::tempdir().unwrap();
+        crate::store::ensure_initialized(dir.path()).unwrap();
+        let run = make_run(
+            "mb",
+            vec![make_exp("实验一二三四五六七八", 0.99, Status::Keep, None)],
+        );
+        crate::store::save_run(dir.path(), &run).unwrap();
+        // Must not panic; the first 7 chars are retained.
+        let out = tree_text(dir.path(), "mb", false).unwrap();
+        assert!(
+            out.contains("实验一二三四五"),
+            "expected 7-char commit prefix, got: {out}"
+        );
     }
 
     #[test]

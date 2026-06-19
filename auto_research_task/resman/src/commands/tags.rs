@@ -132,11 +132,9 @@ pub fn cmd_tags(data_dir: &Path, format: &OutputFormat) -> Result<()> {
                     .map(|c| c.chars().take(11).collect::<String>())
                     .unwrap_or_else(|| "—".to_string());
                 let lu = s.last_update.as_deref().unwrap_or("—");
-                let metric = if s.metric_name.len() > 10 {
-                    &s.metric_name[..10]
-                } else {
-                    &s.metric_name
-                };
+                // Char-safe: first 10 chars, never slicing mid-codepoint — a
+                // metric_name is arbitrary user/import text (cf. best_commit above).
+                let metric: String = s.metric_name.chars().take(10).collect();
                 println!(
                     "{:<20}  {:>4}  {:>11}  {:<11}  {:<10}  {}",
                     s.tag, s.experiment_count, bv, bc, metric, lu
@@ -252,6 +250,19 @@ mod tests {
         exp.metric_name = Some("very_long_metric_name_that_exceeds_10_chars".to_string());
         write_run(dir.path(), "longmetric", vec![exp]);
         // Should not panic regardless of metric_name length.
+        cmd_tags(dir.path(), &OutputFormat::Table).unwrap();
+    }
+
+    #[test]
+    fn tag_snapshots_table_render_does_not_panic_with_multibyte_metric_name() {
+        // Regression: the table render truncated metric_name by BYTES; a name
+        // >=10 bytes whose byte 10 fell mid-codepoint panicked. "困困困困" is
+        // 4 chars / 12 bytes (the ASCII test above can't catch this).
+        let dir = tempfile::tempdir().unwrap();
+        ensure_initialized(dir.path()).unwrap();
+        let mut exp = make_exp("c1", 0.99, "2026-05-16T00:00:00Z");
+        exp.metric_name = Some("困困困困".to_string());
+        write_run(dir.path(), "multibyte", vec![exp]);
         cmd_tags(dir.path(), &OutputFormat::Table).unwrap();
     }
 }

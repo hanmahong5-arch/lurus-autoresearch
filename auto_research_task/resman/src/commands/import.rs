@@ -150,6 +150,13 @@ fn parse_tsv(content: &str) -> Result<Vec<Experiment>> {
             column: "val_bpb",
             value: cols[1].to_string(),
         })?;
+        if !val_bpb.is_finite() {
+            return Err(Error::Custom(format!(
+                "val_bpb must be finite; crashes use 0.0 (row {}, got `{}`)",
+                i + 1,
+                cols[1].trim()
+            )));
+        }
         let memory_gb: f64 = cols[2].trim().parse().map_err(|_| Error::InvalidFloat {
             line: i + 1,
             column: "memory_gb",
@@ -205,12 +212,19 @@ fn parse_metric_cell(cell: &str, row_idx: usize, col_name: &str) -> f64 {
     if cell.is_empty() {
         return 0.0;
     }
-    cell.parse::<f64>().unwrap_or_else(|_| {
+    let parsed = cell.parse::<f64>().unwrap_or_else(|_| {
         eprintln!(
             "warning: row {row_idx}: cannot parse metric column '{col_name}' value '{cell}' as f64; using 0.0"
         );
         0.0
-    })
+    });
+    if !parsed.is_finite() {
+        eprintln!(
+            "warning: row {row_idx}: metric column '{col_name}' value '{cell}' is non-finite; using 0.0"
+        );
+        return 0.0;
+    }
+    parsed
 }
 
 fn wandb_candidate_metrics(header: &[String], rows: &[Vec<String>]) -> Vec<String> {
@@ -564,6 +578,91 @@ mod tests {
         let tsv = "abc\t0.9\t44.0\tkeep\thas\ttabs\there";
         let out = parse_tsv(tsv).unwrap();
         assert_eq!(out[0].description, "has\ttabs\there");
+    }
+
+    // ---- non-finite val_bpb rejection tests ----
+
+    #[test]
+    fn parse_tsv_rejects_inf_val_bpb() {
+        let tsv = "commit\tval_bpb\tmemory_gb\tstatus\tdescription\n\
+                   abc1234\tinf\t44.0\tkeep\tbaseline\n";
+        let result = parse_tsv(tsv);
+        assert!(result.is_err(), "expected Err for inf val_bpb");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("finite"),
+            "expected 'finite' in error message, got: {msg}"
+        );
+        assert!(
+            msg.contains("inf"),
+            "expected offending value in error message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_tsv_rejects_neg_inf_val_bpb() {
+        let tsv = "abc1234\t-inf\t44.0\tkeep\tbaseline\n";
+        let result = parse_tsv(tsv);
+        assert!(result.is_err(), "expected Err for -inf val_bpb");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+    }
+
+    #[test]
+    fn parse_tsv_rejects_nan_val_bpb() {
+        let tsv = "abc1234\tnan\t44.0\tkeep\tbaseline\n";
+        let result = parse_tsv(tsv);
+        assert!(result.is_err(), "expected Err for nan val_bpb");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+    }
+
+    #[test]
+    fn parse_metric_cell_treats_inf_as_zero() {
+        let val = parse_metric_cell("inf", 1, "eval/loss");
+        assert_eq!(val, 0.0, "inf in metric cell must become 0.0");
+    }
+
+    #[test]
+    fn parse_metric_cell_treats_neg_inf_as_zero() {
+        let val = parse_metric_cell("-inf", 2, "eval/loss");
+        assert_eq!(val, 0.0, "-inf in metric cell must become 0.0");
+    }
+
+    #[test]
+    fn parse_metric_cell_treats_nan_as_zero() {
+        let val = parse_metric_cell("nan", 3, "eval/loss");
+        assert_eq!(val, 0.0, "nan in metric cell must become 0.0");
+    }
+
+    #[test]
+    fn wandb_import_non_finite_metric_becomes_zero_not_stored() {
+        // "inf" in a wandb CSV metric cell must not produce a non-finite val_bpb.
+        let csv = "ID,Name,State,Created,eval/loss,notes\n\
+                   r1,bad,finished,2024-01-01,inf,test\n";
+        let exps = parse_wandb(csv, Some("eval/loss")).unwrap();
+        assert_eq!(exps.len(), 1);
+        assert!(
+            exps[0].val_bpb.is_finite(),
+            "stored val_bpb must be finite, got {}",
+            exps[0].val_bpb
+        );
+        assert_eq!(exps[0].val_bpb, 0.0);
+    }
+
+    #[test]
+    fn mlflow_import_non_finite_metric_becomes_zero_not_stored() {
+        // "nan" in an mlflow CSV metric cell must not produce a non-finite val_bpb.
+        let csv = "run_id,status,start_time,metrics.loss,params.lr,tags.mlflow.runName\n\
+                   abc,FINISHED,2024-01-01,nan,0.001,run-a\n";
+        let exps = parse_mlflow(csv, Some("loss")).unwrap();
+        assert_eq!(exps.len(), 1);
+        assert!(
+            exps[0].val_bpb.is_finite(),
+            "stored val_bpb must be finite, got {}",
+            exps[0].val_bpb
+        );
+        assert_eq!(exps[0].val_bpb, 0.0);
     }
 
     // ---- parse_wandb tests ----

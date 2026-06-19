@@ -30,6 +30,11 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
     if opts.tolerance < 0.0 {
         return Err(Error::Custom("tolerance must be non-negative".to_string()));
     }
+    if !opts.new_value.is_finite() {
+        return Err(Error::Custom(
+            "val_bpb must be finite; crashes use 0.0".to_string(),
+        ));
+    }
 
     let runs = match opts.tag {
         Some(t) => vec![load_run_or_suggest(data_dir, t)?],
@@ -169,6 +174,11 @@ pub fn verify_inner_json(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<Strin
 pub fn verify_inner(data_dir: &Path, opts: &VerifyOpts<'_>) -> Result<String> {
     if opts.tolerance < 0.0 {
         return Err(Error::Custom("tolerance must be non-negative".to_string()));
+    }
+    if !opts.new_value.is_finite() {
+        return Err(Error::Custom(
+            "val_bpb must be finite; crashes use 0.0".to_string(),
+        ));
     }
 
     // Collect candidate (run_tag, experiment_index) pairs whose commit starts with `opts.commit`.
@@ -915,6 +925,148 @@ mod tests {
             .find(|e| e.commit == "aabbccdd")
             .expect("aabbccdd must still be present");
         assert_eq!(other.status, Status::Keep);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // non-finite new_value rejection
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn verify_inner_rejects_inf_new_value() {
+        let dir = setup_dir("resman_verify_reject_inf");
+        let run = make_run(
+            "inf_t",
+            vec![make_exp("abc1234", 0.985, Status::Keep, None)],
+        );
+        save_run(&dir, &run).unwrap();
+
+        let result = verify_inner(
+            &dir,
+            &VerifyOpts {
+                commit: "abc1234",
+                new_value: f64::INFINITY,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(result.is_err(), "expected Err for inf new_value");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+
+        // Status must be unchanged (no write happened).
+        let saved = load_run(&dir, "inf_t").unwrap().unwrap();
+        assert_eq!(saved.experiments[0].status, Status::Keep);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_inner_rejects_neg_inf_new_value() {
+        let dir = setup_dir("resman_verify_reject_neg_inf");
+        let run = make_run(
+            "neginf_t",
+            vec![make_exp("abc1234", 0.985, Status::Keep, None)],
+        );
+        save_run(&dir, &run).unwrap();
+
+        let result = verify_inner(
+            &dir,
+            &VerifyOpts {
+                commit: "abc1234",
+                new_value: f64::NEG_INFINITY,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(result.is_err(), "expected Err for -inf new_value");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_inner_rejects_nan_new_value() {
+        let dir = setup_dir("resman_verify_reject_nan");
+        let run = make_run(
+            "nan_t",
+            vec![make_exp("abc1234", 0.985, Status::Keep, None)],
+        );
+        save_run(&dir, &run).unwrap();
+
+        let result = verify_inner(
+            &dir,
+            &VerifyOpts {
+                commit: "abc1234",
+                new_value: f64::NAN,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(result.is_err(), "expected Err for NaN new_value");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_inner_json_rejects_inf_new_value() {
+        let dir = setup_dir("resman_verify_json_reject_inf");
+        let run = make_run(
+            "jinf_t",
+            vec![make_exp("abc1234", 0.985, Status::Keep, None)],
+        );
+        save_run(&dir, &run).unwrap();
+
+        let result = verify_inner_json(
+            &dir,
+            &VerifyOpts {
+                commit: "abc1234",
+                new_value: f64::INFINITY,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "expected Err for inf new_value (json path)"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
+
+        let saved = load_run(&dir, "jinf_t").unwrap().unwrap();
+        assert_eq!(saved.experiments[0].status, Status::Keep);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_inner_json_rejects_nan_new_value() {
+        let dir = setup_dir("resman_verify_json_reject_nan");
+        let run = make_run(
+            "jnan_t",
+            vec![make_exp("abc1234", 0.985, Status::Keep, None)],
+        );
+        save_run(&dir, &run).unwrap();
+
+        let result = verify_inner_json(
+            &dir,
+            &VerifyOpts {
+                commit: "abc1234",
+                new_value: f64::NAN,
+                tolerance: 0.01,
+                tag: None,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "expected Err for NaN new_value (json path)"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("finite"), "expected 'finite' in error: {msg}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
