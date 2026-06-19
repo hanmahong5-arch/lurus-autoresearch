@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.17.12] — round-6 closeout: last UTF-8 byte-slice + TSV invariant complete (2026-06-19)
+
+A round-6 audit (reliability + MCP/CLI parity + completeness) confirmed the
+0.17.11 fixes complete — all six `val_bpb` persist paths guard non-finite, and
+`near` is fully shared across CLI/MCP — and surfaced the final byte-slice of the
+UTF-8 class plus the last unsanitized TSV fields. No schema change; `best -f
+value` and all `-o json`/`-o tsv` output unchanged for valid input.
+
+### Fixed
+
+- **(panic) `resman usage` byte-sliced the `ts` date at `[..10]` by byte length.**
+  The summary's date-range truncated the timestamp with a raw byte slice guarded
+  only by `len() >= 10`. resman's own writer emits ASCII RFC3339, but a corrupted
+  or externally-written `usage.jsonl` with a non-ASCII `ts` panicked mid-codepoint.
+  Now truncates by character — the last occurrence of the byte-slice class fixed
+  in 0.17.11 (`tree`/`tags`).
+- **`resman diff -o tsv` did not sanitize param keys/values.** A tab or newline in
+  a param would inject extra TSV columns/rows. Param key/from/to now route through
+  `store::tsv_field`, completing the invariant that every user-controlled string
+  field in every TSV emitter is sanitized (list/near/compare/tree/search/diff).
+
+### Tests
+
+314 (+1): `date_range_does_not_panic_on_multibyte_ts`. Clippy `--all-targets`
+clean, fmt clean.
+
+---
+
 ## [0.17.11] — reliability sweep: non-finite ingestion, UTF-8 panics, search hygiene (2026-06-18)
 
 A round-5 adversarial audit (reliability + MCP/CLI parity + usability) found one

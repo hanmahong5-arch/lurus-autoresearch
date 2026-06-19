@@ -371,12 +371,15 @@ pub fn cmd_diff(
                     ParamKind::Added => "added",
                     ParamKind::Removed => "removed",
                 };
+                // Sanitize user-controlled param key/values (a tab/newline would
+                // inject TSV columns/rows) — same invariant the description-bearing
+                // emitters (list/near/compare/tree/search) already hold.
                 println!(
                     "{}\t{}\t{}\t{}",
-                    d.key,
+                    crate::store::tsv_field(&d.key),
                     kind_s,
-                    d.from.as_deref().unwrap_or("-"),
-                    d.to.as_deref().unwrap_or("-"),
+                    crate::store::tsv_field(d.from.as_deref().unwrap_or("-")),
+                    crate::store::tsv_field(d.to.as_deref().unwrap_or("-")),
                 );
             }
         }

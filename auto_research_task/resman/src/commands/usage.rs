@@ -201,14 +201,10 @@ fn date_range(events: &[Event]) -> (String, String) {
     }
     let first = events.iter().map(|e| e.ts.as_str()).min().unwrap_or("—");
     let last = events.iter().map(|e| e.ts.as_str()).max().unwrap_or("—");
-    // Trim to date only (first 10 chars: YYYY-MM-DD).
-    let fmt = |s: &str| {
-        if s.len() >= 10 {
-            s[..10].to_string()
-        } else {
-            s.to_string()
-        }
-    };
+    // Trim to date only (first 10 chars: YYYY-MM-DD). Char-safe: a corrupted or
+    // externally-written usage.jsonl could carry a non-ASCII `ts`, and a raw byte
+    // slice at [..10] would panic on a codepoint straddling byte 10.
+    let fmt = |s: &str| s.chars().take(10).collect::<String>();
     (fmt(first), fmt(last))
 }
 
@@ -622,6 +618,26 @@ fn comma(n: usize) -> String {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn date_range_does_not_panic_on_multibyte_ts() {
+        use serde_json::json;
+        // A corrupted or externally-written usage.jsonl could carry a non-ASCII
+        // `ts`; date_range must truncate to the date by char, never byte-slice
+        // mid-codepoint. "日本語日本語日本語" is 9 chars / 27 bytes — byte 10 is
+        // inside the 4th codepoint, which the old `s[..10]` panicked on.
+        let ev = |ts: &str| Event {
+            ts: ts.to_string(),
+            tool: "resman_best".into(),
+            args: json!({}),
+            ok: true,
+            duration_ms: 1,
+            result_chars: 1,
+        };
+        let events = vec![ev("日本語日本語日本語"), ev("2026-06-19T00:00:00Z")];
+        let (first, last) = date_range(&events);
+        assert!(!first.is_empty() && !last.is_empty());
+    }
 
     fn write_jsonl(dir: &std::path::Path, lines: &[&str]) {
         let path = dir.join("usage.jsonl");
