@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.17.14] — round-8 closeout: report chart NaN-safe by construction (2026-06-19)
+
+A round-8 convergence audit certified the codebase converged — the v0.17.13
+refactor is behavior-preserving, 0 material defects, and the red lines were
+confirmed live against the release binary (`best -f value` one float; TSV
+injection neutralized; `add -v inf`/`verify --value nan` rejected; HTML report
+emits zero NaN/Infinity tokens). It flagged one non-material defense-in-depth nit,
+now closed. No schema change; output unchanged for valid data.
+
+### Hardened
+
+- **`resman report` chart now filters non-finite values, mirroring its own stats
+  block.** Ingestion guards make a non-finite `val_bpb` unreachable in the store,
+  so this never bit — but the SVG chart (unlike the report summary stats 30 lines
+  above) didn't apply the `is_finite` filter, so a non-finite value that ever
+  reached it would render a `cy='NaN'` coordinate. The chart now plots only finite
+  points (points and labels drawn from the same subset, kept index-aligned),
+  making the report NaN-safe by construction rather than relying solely on the
+  upstream-guard chain.
+
+### Tests
+
+316 (+1): `report_chart_drops_non_finite_no_nan`. Clippy `--all-targets` clean,
+fmt clean.
+
+---
+
 ## [0.17.13] — round-7 closeout: CLI/MCP parity invariant fully closed (2026-06-19)
 
 A round-7 final audit certified the hardening complete — no reachable panics, no

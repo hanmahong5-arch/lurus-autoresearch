@@ -53,7 +53,16 @@ pub fn render_report_html(runs: &[crate::model::RunLog], title: &str) -> String 
         "—".into()
     };
 
-    let metric_points: Vec<(usize, f64)> = kept
+    // Defense in depth: the chart must never plot a non-finite value (it would
+    // emit cy='NaN'). Ingestion already guarantees finite val_bpb, but mirror the
+    // stats filter above so the SVG is NaN-safe by construction. Points and labels
+    // come from the SAME finite subset, so they stay index-aligned.
+    let chart: Vec<_> = kept
+        .iter()
+        .filter(|e| e.val_bpb.is_finite())
+        .copied()
+        .collect();
+    let metric_points: Vec<(usize, f64)> = chart
         .iter()
         .enumerate()
         .map(|(i, e)| (i, e.val_bpb))
@@ -61,7 +70,7 @@ pub fn render_report_html(runs: &[crate::model::RunLog], title: &str) -> String 
     let svg = if metric_points.is_empty() {
         crate::html::empty("no data")
     } else {
-        let label_strings: Vec<String> = kept
+        let label_strings: Vec<String> = chart
             .iter()
             .map(|e| e.commit.chars().take(8).collect())
             .collect();
@@ -199,6 +208,25 @@ mod tests {
                 make_kept("def5678", 0.85, "improved"),
             ],
         )]
+    }
+
+    #[test]
+    fn report_chart_drops_non_finite_no_nan() {
+        // Defense in depth: even if a non-finite val_bpb reached the store
+        // (ingestion guards make this unreachable today), the SVG chart must never
+        // plot it as a NaN coordinate. The finite sibling must still render.
+        let run = make_run(
+            "mixed",
+            vec![
+                make_kept("finite01", 0.9, "ok"),
+                make_kept("diverged9", f64::INFINITY, "diverged"),
+            ],
+        );
+        let html = render_report_html(&[run], "test report");
+        assert!(
+            !html.contains("NaN"),
+            "chart must not emit a NaN coordinate"
+        );
     }
 
     #[test]
